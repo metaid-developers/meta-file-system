@@ -23,9 +23,9 @@ func init() {
 	flag.StringVar(&ENV, "env", "loc", "Environment: loc/mainnet/testnet")
 }
 
-// @title           Meta Media Uploader API
+// @title           Meta File System Uploader API
 // @version         1.0
-// @description     Meta Media Upload Service API, provides file upload functionality
+// @description     Meta File System Upload Service API, provides file upload functionality
 // @termsOfService  http://swagger.io/terms/
 
 // @contact.name   API Support
@@ -38,7 +38,7 @@ func init() {
 // @host      localhost:7282
 // @BasePath  /api/v1
 
-// @schemes http https
+// @schemes https http
 
 func main() {
 	// Initialize all components

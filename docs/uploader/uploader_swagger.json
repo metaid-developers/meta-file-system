@@ -1,12 +1,12 @@
 {
     "schemes": [
-        "http",
-        "https"
+        "https",
+        "http"
     ],
     "swagger": "2.0",
     "info": {
-        "description": "Meta Media Upload Service API, provides file upload functionality",
-        "title": "Meta Media Uploader API",
+        "description": "Meta File System Upload Service API, provides file upload functionality",
+        "title": "Meta File System Uploader API",
         "termsOfService": "http://swagger.io/terms/",
         "contact": {
             "name": "API Support",

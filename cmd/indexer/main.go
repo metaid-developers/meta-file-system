@@ -24,9 +24,9 @@ func init() {
 	flag.StringVar(&ENV, "env", "mainnet", "Environment: loc/mainnet/testnet")
 }
 
-// @title           Meta Media Indexer API
+// @title           Meta File System Indexer API
 // @version         1.0
-// @description     Meta Media Indexer Service API, provides file query and download functionality
+// @description     Meta File System Indexer Service API, provides file query and download functionality
 // @termsOfService  http://swagger.io/terms/
 
 // @contact.name   API Support
@@ -39,7 +39,7 @@ func init() {
 // @host      localhost:7281
 // @BasePath  /api/v1
 
-// @schemes http https
+// @schemes https http
 
 func main() {
 	// Initialize all components
