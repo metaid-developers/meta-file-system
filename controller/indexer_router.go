@@ -63,6 +63,9 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 			// Get file content by PIN ID
 			files.GET("/content/:pinId", indexerQueryHandler.GetFileContent)
 
+			// Get accelerated file content redirect to OSS
+			files.GET("/accelerate/content/:pinId", indexerQueryHandler.GetFastFileContent)
+
 			// Get files by creator address
 			files.GET("/creator/:address", indexerQueryHandler.GetByCreatorAddress)
 
@@ -79,11 +82,20 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 			// Get avatar content by PIN ID
 			avatars.GET("/content/:pinId", indexerQueryHandler.GetAvatarContent)
 
+			// Get accelerated avatar content redirect to OSS by PIN ID
+			avatars.GET("/accelerate/content/:pinId", indexerQueryHandler.GetFastAvatarContent)
+
 			// Get latest avatar by MetaID
 			avatars.GET("/metaid/:metaId", indexerQueryHandler.GetLatestAvatarByMetaID)
 
+			// Get accelerated avatar redirect to OSS by MetaID
+			avatars.GET("/accelerate/metaid/:metaId", indexerQueryHandler.GetFastAvatarByMetaID)
+
 			// Get latest avatar by address
 			avatars.GET("/address/:address", indexerQueryHandler.GetLatestAvatarByAddress)
+
+			// Get accelerated avatar redirect to OSS by address
+			avatars.GET("/accelerate/address/:address", indexerQueryHandler.GetFastAvatarByAddress)
 		}
 
 		// Sync status route

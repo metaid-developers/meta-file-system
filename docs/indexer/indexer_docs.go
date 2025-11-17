@@ -81,6 +81,153 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "/avatars/accelerate/address/{address}": {
+            "get": {
+                "description": "Redirect to OSS URL for latest avatar by address, supports preview/thumbnail processing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer Avatar Query"
+                ],
+                "summary": "Get accelerated avatar by address (redirect to OSS)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Address",
+                        "name": "address",
+                        "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Process type: preview (640px), thumbnail (128x128), empty for original",
+                        "name": "process",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect to OSS URL",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/avatars/accelerate/content/{pinId}": {
+            "get": {
+                "description": "Redirect to OSS URL for avatar content by PIN ID, supports preview/thumbnail processing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer Avatar Query"
+                ],
+                "summary": "Get accelerated avatar content (redirect to OSS)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PIN ID",
+                        "name": "pinId",
+                        "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Process type: preview (640px), thumbnail (128x128), empty for original",
+                        "name": "process",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect to OSS URL",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/avatars/accelerate/metaid/{metaId}": {
+            "get": {
+                "description": "Redirect to OSS URL for latest avatar by MetaID, supports preview/thumbnail processing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer Avatar Query"
+                ],
+                "summary": "Get accelerated avatar by MetaID (redirect to OSS)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MetaID",
+                        "name": "metaId",
+                        "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Process type: preview (640px), thumbnail (128x128), empty for original",
+                        "name": "process",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect to OSS URL",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/avatars/address/{address}": {
             "get": {
                 "description": "Query the latest avatar information by address",
@@ -265,6 +412,55 @@ const docTemplateindexer = `{
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/accelerate/content/{pinId}": {
+            "get": {
+                "description": "Redirect to OSS URL for file content by PIN ID, supports preview/thumbnail/video processing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer File Query"
+                ],
+                "summary": "Get accelerated file content (redirect to OSS)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PIN ID",
+                        "name": "pinId",
+                        "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Process type: preview (640px for image), thumbnail (235px for image), video (first frame for video), empty for original",
+                        "name": "process",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect to OSS URL",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
                         }
                     },
                     "500": {

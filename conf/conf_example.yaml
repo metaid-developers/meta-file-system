@@ -46,5 +46,6 @@ storage:
     access_key: ""
     secret_key: ""
     bucket: ""
+    domain: ""
 
 

@@ -334,3 +334,135 @@ func (h *IndexerQueryHandler) GetAvatarContent(c *gin.Context) {
 	c.Header("Content-Disposition", "inline; filename=\""+fileName+"\"")
 	c.Data(200, contentType, content)
 }
+
+// GetFastFileContent get accelerated file content redirect to OSS
+// @Summary      Get accelerated file content (redirect to OSS)
+// @Description  Redirect to OSS URL for file content by PIN ID, supports preview/thumbnail/video processing
+// @Tags         Indexer File Query
+// @Accept       json
+// @Produce      json
+// @Param        pinId       path   string  false  "PIN ID"
+// @Param        process     query  string  false  "Process type: preview (640px for image), thumbnail (235px for image), video (first frame for video), empty for original"
+// @Success      307         {string}  string  "Redirect to OSS URL"
+// @Failure      404         {object}  respond.Response
+// @Failure      500         {object}  respond.Response
+// @Router       /files/accelerate/content/{pinId} [get]
+func (h *IndexerQueryHandler) GetFastFileContent(c *gin.Context) {
+	pinID := c.Param("pinId")
+	if pinID == "" {
+		respond.InvalidParam(c, "pinId is required")
+		return
+	}
+
+	// Get process type from query parameter
+	processType := c.DefaultQuery("process", "")
+
+	// Get OSS URL
+	ossURL, err := h.indexerFileService.GetFastFileOSSURL(pinID, processType)
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
+	c.Redirect(307, ossURL)
+}
+
+// GetFastAvatarContent get accelerated avatar content redirect to OSS
+// @Summary      Get accelerated avatar content (redirect to OSS)
+// @Description  Redirect to OSS URL for avatar content by PIN ID, supports preview/thumbnail processing
+// @Tags         Indexer Avatar Query
+// @Accept       json
+// @Produce      json
+// @Param        pinId       path   string  false  "PIN ID"
+// @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
+// @Success      307         {string}  string  "Redirect to OSS URL"
+// @Failure      404         {object}  respond.Response
+// @Failure      500         {object}  respond.Response
+// @Router       /avatars/accelerate/content/{pinId} [get]
+func (h *IndexerQueryHandler) GetFastAvatarContent(c *gin.Context) {
+	pinID := c.Param("pinId")
+	if pinID == "" {
+		respond.InvalidParam(c, "pinId is required")
+		return
+	}
+
+	// Get process type from query parameter
+	processType := c.DefaultQuery("process", "")
+
+	// Get OSS URL
+	ossURL, err := h.indexerFileService.GetFastAvatarOSSURL(pinID, processType)
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
+	c.Redirect(307, ossURL)
+}
+
+// GetFastAvatarByMetaID get accelerated avatar redirect to OSS by MetaID
+// @Summary      Get accelerated avatar by MetaID (redirect to OSS)
+// @Description  Redirect to OSS URL for latest avatar by MetaID, supports preview/thumbnail processing
+// @Tags         Indexer Avatar Query
+// @Accept       json
+// @Produce      json
+// @Param        metaId      path   string  false  "MetaID"
+// @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
+// @Success      307         {string}  string  "Redirect to OSS URL"
+// @Failure      404         {object}  respond.Response
+// @Failure      500         {object}  respond.Response
+// @Router       /avatars/accelerate/metaid/{metaId} [get]
+func (h *IndexerQueryHandler) GetFastAvatarByMetaID(c *gin.Context) {
+	metaID := c.Param("metaId")
+	if metaID == "" {
+		respond.InvalidParam(c, "metaId is required")
+		return
+	}
+
+	// Get process type from query parameter
+	processType := c.DefaultQuery("process", "")
+
+	// Get OSS URL
+	ossURL, err := h.indexerFileService.GetFastAvatarOSSURLByMetaID(metaID, processType)
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
+	c.Redirect(307, ossURL)
+}
+
+// GetFastAvatarByAddress get accelerated avatar redirect to OSS by address
+// @Summary      Get accelerated avatar by address (redirect to OSS)
+// @Description  Redirect to OSS URL for latest avatar by address, supports preview/thumbnail processing
+// @Tags         Indexer Avatar Query
+// @Accept       json
+// @Produce      json
+// @Param        address     path   string  false  "Address"
+// @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
+// @Success      307         {string}  string  "Redirect to OSS URL"
+// @Failure      404         {object}  respond.Response
+// @Failure      500         {object}  respond.Response
+// @Router       /avatars/accelerate/address/{address} [get]
+func (h *IndexerQueryHandler) GetFastAvatarByAddress(c *gin.Context) {
+	address := c.Param("address")
+	if address == "" {
+		respond.InvalidParam(c, "address is required")
+		return
+	}
+
+	// Get process type from query parameter
+	processType := c.DefaultQuery("process", "")
+
+	// Get OSS URL
+	ossURL, err := h.indexerFileService.GetFastAvatarOSSURLByAddress(address, processType)
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
+	c.Redirect(307, ossURL)
+}

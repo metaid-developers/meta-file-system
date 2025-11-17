@@ -3,12 +3,22 @@ package indexer_service
 import (
 	"errors"
 	"fmt"
+	"strings"
 
+	"meta-file-system/conf"
 	"meta-file-system/model"
 	"meta-file-system/model/dao"
 	"meta-file-system/storage"
 
 	"gorm.io/gorm"
+)
+
+// OSS process parameters
+const (
+	OssProcess640           = "?x-oss-process=image/auto-orient,1/interlace,1/resize,m_lfit,w_640/quality,q_90"
+	OssProcess128           = "?x-oss-process=image/auto-orient,1/resize,m_fill,w_128,h_128/quality,q_90"
+	OssProcessVideoFirstImg = "?x-oss-process=video/snapshot,t_1,m_fast"
+	OssProcess235           = "?x-oss-process=image/auto-orient,1/quality,q_80/resize,m_lfit,w_235"
 )
 
 // IndexerFileService indexer file service
@@ -225,4 +235,139 @@ func (s *IndexerFileService) GetAvatarContent(pinID string) ([]byte, string, str
 	}
 
 	return content, avatar.ContentType, fileName, nil
+}
+
+// GetFastFileOSSURL get OSS URL for fast file content redirect
+// processType: "preview" for image preview (640), "thumbnail" for thumbnail (235), "video" for video first frame, "" for original
+func (s *IndexerFileService) GetFastFileOSSURL(pinID string, processType string) (string, error) {
+	// Get file information
+	file, err := s.GetFileByPinID(pinID)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if storage type is OSS
+	if file.StorageType != "oss" {
+		return "", errors.New("file is not stored in OSS")
+	}
+
+	// Check if domain is configured
+	if conf.Cfg.Storage.OSS.Domain == "" {
+		return "", errors.New("OSS domain is not configured")
+	}
+
+	// Build base URL
+	baseURL := strings.TrimSuffix(conf.Cfg.Storage.OSS.Domain, "/")
+	storagePath := strings.TrimPrefix(file.StoragePath, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, storagePath)
+
+	// Add process parameters based on file type and process type
+	if processType == "" {
+		// Original file, no processing
+		return url, nil
+	}
+
+	// Determine process parameter based on file type and process type
+	var processParam string
+	switch processType {
+	case "preview":
+		// Image preview: 640px width
+		if file.FileType == "image" {
+			processParam = OssProcess640
+		} else {
+			return "", errors.New("preview only supports image files")
+		}
+	case "thumbnail":
+		// Thumbnail: 235px width
+		if file.FileType == "image" {
+			processParam = OssProcess235
+		} else {
+			return "", errors.New("thumbnail only supports image files")
+		}
+	case "video":
+		// Video first frame
+		if file.FileType == "video" {
+			processParam = OssProcessVideoFirstImg
+		} else {
+			return "", errors.New("video process only supports video files")
+		}
+	default:
+		return "", fmt.Errorf("unknown process type: %s", processType)
+	}
+
+	return url + processParam, nil
+}
+
+// GetFastAvatarOSSURL get OSS URL for fast avatar content redirect
+// processType: "preview" for 640px, "thumbnail" for 128x128, "" for original
+func (s *IndexerFileService) GetFastAvatarOSSURL(pinID string, processType string) (string, error) {
+	// Get avatar information
+	avatar, err := s.indexerUserAvatarDAO.GetByPinID(pinID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("avatar not found")
+		}
+		return "", fmt.Errorf("failed to get avatar: %w", err)
+	}
+
+	// Check if OSS domain is configured
+	if conf.Cfg.Storage.OSS.Domain == "" {
+		return "", errors.New("OSS domain is not configured")
+	}
+
+	// Check if storage type is OSS
+	if conf.Cfg.Storage.Type != "oss" {
+		return "", errors.New("storage type is not OSS")
+	}
+
+	// Build base URL
+	baseURL := strings.TrimSuffix(conf.Cfg.Storage.OSS.Domain, "/")
+	storagePath := strings.TrimPrefix(avatar.Avatar, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, storagePath)
+
+	// Add process parameters
+	if processType == "" {
+		// Original avatar, no processing
+		return url, nil
+	}
+
+	var processParam string
+	switch processType {
+	case "preview":
+		// Avatar preview: 640px width
+		if avatar.FileType == "image" {
+			processParam = OssProcess640
+		} else {
+			return "", errors.New("preview only supports image avatars")
+		}
+	case "thumbnail":
+		// Avatar thumbnail: 128x128
+		if avatar.FileType == "image" {
+			processParam = OssProcess128
+		} else {
+			return "", errors.New("thumbnail only supports image avatars")
+		}
+	default:
+		return "", fmt.Errorf("unknown process type: %s", processType)
+	}
+
+	return url + processParam, nil
+}
+
+// GetFastAvatarOSSURLByMetaID get OSS URL for avatar by MetaID
+func (s *IndexerFileService) GetFastAvatarOSSURLByMetaID(metaID string, processType string) (string, error) {
+	avatar, err := s.GetLatestAvatarByMetaID(metaID)
+	if err != nil {
+		return "", err
+	}
+	return s.GetFastAvatarOSSURL(avatar.PinID, processType)
+}
+
+// GetFastAvatarOSSURLByAddress get OSS URL for avatar by address
+func (s *IndexerFileService) GetFastAvatarOSSURLByAddress(address string, processType string) (string, error) {
+	avatar, err := s.GetLatestAvatarByAddress(address)
+	if err != nil {
+		return "", err
+	}
+	return s.GetFastAvatarOSSURL(avatar.PinID, processType)
 }

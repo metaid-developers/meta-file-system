@@ -65,6 +65,7 @@ type OSSStorageConfig struct {
 	AccessKey string
 	SecretKey string
 	Bucket    string
+	Domain    string
 }
 
 // IndexerConfig indexer configuration
@@ -138,6 +139,7 @@ func InitConfig() error {
 				AccessKey: viper.GetString("storage.oss.access_key"),
 				SecretKey: viper.GetString("storage.oss.secret_key"),
 				Bucket:    viper.GetString("storage.oss.bucket"),
+				Domain:    viper.GetString("storage.oss.domain"),
 			},
 		},
 
