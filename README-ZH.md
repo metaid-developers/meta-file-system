@@ -467,6 +467,3 @@ MIT License
 - ✅ 完整的文件上传功能（预上传 + 提交上传）
 - ✅ 完善的 Swagger API 文档
 - ✅ Web 可视化上传界面（集成 Metalet 钱包）
-
-**Indexer 服务**
-- 🚧 开发中... 

@@ -468,6 +468,3 @@ MIT License
 - ✅ Complete file upload functionality (pre-upload + commit upload)
 - ✅ Comprehensive Swagger API documentation
 - ✅ Web visual upload interface (Metalet wallet integration)
-
-**Indexer Service**
-- 🚧 In development... 
