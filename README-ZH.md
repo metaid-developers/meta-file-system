@@ -9,6 +9,7 @@
 - 📤 **文件上链**: 将文件通过 MetaID 协议上传到区块链
 - 📥 **文件索引**: 从区块链扫描和索引 MetaID 文件
 - 🌐 **Web 界面**: 提供可视化的文件上传页面，集成 Metalet 钱包
+- 🚀 **OSS 加速直链**: Indexer 支持图片/视频/头像的加速访问与预览参数
 
 ## 快速开始
 
@@ -197,7 +198,7 @@ cd deploy && ./deploy.sh logs all
 | 服务 | 端口 | API 功能 | Swagger 文档 |
 |------|------|----------|-------------|
 | **Uploader** | 7282 | 文件上传、配置查询 | http://localhost:7282/swagger/index.html |
-| **Indexer** | 7281 | 文件查询、下载 | Coming Soon |
+| **Indexer** | 7281 | 文件查询、下载、加速直链 | http://localhost:7281/swagger/index.html |
 
 ### 📚 Swagger API 文档
 
@@ -232,6 +233,64 @@ http://localhost:7282/swagger/index.html
 ```
 
 **Indexer API 文档：** 开发中，敬请期待...
+
+#### Indexer API 文档（v1.0）
+
+Indexer 服务现已提供完整的文件/头像查询与加速直链能力，Swagger 文档已内置。
+
+### Web 索引界面
+
+Indexer 服务启动后，可以通过浏览器访问可视化索引页面：
+
+```bash
+# 访问索引页面
+open http://localhost:7281
+```
+
+**Web 界面预览：**
+
+![MetaID 文件索引界面](static/image-indexer.png)
+
+**访问地址：**
+```
+http://localhost:7281/swagger/index.html
+```
+
+**核心接口：**
+
+1. **文件查询**
+   - `GET /api/v1/files`：按 cursor 分页列出文件
+   - `GET /api/v1/files/{pinId}`：根据 PinID 获取文件元信息
+   - `GET /api/v1/files/content/{pinId}`：直接返回文件内容（本地读取）
+   - `GET /api/v1/files/accelerate/content/{pinId}`：返回 OSS 直链，支持图片/视频处理
+
+2. **创作者检索**
+   - `GET /api/v1/files/creator/{address}`
+   - `GET /api/v1/files/metaid/{metaId}`
+
+3. **头像查询**
+   - `GET /api/v1/avatars`：头像分页
+   - `GET /api/v1/avatars/content/{pinId}`：返回头像二进制
+   - `GET /api/v1/avatars/accelerate/content/{pinId}`：头像 OSS 直链
+   - `GET /api/v1/avatars/accelerate/metaid/{metaId}`：根据 MetaID 获取最新头像直链
+   - `GET /api/v1/avatars/accelerate/address/{address}`：根据地址获取最新头像直链
+
+4. **同步状态与统计**
+   - `GET /api/v1/status`
+   - `GET /api/v1/stats`
+
+**加速直链参数：**
+
+`accelerate` 路由支持 `process` 查询参数，示例：`/api/v1/files/accelerate/content/{pinId}?process=preview`
+
+| process 值 | 适用类型 | 说明 |
+|------------|----------|------|
+| `preview`  | image    | 等比压缩到宽 640px |
+| `thumbnail`| image    | 文件：宽 235px；头像：128x128 填充 |
+| `video`    | video    | 返回第 1 秒快照图 |
+| *空*       | all      | 返回原始 OSS 资源 |
+
+> 提示：要使用加速能力，需要将 `storage.type` 设置为 `oss`，并在配置文件中补充 `storage.oss.domain`，用于拼接外部可访问的 CDN/自定义域名。
 
 ### 预上传文件（Uploader 服务）
 
@@ -345,6 +404,7 @@ storage:
     access_key: "your-access-key"
     secret_key: "your-secret-key"
     bucket: "your-bucket"
+    domain: "https://cdn.your-domain.com" # 新增：加速直链所用外网域名
 ```
 
 ### 索引器配置
@@ -386,9 +446,20 @@ MIT License
 
 ## 版本信息
 
-**当前版本：v0.1.0**
+**当前版本：v0.2.0**
 
 ### 更新日志
+
+#### v0.2.0 (2025-11-17)
+
+**Indexer 服务**
+- ✅ 新增 OSS 加速直链能力（`/accelerate` 路由），支持图片预览、缩略图、视频首帧
+- ✅ 支持头像按照 MetaID / 地址获取最新直链
+- ✅ Swagger 文档上线 (`http://localhost:7281/swagger/index.html`)
+
+**Uploader 服务**
+- ✅ 新增 DirectUpload 流程（直接提交已签名交易）
+- ✅ Swagger 增加 `POST /api/v1/files/direct-upload`
 
 #### v0.1.0 (2025-10-16)
 

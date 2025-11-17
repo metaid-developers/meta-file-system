@@ -9,6 +9,7 @@ On-chain file service based on MetaID protocol, supporting file upload and index
 - 📤 **File Upload**: Upload files to blockchain via MetaID protocol
 - 📥 **File Indexing**: Scan and index MetaID files from blockchain
 - 🌐 **Web Interface**: Provide visual file upload page with Metalet wallet integration
+- 🚀 **OSS Accelerated Links**: Indexer exposes image/video/avatar accelerated access with preview parameters
 
 ## Quick Start
 
@@ -197,7 +198,7 @@ Two services provide different API endpoints:
 | Service | Port | API Functions | Swagger Docs |
 |---------|------|---------------|--------------|
 | **Uploader** | 7282 | File upload, config query | http://localhost:7282/swagger/index.html |
-| **Indexer** | 7281 | File query, download | Coming Soon |
+| **Indexer** | 7281 | File query, download, accelerated links | http://localhost:7281/swagger/index.html |
 
 ### 📚 Swagger API Documentation
 
@@ -219,6 +220,9 @@ http://localhost:7282/swagger/index.html
 2. **Config Query**
    - `GET /api/v1/config` - Get service configuration (e.g., max file size)
 
+3. **Direct Upload**
+   - `POST /api/v1/files/direct-upload` - Skip pre-upload and submit a signed transaction directly (DirectUpload flow)
+
 **Response Structure:**
 
 All APIs return a unified response format:
@@ -231,7 +235,63 @@ All APIs return a unified response format:
 }
 ```
 
-**Indexer API Documentation:** Coming soon...
+#### Indexer API Documentation (v1.0)
+
+The Indexer service now provides full query plus OSS acceleration capabilities with Swagger ready to use.
+
+### Web Indexer Interface
+
+After starting the Indexer service, you can access the visual indexer page through browser:
+
+```bash
+# Access indexer page
+open http://localhost:7281
+```
+
+**Web Interface Preview:**
+
+![MetaID File Indexer Interface](static/image-indexer.png)
+
+**Access URL:**
+```
+http://localhost:7281/swagger/index.html
+```
+
+**Core Endpoints:**
+
+1. **File Query**
+   - `GET /api/v1/files`: Cursor-based list
+   - `GET /api/v1/files/{pinId}`: Fetch file metadata by PinID
+   - `GET /api/v1/files/content/{pinId}`: Return binary content from storage
+   - `GET /api/v1/files/accelerate/content/{pinId}`: Return OSS link with optional processing
+
+2. **Creator Lookup**
+   - `GET /api/v1/files/creator/{address}`
+   - `GET /api/v1/files/metaid/{metaId}`
+
+3. **Avatar Query**
+   - `GET /api/v1/avatars`: Avatar pagination
+   - `GET /api/v1/avatars/content/{pinId}`: Binary avatar
+   - `GET /api/v1/avatars/accelerate/content/{pinId}`: Avatar OSS link
+   - `GET /api/v1/avatars/accelerate/metaid/{metaId}`: Latest avatar by MetaID (OSS link)
+   - `GET /api/v1/avatars/accelerate/address/{address}`: Latest avatar by address (OSS link)
+
+4. **Sync & Stats**
+   - `GET /api/v1/status`
+   - `GET /api/v1/stats`
+
+**Accelerate Parameters**
+
+`/accelerate` routes accept a `process` query parameter, e.g. `/api/v1/files/accelerate/content/{pinId}?process=preview`
+
+| process | Type  | Description |
+|---------|-------|-------------|
+| `preview` | image | Resize width to 640px (keep aspect) |
+| `thumbnail` | image | Files: width 235px; Avatars: 128x128 fill |
+| `video` | video | Return snapshot at 1 second |
+| *(empty)* | all | Return original OSS resource |
+
+> Tip: Acceleration requires `storage.type=oss` and `storage.oss.domain` configured with the public CDN/custom domain.
 
 ### Pre-upload File (Uploader Service)
 
@@ -345,6 +405,7 @@ storage:
     access_key: "your-access-key"
     secret_key: "your-secret-key"
     bucket: "your-bucket"
+    domain: "https://cdn.your-domain.com" # new: public domain for accelerate links
 ```
 
 ### Indexer Configuration
@@ -386,9 +447,20 @@ MIT License
 
 ## Version Information
 
-**Current Version: v0.1.0**
+**Current Version: v0.2.0**
 
 ### Changelog
+
+#### v0.2.0 (2025-11-17)
+
+**Indexer Service**
+- ✅ Added OSS accelerate routes (`/accelerate`) with image preview, thumbnail, video snapshot
+- ✅ Avatar accelerate endpoints for MetaID / address
+- ✅ Swagger available at `http://localhost:7281/swagger/index.html`
+
+**Uploader Service**
+- ✅ Added DirectUpload flow (submit signed tx directly)
+- ✅ Swagger exposes `POST /api/v1/files/direct-upload`
 
 #### v0.1.0 (2025-10-16)
 
