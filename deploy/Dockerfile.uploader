@@ -1,0 +1,66 @@
+# Uploader Service Dockerfile
+
+# Build stage
+FROM golang:1.24-alpine AS builder
+
+# Install necessary tools
+RUN apk add --no-cache git make
+
+# Set working directory
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build uploader service
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-w -s' -o uploader ./cmd/uploader
+
+# Runtime stage
+FROM alpine:latest
+
+# Install ca-certificates (for HTTPS requests))
+RUN apk --no-cache add ca-certificates tzdata
+
+# Set timezone to Shanghai
+ENV TZ=Asia/Shanghai
+
+# Create non-root user
+RUN addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from build stage
+COPY --from=builder /build/uploader .
+
+# Copy configuration directory
+COPY --from=builder /build/conf ./conf
+
+# Copy web static files
+COPY --from=builder /build/web ./web
+
+# Create data directory
+RUN mkdir -p /app/data && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose port (default 7282)
+EXPOSE 7282
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:7282/health || exit 1
+
+# Start service
+ENTRYPOINT ["./uploader"]
+CMD ["--env=mainnet"]
+

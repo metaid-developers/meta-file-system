@@ -1,0 +1,72 @@
+# Indexer Service Dockerfile
+
+# Build stage
+FROM golang:1.24-alpine AS builder
+
+# Install necessary tools
+RUN apk add --no-cache git make
+
+# Set working directory
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build indexer service
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-w -s' -o indexer ./cmd/indexer
+
+# Runtime stage
+FROM alpine:latest
+
+# Install ca-certificates (for HTTPS requests))
+RUN apk --no-cache add ca-certificates tzdata
+
+# Set timezone to Shanghai
+ENV TZ=Asia/Shanghai
+
+# Create non-root user
+RUN addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from build stage
+COPY --from=builder /build/indexer .
+
+# Copy configuration directory (if needed))
+COPY --from=builder /build/conf ./conf
+
+# Copy web files
+COPY --from=builder /build/web ./web
+
+# Copy docs (swagger)
+COPY --from=builder /build/docs ./docs
+
+# Create data directories (before switching to appuser)
+RUN mkdir -p /app/data/files && \
+    mkdir -p /app/pebble_data && \
+    chmod -R 755 /app/pebble_data && \
+    chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /app/pebble_data
+
+# Switch to non-root user
+USER appuser
+
+# Expose port (default 7281)
+EXPOSE 7281
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:7281/health || exit 1
+
+# Start service
+ENTRYPOINT ["./indexer"]
+CMD ["--env=mainnet"]
+

@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Data
+data/
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+# docs/ - Keep docs folder as it contains swagger generated Go files
+*.md
+!README.md
+
+# Scripts
+scripts/
+
+# Config (will copy specific files)
+conf/conf_loc.yaml
+conf/conf_test.yaml
+
+# Others
+.DS_Store
+Thumbs.db
+

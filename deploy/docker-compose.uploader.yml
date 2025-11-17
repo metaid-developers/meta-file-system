@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # Uploader upload service
+  uploader:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.uploader
+    container_name: meta-file-system-uploader
+    restart: always
+    ports:
+      - "${UPLOADER_PORT:-7282}:7282"
+    environment:
+      - TZ=Asia/Shanghai
+    command: ["--env=${ENV:-mainnet}"]
+    volumes:
+      - ../conf:/app/conf:ro
+      - upload_data:/app/data
+    networks:
+      - meta-file-system-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7282/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  upload_data:
+    driver: local
+
+networks:
+  meta-file-system-network:
+    driver: bridge
+

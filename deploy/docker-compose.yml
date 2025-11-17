@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Indexer indexing service
+  indexer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.indexer
+    container_name: meta-file-system-indexer
+    restart: always
+    ports:
+      - "${INDEXER_PORT:-7281}:7281"
+    environment:
+      - TZ=Asia/Shanghai
+    command: ["--env=${ENV:-mainnet}"]
+    volumes:
+      - ../conf:/app/conf:ro
+      - indexer_data:/app/data
+    networks:
+      - meta-file-system-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7281/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Uploader upload service
+  uploader:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.uploader
+    container_name: meta-file-system-uploader
+    restart: always
+    ports:
+      - "${UPLOADER_PORT:-7282}:7282"
+    environment:
+      - TZ=Asia/Shanghai
+    command: ["--env=${ENV:-mainnet}"]
+    volumes:
+      - ../conf:/app/conf:ro
+      - upload_data:/app/data
+    networks:
+      - meta-file-system-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7282/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  indexer_data:
+    driver: local
+  upload_data:
+    driver: local
+
+networks:
+  meta-file-system-network:
+    driver: bridge
+

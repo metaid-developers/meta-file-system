@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Indexer indexing service
+  indexer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.indexer
+    container_name: meta-file-system-indexer
+    restart: always
+    ports:
+      - "${INDEXER_PORT:-7281}:7281"
+    environment:
+      - TZ=Asia/Shanghai
+    command: ["--env=${ENV:-mainnet}"]
+    volumes:
+      - ../conf:/app/conf:ro
+      - ../../indexer_pebble_data:/app/indexer_pebble_data
+    networks:
+      - meta-file-system-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7281/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  indexer_data:
+    driver: local
+
+networks:
+  meta-file-system-network:
+    driver: bridge
+    name: meta-file-system-indexer-network  # Independent network for indexer
+

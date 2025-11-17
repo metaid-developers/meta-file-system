@@ -1,0 +1,318 @@
+basePath: /api/v1
+definitions:
+  controller_handler.CommitUploadRequest:
+    properties:
+      fileId:
+        example: metaid_abc123
+        type: string
+      signedRawTx:
+        example: 0100000...
+        type: string
+    required:
+    - fileId
+    - signedRawTx
+    type: object
+  controller_handler.CommitUploadResponseData:
+    properties:
+      fileId:
+        example: metaid_abc123
+        type: string
+      message:
+        example: success
+        type: string
+      pinId:
+        example: abc123...i0
+        type: string
+      status:
+        example: success
+        type: string
+      txId:
+        example: abc123...
+        type: string
+    type: object
+  controller_handler.ConfigResponse:
+    properties:
+      maxFileSize:
+        example: 10485760
+        type: integer
+      swaggerBaseUrl:
+        example: localhost:7282
+        type: string
+    type: object
+  controller_handler.PreUploadResponseData:
+    properties:
+      calTxFee:
+        example: 1000
+        type: integer
+      calTxSize:
+        example: 500
+        type: integer
+      fileId:
+        example: metaid_abc123
+        type: string
+      fileMd5:
+        example: 5d41402abc4b2a76b9719d911017c592
+        type: string
+      filehash:
+        example: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+        type: string
+      message:
+        example: success
+        type: string
+      pinId:
+        example: abc123...i0
+        type: string
+      preTxRaw:
+        example: 0100000...
+        type: string
+      status:
+        example: pending
+        type: string
+      txId:
+        example: abc123...
+        type: string
+    type: object
+  meta-file-system_controller_respond.Response:
+    description: Unified API response structure
+    properties:
+      code:
+        example: 0
+        type: integer
+      data: {}
+      message:
+        example: success
+        type: string
+      processingTime:
+        example: 123
+        type: integer
+    type: object
+host: localhost:7282
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: Meta Media Upload Service API, provides file upload functionality
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Meta Media Uploader API
+  version: "1.0"
+paths:
+  /config:
+    get:
+      consumes:
+      - application/json
+      description: Get upload service configuration information, including max file
+        size and swagger base URL
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/controller_handler.ConfigResponse'
+              type: object
+      summary: Get configuration
+      tags:
+      - Configuration
+  /files/commit-upload:
+    post:
+      consumes:
+      - application/json
+      description: Submit signed transaction for broadcast
+      parameters:
+      - description: Commit upload request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.CommitUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Upload successful, return transaction ID and Pin ID
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/controller_handler.CommitUploadResponseData'
+              type: object
+        "400":
+          description: Parameter error or file not found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error or broadcast failed
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Commit upload
+      tags:
+      - File Upload
+  /files/direct-upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload file and add MetaID OP_RETURN output to existing PreTxHex,
+        then broadcast immediately. This is a one-step upload process that combines
+        building and broadcasting. Supports UTXO merge transaction for SIGHASH_SINGLE
+        compatibility.
+      parameters:
+      - description: File to upload
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: File path
+        in: formData
+        name: path
+        required: true
+        type: string
+      - description: Pre-transaction hex (signed, with inputs and outputs)
+        in: formData
+        name: preTxHex
+        required: true
+        type: string
+      - description: Merge transaction hex (optional, broadcasted before main transaction)
+        in: formData
+        name: mergeTxHex
+        type: string
+      - default: create
+        description: Operation type
+        in: formData
+        name: operation
+        type: string
+      - description: Content type
+        in: formData
+        name: contentType
+        type: string
+      - description: MetaID
+        in: formData
+        name: metaId
+        type: string
+      - description: Address (also used as change address if changeAddress is not
+          provided)
+        in: formData
+        name: address
+        type: string
+      - description: Change address (optional, defaults to address)
+        in: formData
+        name: changeAddress
+        type: string
+      - description: Fee rate (satoshis per byte, optional)
+        in: formData
+        name: feeRate
+        type: integer
+      - description: Total input amount in satoshis (optional, for automatic change
+          calculation)
+        in: formData
+        name: totalInputAmount
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Upload successful, return transaction ID and Pin ID
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/controller_handler.CommitUploadResponseData'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Direct upload file (one-step)
+      tags:
+      - File Upload
+  /files/pre-upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload file and generate unsigned transaction, return transaction
+        for client signing
+      parameters:
+      - description: File to upload
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: File path
+        in: formData
+        name: path
+        required: true
+        type: string
+      - default: create
+        description: Operation type
+        in: formData
+        name: operation
+        type: string
+      - description: Content type
+        in: formData
+        name: contentType
+        type: string
+      - description: Change address
+        in: formData
+        name: changeAddress
+        type: string
+      - description: MetaID
+        in: formData
+        name: metaId
+        type: string
+      - description: Address
+        in: formData
+        name: address
+        type: string
+      - default: 1
+        description: Fee rate
+        in: formData
+        name: feeRate
+        type: integer
+      - description: Output list json
+        in: formData
+        name: outputs
+        type: string
+      - description: Other output list json
+        in: formData
+        name: otherOutputs
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pre-upload successful, return transaction and file info
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/controller_handler.PreUploadResponseData'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Pre-upload file
+      tags:
+      - File Upload
+schemes:
+- http
+- https
+swagger: "2.0"

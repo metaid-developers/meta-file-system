@@ -1,0 +1,538 @@
+basePath: /api/v1
+definitions:
+  meta-file-system_controller_respond.IndexerAvatarListResponse:
+    properties:
+      avatars:
+        items:
+          $ref: '#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse'
+        type: array
+      has_more:
+        example: true
+        type: boolean
+      next_cursor:
+        example: 100
+        type: integer
+    type: object
+  meta-file-system_controller_respond.IndexerAvatarResponse:
+    properties:
+      address:
+        example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+        type: string
+      avatar:
+        example: indexer/avatar/mvc/xyz789/xyz789i0.jpg
+        type: string
+      block_height:
+        example: 12345
+        type: integer
+      chain_name:
+        example: mvc
+        type: string
+      content_type:
+        example: image/jpeg
+        type: string
+      created_at:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+      file_extension:
+        example: .jpg
+        type: string
+      file_hash:
+        example: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        type: string
+      file_md5:
+        example: d41d8cd98f00b204e9800998ecf8427e
+        type: string
+      file_size:
+        example: 102400
+        type: integer
+      file_type:
+        example: image
+        type: string
+      meta_id:
+        example: abc123def456...
+        type: string
+      pin_id:
+        description: ID            int64     `json:"id" example:"1"`
+        example: xyz789i0
+        type: string
+      timestamp:
+        example: 1699999999
+        type: integer
+      tx_id:
+        example: xyz789
+        type: string
+      updated_at:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+    type: object
+  meta-file-system_controller_respond.IndexerFileListResponse:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileResponse'
+        type: array
+      has_more:
+        example: true
+        type: boolean
+      next_cursor:
+        example: 100
+        type: integer
+    type: object
+  meta-file-system_controller_respond.IndexerFileResponse:
+    properties:
+      block_height:
+        example: 12345
+        type: integer
+      chain_name:
+        example: mvc
+        type: string
+      content_type:
+        example: image/jpeg
+        type: string
+      creator_address:
+        example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+        type: string
+      creator_meta_id:
+        example: abc123def456...
+        type: string
+      file_extension:
+        example: .jpg
+        type: string
+      file_hash:
+        example: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        type: string
+      file_md5:
+        example: d41d8cd98f00b204e9800998ecf8427e
+        type: string
+      file_name:
+        example: test.jpg
+        type: string
+      file_size:
+        example: 102400
+        type: integer
+      file_type:
+        example: image
+        type: string
+      operation:
+        example: create
+        type: string
+      owner_address:
+        example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+        type: string
+      owner_meta_id:
+        example: abc123def456...
+        type: string
+      path:
+        example: /file/test.jpg
+        type: string
+      pin_id:
+        description: ID             int64     `json:"id" example:"1"`
+        example: abc123def456i0
+        type: string
+      storage_path:
+        description: StorageType    string    `json:"storage_type" example:"oss"`
+        example: indexer/mvc/pinid123i0.jpg
+        type: string
+      timestamp:
+        example: 1699999999
+        type: integer
+      tx_id:
+        example: abc123def456789
+        type: string
+    type: object
+  meta-file-system_controller_respond.IndexerStatsResponse:
+    properties:
+      total_files:
+        example: 12345
+        type: integer
+    type: object
+  meta-file-system_controller_respond.IndexerSyncStatusResponse:
+    properties:
+      chain_name:
+        description: ID                int64     `json:"id" example:"1"`
+        example: mvc
+        type: string
+      created_at:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+      current_sync_height:
+        example: 12345
+        type: integer
+      latest_block_height:
+        example: 12350
+        type: integer
+      updated_at:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+    type: object
+  meta-file-system_controller_respond.Response:
+    description: Unified API response structure
+    properties:
+      code:
+        example: 0
+        type: integer
+      data: {}
+      message:
+        example: success
+        type: string
+      processingTime:
+        example: 123
+        type: integer
+    type: object
+host: localhost:7281
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: Meta Media Indexer Service API, provides file query and download functionality
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Meta Media Indexer API
+  version: "1.0"
+paths:
+  /avatars:
+    get:
+      consumes:
+      - application/json
+      description: Query avatar list with cursor pagination
+      parameters:
+      - default: 0
+        description: Cursor (last avatar ID)
+        in: query
+        name: cursor
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerAvatarListResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Query avatar list
+      tags:
+      - Indexer Avatar Query
+  /avatars/address/{address}:
+    get:
+      consumes:
+      - application/json
+      description: Query the latest avatar information by address
+      parameters:
+      - description: Address
+        in: path
+        name: address
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get latest avatar by address
+      tags:
+      - Indexer Avatar Query
+  /avatars/content/{pinId}:
+    get:
+      consumes:
+      - application/json
+      description: Get avatar content by PIN ID
+      parameters:
+      - description: PIN ID
+        in: path
+        name: pinId
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get avatar content
+      tags:
+      - Indexer Avatar Query
+  /avatars/metaid/{metaId}:
+    get:
+      consumes:
+      - application/json
+      description: Query the latest avatar information by MetaID
+      parameters:
+      - description: MetaID
+        in: path
+        name: metaId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get latest avatar by MetaID
+      tags:
+      - Indexer Avatar Query
+  /files:
+    get:
+      consumes:
+      - application/json
+      description: Query file list with cursor pagination
+      parameters:
+      - default: 0
+        description: Cursor (last file ID)
+        in: query
+        name: cursor
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileListResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Query file list
+      tags:
+      - Indexer File Query
+  /files/{pinId}:
+    get:
+      consumes:
+      - application/json
+      description: Query file details by PIN ID
+      parameters:
+      - description: PIN ID
+        in: path
+        name: pinId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get file by PIN ID
+      tags:
+      - Indexer File Query
+  /files/content/{pinId}:
+    get:
+      consumes:
+      - application/json
+      description: Get file content by PIN ID
+      parameters:
+      - description: PIN ID
+        in: path
+        name: pinId
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get file content
+      tags:
+      - Indexer File Query
+  /files/creator/{address}:
+    get:
+      consumes:
+      - application/json
+      description: Query file list by creator address with cursor pagination
+      parameters:
+      - description: Creator address
+        in: path
+        name: address
+        required: true
+        type: string
+      - default: 0
+        description: Cursor (last file ID)
+        in: query
+        name: cursor
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileListResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get files by creator address
+      tags:
+      - Indexer File Query
+  /files/metaid/{metaId}:
+    get:
+      consumes:
+      - application/json
+      description: Query file list by creator MetaID with cursor pagination
+      parameters:
+      - description: Creator MetaID
+        in: path
+        name: metaId
+        required: true
+        type: string
+      - default: 0
+        description: Cursor (last file ID)
+        in: query
+        name: cursor
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileListResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get files by creator MetaID
+      tags:
+      - Indexer File Query
+  /stats:
+    get:
+      consumes:
+      - application/json
+      description: Get indexer statistics (total files count, etc.)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerStatsResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get statistics
+      tags:
+      - Indexer Status
+  /status:
+    get:
+      consumes:
+      - application/json
+      description: Get indexer synchronization status (includes latest block height
+        from node)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerSyncStatusResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get sync status
+      tags:
+      - Indexer Status
+schemes:
+- http
+- https
+swagger: "2.0"

@@ -1,0 +1,43 @@
+# binary files
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# test files
+*.test
+*.out
+
+# dependency directories
+/vendor/
+/web/node_modules/
+/web/package-lock.json
+
+# IDE related
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# configuration files
+/conf/conf_*
+!conf/conf_example.yaml
+
+
+# data directories
+/data/
+
+# log files
+*.log
+
+# OS related
+.DS_Store
+Thumbs.db
+
+# temporary files
+tmp/
+temp/
+
+nginx.d
