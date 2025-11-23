@@ -53,7 +53,9 @@ func SetupUploadRouter(stor storage.Storage) *gin.Engine {
 		// File upload
 		v1.POST("/files/pre-upload", uploadHandler.PreUpload)
 		v1.POST("/files/commit-upload", uploadHandler.CommitUpload)
-		v1.POST("/files/direct-upload", uploadHandler.DirectUpload) // One-step upload (recommended)
+		v1.POST("/files/direct-upload", uploadHandler.DirectUpload)                    // One-step upload (recommended)
+		v1.POST("/files/estimate-chunked-upload", uploadHandler.EstimateChunkedUpload) // Estimate chunked upload fee
+		v1.POST("/files/chunked-upload", uploadHandler.ChunkedUpload)                  // Chunked file upload
 
 		// Configuration
 		v1.GET("/config", uploadHandler.GetConfig)

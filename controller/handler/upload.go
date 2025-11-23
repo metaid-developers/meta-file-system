@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
 	"strconv"
@@ -362,4 +363,124 @@ func (h *UploadHandler) GetConfig(c *gin.Context) {
 		MaxFileSize:    conf.Cfg.Uploader.MaxFileSize,
 		SwaggerBaseUrl: conf.Cfg.Uploader.SwaggerBaseUrl,
 	})
+}
+
+// EstimateChunkedUploadRequest estimate chunked upload request
+type EstimateChunkedUploadRequest struct {
+	FileName    string `json:"fileName" binding:"required" example:"example.jpg" description:"File name"`
+	Content     string `json:"content" binding:"required" description:"File content (base64 encoded string)"`
+	Path        string `json:"path" binding:"required" example:"/file" description:"MetaID path (base path, will auto-add /file/_chunk and /file/index)"`
+	ContentType string `json:"contentType" example:"image/jpeg" description:"File content type"`
+	FeeRate     int64  `json:"feeRate" example:"1" description:"Fee rate (optional, defaults to config)"`
+}
+
+// EstimateChunkedUpload estimate chunked upload fee
+// @Summary      Estimate chunked upload fee
+// @Description  Estimate the fee required for chunked file upload, including chunk count and fees for ChunkPreTxHex and IndexPreTxHex
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        request  body      EstimateChunkedUploadRequest  true  "Estimate chunked upload request"
+// @Success      200      {object}  respond.Response{data=upload_service.EstimateChunkedUploadResponse}  "Estimate successful"
+// @Failure      400      {object}  respond.Response  "Parameter error"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/estimate-chunked-upload [post]
+func (h *UploadHandler) EstimateChunkedUpload(c *gin.Context) {
+	var req EstimateChunkedUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respond.InvalidParam(c, err.Error())
+		return
+	}
+
+	// Decode base64 content
+	content, err := base64.StdEncoding.DecodeString(req.Content)
+	if err != nil {
+		respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+		return
+	}
+
+	// Convert to service request
+	serviceReq := &upload_service.EstimateChunkedUploadRequest{
+		FileName:    req.FileName,
+		Content:     content,
+		Path:        req.Path,
+		ContentType: req.ContentType,
+		FeeRate:     req.FeeRate,
+	}
+
+	// Estimate fee
+	resp, err := h.uploadService.EstimateChunkedUpload(serviceReq)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, resp)
+}
+
+// ChunkedUploadRequest chunked upload request
+type ChunkedUploadRequest struct {
+	MetaId        string `json:"metaId" binding:"required" example:"metaid_abc123" description:"MetaID"`
+	Address       string `json:"address" binding:"required" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" description:"User address"`
+	FileName      string `json:"fileName" binding:"required" example:"example.jpg" description:"File name"`
+	Content       string `json:"content" binding:"required" description:"File content (base64 encoded string)"`
+	Path          string `json:"path" binding:"required" example:"/file" description:"MetaID path (base path, will auto-add /file/_chunk and /file/index)"`
+	Operation     string `json:"operation" example:"create" description:"Operation type (create/update)"`
+	ContentType   string `json:"contentType" example:"image/jpeg" description:"File content type"`
+	ChunkPreTxHex string `json:"chunkPreTxHex" binding:"required" example:"0100000..." description:"Pre-built chunk funding transaction (with inputs, signNull)"`
+	IndexPreTxHex string `json:"indexPreTxHex" binding:"required" example:"0100000..." description:"Pre-built index transaction (with inputs, signNull)"`
+	MergeTxHex    string `json:"mergeTxHex" example:"0100000..." description:"Merge transaction hex (creates two UTXOs, broadcasted first if IsBroadcast is true)"`
+	FeeRate       int64  `json:"feeRate" example:"1" description:"Fee rate (optional, defaults to config)"`
+	IsBroadcast   bool   `json:"isBroadcast" example:"false" description:"Whether to broadcast transactions automatically"`
+}
+
+// ChunkedUpload chunked file upload
+// @Summary      Chunked file upload
+// @Description  Upload large file by splitting it into chunks, build transactions for chunks and index, optionally broadcast all transactions in order
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        request  body      ChunkedUploadRequest  true  "Chunked upload request"
+// @Success      200      {object}  respond.Response{data=upload_service.ChunkedUploadResponse}  "Upload successful"
+// @Failure      400      {object}  respond.Response  "Parameter error"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/chunked-upload [post]
+func (h *UploadHandler) ChunkedUpload(c *gin.Context) {
+	var req ChunkedUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respond.InvalidParam(c, err.Error())
+		return
+	}
+
+	// Decode base64 content
+	content, err := base64.StdEncoding.DecodeString(req.Content)
+	if err != nil {
+		respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+		return
+	}
+
+	// Convert to service request
+	serviceReq := &upload_service.ChunkedUploadRequest{
+		MetaId:        req.MetaId,
+		Address:       req.Address,
+		FileName:      req.FileName,
+		Content:       content,
+		Path:          req.Path,
+		Operation:     req.Operation,
+		ContentType:   req.ContentType,
+		ChunkPreTxHex: req.ChunkPreTxHex,
+		IndexPreTxHex: req.IndexPreTxHex,
+		MergeTxHex:    req.MergeTxHex,
+		FeeRate:       req.FeeRate,
+		IsBroadcast:   req.IsBroadcast,
+	}
+
+	// Upload file
+	resp, err := h.uploadService.ChunkedUpload(serviceReq)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, resp)
 }

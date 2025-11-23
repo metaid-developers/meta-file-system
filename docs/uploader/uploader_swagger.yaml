@@ -1,5 +1,48 @@
 basePath: /api/v1
 definitions:
+  controller_handler.ChunkedUploadRequest:
+    properties:
+      address:
+        example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+        type: string
+      chunkPreTxHex:
+        example: 0100000...
+        type: string
+      content:
+        type: string
+      contentType:
+        example: image/jpeg
+        type: string
+      feeRate:
+        example: 1
+        type: integer
+      fileName:
+        example: example.jpg
+        type: string
+      indexPreTxHex:
+        example: 0100000...
+        type: string
+      isBroadcast:
+        example: false
+        type: boolean
+      metaId:
+        example: metaid_abc123
+        type: string
+      operation:
+        example: create
+        type: string
+      path:
+        example: /file
+        type: string
+    required:
+    - address
+    - chunkPreTxHex
+    - content
+    - fileName
+    - indexPreTxHex
+    - metaId
+    - path
+    type: object
   controller_handler.CommitUploadRequest:
     properties:
       fileId:
@@ -38,6 +81,27 @@ definitions:
       swaggerBaseUrl:
         example: localhost:7282
         type: string
+    type: object
+  controller_handler.EstimateChunkedUploadRequest:
+    properties:
+      content:
+        type: string
+      contentType:
+        example: image/jpeg
+        type: string
+      feeRate:
+        example: 1
+        type: integer
+      fileName:
+        example: example.jpg
+        type: string
+      path:
+        example: /file
+        type: string
+    required:
+    - content
+    - fileName
+    - path
     type: object
   controller_handler.PreUploadResponseData:
     properties:
@@ -86,6 +150,78 @@ definitions:
         example: 123
         type: integer
     type: object
+  meta-file-system_service_upload_service.ChunkedUploadResponse:
+    properties:
+      chunkFundingTx:
+        description: 托管地址充值交易（构建完成，可直接签名/广播）
+        type: string
+      chunkNumber:
+        description: 分片数量
+        type: integer
+      chunkTxIds:
+        description: Chunk 交易 ID 列表（按顺序）
+        items:
+          type: string
+        type: array
+      chunkTxs:
+        description: Chunk 交易 hex 列表（按顺序）
+        items:
+          type: string
+        type: array
+      fileHash:
+        description: 文件 SHA256 hash
+        type: string
+      fileId:
+        description: 文件 ID
+        type: string
+      fileMd5:
+        description: 文件 MD5 hash
+        type: string
+      indexTx:
+        description: Index 交易 hex
+        type: string
+      indexTxId:
+        description: Index 交易 ID
+        type: string
+      message:
+        description: 消息
+        type: string
+      status:
+        description: 状态
+        type: string
+    type: object
+  meta-file-system_service_upload_service.EstimateChunkedUploadResponse:
+    properties:
+      chunkFees:
+        description: 每个 chunk 的费用
+        items:
+          type: integer
+        type: array
+      chunkNumber:
+        description: 分片数量
+        type: integer
+      chunkPerTxFee:
+        description: 每个 chunk 的费用
+        type: integer
+      chunkPreTxFee:
+        description: ChunkPreTxHex 需要的总费用（所有 chunk 费用之和）
+        type: integer
+      chunkSize:
+        description: 分片大小（字节）
+        type: integer
+      indexPreTxFee:
+        description: IndexPreTxHex 需要的费用
+        type: integer
+      message:
+        description: 消息
+        type: string
+      perChunkFee:
+        description: 每个 chunk 的平均费用
+        type: integer
+      totalFee:
+        description: 总费用（ChunkPreTxFee + IndexPreTxFee）
+        type: integer
+    type: object
 host: localhost:7282
 info:
   contact:
@@ -121,6 +257,42 @@ paths:
       summary: Get configuration
       tags:
       - Configuration
+  /files/chunked-upload:
+    post:
+      consumes:
+      - application/json
+      description: Upload large file by splitting it into chunks, build transactions
+        for chunks and index, optionally broadcast all transactions in order
+      parameters:
+      - description: Chunked upload request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.ChunkedUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Upload successful
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_service_upload_service.ChunkedUploadResponse'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Chunked file upload
+      tags:
+      - File Upload
   /files/commit-upload:
     post:
       consumes:
@@ -236,6 +408,42 @@ paths:
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
       summary: Direct upload file (one-step)
+      tags:
+      - File Upload
+  /files/estimate-chunked-upload:
+    post:
+      consumes:
+      - application/json
+      description: Estimate the fee required for chunked file upload, including chunk
+        count and fees for ChunkPreTxHex and IndexPreTxHex
+      parameters:
+      - description: Estimate chunked upload request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.EstimateChunkedUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Estimate successful
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_service_upload_service.EstimateChunkedUploadResponse'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Estimate chunked upload fee
       tags:
       - File Upload
   /files/pre-upload:

@@ -39,7 +39,7 @@ type File struct {
 	TxID        string `gorm:"uniqueIndex;type:varchar(64);not null" json:"tx_id"` // On-chain transaction ID
 	PinId       string `gorm:"index;type:varchar(255);not null" json:"pin_id"`     // Pin ID
 	Path        string `gorm:"index;type:varchar(255);not null" json:"path"`       // MetaID path
-	ContentType string `gorm:"type:varchar(100)" json:"content_type"`              // Content type
+	ContentType string `gorm:"type:varchar(100)" json:"content_type"`              // Content type   - metafile/index
 	StorageType string `gorm:"type:varchar(20)" json:"storage_type"`               // local/oss
 	StoragePath string `gorm:"type:varchar(500)" json:"storage_path"`              // Storage path
 	Operation   string `gorm:"type:varchar(20)" json:"operation"`                  // create/modify/revoke

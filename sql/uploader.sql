@@ -107,31 +107,31 @@ CREATE TABLE IF NOT EXISTS `tb_file_chunk` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='File chunk table';
 
 -- =============================================
--- Assistant table (tb_assistant)
+-- File assistent table (tb_file_assistent)
 -- =============================================
-CREATE TABLE IF NOT EXISTS `tb_assistant` (
+CREATE TABLE IF NOT EXISTS `tb_file_assistent` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key ID',
     
-    -- MetaID information
-    `meta_id` VARCHAR(80) NOT NULL COMMENT 'MetaID',
-    `address` VARCHAR(80) NOT NULL COMMENT 'Address',
+    -- User information
+    `meta_id` VARCHAR(255) NOT NULL COMMENT 'User MetaID',
+    `address` VARCHAR(100) NOT NULL COMMENT 'User address',
     
-    -- Assistant information
-    `assistant_private_key` VARCHAR(80) NOT NULL COMMENT 'Assistant private key',
-    `assistant_address` VARCHAR(80) NOT NULL COMMENT 'Assistant address',
-    `assistant_meta_id` VARCHAR(80) NOT NULL COMMENT 'Assistant MetaID',
+    -- Assistent information
+    `assistent_address` VARCHAR(100) NOT NULL COMMENT 'Assistent address (托管地址)',
+    `assistent_pri_hex` TEXT NOT NULL COMMENT 'Assistent private key (hex format, 托管地址私钥)',
+    
+    -- Status
+    `status` VARCHAR(20) DEFAULT 'success' COMMENT 'Status (success/failed)',
     
     -- Timestamps
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
-    `state` INT(11) DEFAULT 0 COMMENT 'Status (0:EXIST, 1:DELETED)',
     
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_meta_id` (`meta_id`),
+    KEY `idx_meta_id` (`meta_id`),
     KEY `idx_address` (`address`),
-    KEY `idx_assistant_address` (`assistant_address`),
-    KEY `idx_assistant_meta_id` (`assistant_meta_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Assistant table';
+    KEY `idx_assistent_address` (`assistent_address`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='File assistent table (文件托管助手表)';
 
 -- =============================================
 -- Index notes
@@ -155,4 +155,6 @@ CREATE TABLE IF NOT EXISTS `tb_assistant` (
 
 -- query by path and status
 -- ALTER TABLE tb_file ADD INDEX idx_path_status (path, status);
+
+
 

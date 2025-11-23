@@ -7,15 +7,17 @@ type IndexerFile struct {
 	ID int64 `gorm:"primaryKey;autoIncrement" json:"id"`
 
 	// MetaID related fields
-	PinID       string `gorm:"uniqueIndex;type:varchar(255);not null" json:"pin_id"` // PIN ID (txid + i + vout)
-	TxID        string `gorm:"index;type:varchar(64);not null" json:"tx_id"`         // Transaction ID
-	Vout        uint32 `gorm:"type:int" json:"vout"`                                 // Output index
-	Path        string `gorm:"index;type:varchar(500);not null" json:"path"`         // MetaID path
-	Operation   string `gorm:"type:varchar(20)" json:"operation"`                    // create/modify/revoke
-	ParentPath  string `gorm:"type:varchar(500)" json:"parent_path"`                 // Parent path
-	Encryption  string `gorm:"type:varchar(50)" json:"encryption"`                   // Encryption method
-	Version     string `gorm:"type:varchar(50)" json:"version"`                      // Version
-	ContentType string `gorm:"type:varchar(100)" json:"content_type"`                // Content type
+	PinID       string    `gorm:"uniqueIndex;type:varchar(255);not null" json:"pin_id"` // PIN ID (txid + i + vout)
+	TxID        string    `gorm:"index;type:varchar(64);not null" json:"tx_id"`         // Transaction ID
+	Vout        uint32    `gorm:"type:int" json:"vout"`                                 // Output index
+	Path        string    `gorm:"index;type:varchar(500);not null" json:"path"`         // MetaID path
+	Operation   string    `gorm:"type:varchar(20)" json:"operation"`                    // create/modify/revoke
+	ParentPath  string    `gorm:"type:varchar(500)" json:"parent_path"`                 // Parent path
+	Encryption  string    `gorm:"type:varchar(50)" json:"encryption"`                   // Encryption method
+	Version     string    `gorm:"type:varchar(50)" json:"version"`                      // Version
+	ContentType string    `gorm:"type:varchar(100)" json:"content_type"`                // Content type - metafile/index
+	Data        string    `gorm:"type:text" json:"data"`                                // Data - for metafile/index
+	ChunkType   ChunkType `gorm:"type:varchar(20)" json:"chunk_type"`                   // single/multi
 
 	// File related fields
 	FileType      string `gorm:"type:varchar(20)" json:"file_type"`      // File type (image/video/audio/document/other)

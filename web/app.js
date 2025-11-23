@@ -394,7 +394,7 @@ function initEventListeners() {
     // Upload button
     if (uploadBtn) {
         // uploadBtn.addEventListener('click', startUpload);
-        uploadBtn.addEventListener('click', startUpload2);
+        uploadBtn.addEventListener('click', startUpload3);
     } else {
         console.error('❌ uploadBtn element not found!');
     }
@@ -828,6 +828,705 @@ async function startUpload() {
         uploadBtn.disabled = false;
         uploadBtn.textContent = '🚀 Start Upload to Chain';
         progress.classList.remove('show');
+    }
+}
+
+// Start upload flow (Smart Upload - Auto choose chunked or direct based on file size)
+async function startUpload3() {
+    // Validate wallet connection
+    if (!walletConnected) {
+        showNotification('⚠️ Please connect Metalet Wallet', 'warning');
+        addLog('❌ Wallet not connected', 'error');
+        return;
+    }
+    
+    // Validate file selection
+    if (!selectedFile) {
+        showNotification('⚠️ Please select file to upload', 'warning');
+        addLog('❌ No file selected', 'error');
+        return;
+    }
+    
+    // Check file size (10MB = 10485760 bytes)
+    const fileSizeLimit = 10 * 1024 * 1024; // 10MB
+    const useChunkedUpload = selectedFile.size > fileSizeLimit;
+    
+    if (useChunkedUpload) {
+        addLog(`📦 Large file detected (${formatFileSize(selectedFile.size)}), using chunked upload...`, 'info');
+        await startChunkedUpload();
+    } else {
+        addLog(`📄 Small file (${formatFileSize(selectedFile.size)}), using direct upload...`, 'info');
+        await startUpload2();
+    }
+}
+
+// Start chunked upload flow
+async function startChunkedUpload() {
+    try {
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Preparing...';
+        progress.classList.add('show');
+        
+        showNotification('Starting Chunked Upload...', 'info');
+        
+        // Step 1: Read file and convert to base64
+        updateProgress(10, 'Step 1/6: Reading file...');
+        const fileContent = await readFileAsBase64(selectedFile);
+        addLog(`✅ File read successfully (${formatFileSize(selectedFile.size)})`, 'success');
+        
+        // Step 2: Estimate chunked upload fee
+        updateProgress(20, 'Step 2/6: Estimating chunked upload fee...');
+        const estimateResult = await estimateChunkedUploadFee(fileContent);
+        addLog(`✅ Fee estimation completed`, 'success');
+        addLog(`📊 Chunks: ${estimateResult.chunkNumber}, Total fee: ${formatSatoshis(estimateResult.totalFee)}`, 'info');
+        
+        // Step 3: Show confirmation dialog with chunk details
+        updateProgress(30, 'Step 3/6: Showing confirmation...');
+        const confirmed = await showChunkedUploadConfirmation(estimateResult);
+        if (!confirmed) {
+            addLog('⚠️ User cancelled chunked upload', 'warning');
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = '🚀 Start Upload to Chain';
+            progress.classList.remove('show');
+            return;
+        }
+        
+        // Step 4: Get UTXOs for merge transaction
+        updateProgress(40, 'Step 4/7: Getting UTXOs...');
+        
+        // Calculate fees for building PreTx transactions
+        // PreTx size estimation: base + inputs + outputs (approximate)
+        const preTxBaseSize = 200; // Base transaction overhead
+        const preTxInputSize = 150; // Per input with signature
+        const preTxOutputSize = 34; // Per output
+        const feeRate = Number(document.getElementById('feeRateInput').value) || 1;
+        
+        // Estimate chunk PreTx size (1 input, no outputs yet - backend will add)
+        const chunkPreTxSize = preTxBaseSize + preTxInputSize;
+        const chunkPreTxBuildFee = Math.ceil(chunkPreTxSize * feeRate);
+        
+        // Estimate index PreTx size (1 input, no outputs yet - backend will add)
+        const indexPreTxSize = preTxBaseSize + preTxInputSize;
+        const indexPreTxBuildFee = Math.ceil(indexPreTxSize * feeRate);
+        
+        // Calculate total required amount for merge transaction
+        // chunkPreTxOutput = chunkPreTxFee + chunkPreTxBuildFee
+        // indexPreTxOutput = indexPreTxFee + indexPreTxBuildFee
+        // mergeTxFee = merge transaction fee
+        const chunkPreTxOutputAmount = estimateResult.chunkPreTxFee + chunkPreTxBuildFee;
+        const indexPreTxOutputAmount = estimateResult.indexPreTxFee + indexPreTxBuildFee;
+        
+        // Estimate merge transaction fee
+        const mergeTxBaseSize = 200;
+        const mergeTxInputSize = 150;
+        const mergeTxOutputSize = 34;
+        const estimatedMergeTxInputs = 2; // Assume 2 inputs
+        const mergeTxSize = mergeTxBaseSize + (mergeTxInputSize * estimatedMergeTxInputs) + (mergeTxOutputSize * 2); // 2 outputs
+        const mergeTxFee = Math.ceil(mergeTxSize * feeRate);
+        
+        const totalRequiredAmount = chunkPreTxOutputAmount + indexPreTxOutputAmount + mergeTxFee;
+        
+        const allUtxos = await getWalletUTXOs(totalRequiredAmount);
+        addLog(`✅ Got ${allUtxos.utxos.length} UTXO(s), total: ${allUtxos.totalAmount} satoshis`, 'success');
+        addLog(`💰 Chunk PreTx output: ${formatSatoshis(chunkPreTxOutputAmount)}`, 'info');
+        addLog(`💰 Index PreTx output: ${formatSatoshis(indexPreTxOutputAmount)}`, 'info');
+        addLog(`💰 Merge tx fee: ${formatSatoshis(mergeTxFee)}`, 'info');
+        
+        // Step 5: Build merge transaction with two outputs
+        updateProgress(50, 'Step 5/7: Building merge transaction...');
+        showNotification('Please confirm merge transaction in wallet...', 'info');
+        
+        const mergeResult = await buildChunkedUploadMergeTx(
+            allUtxos,
+            chunkPreTxOutputAmount,
+            indexPreTxOutputAmount,
+            mergeTxFee
+        );
+        
+        addLog(`✅ Merge transaction built: ${mergeResult.mergeTxId}`, 'success');
+        addLog(`📦 Chunk PreTx UTXO: output ${mergeResult.chunkPreTxOutputIndex}, ${formatSatoshis(chunkPreTxOutputAmount)}`, 'success');
+        addLog(`📦 Index PreTx UTXO: output ${mergeResult.indexPreTxOutputIndex}, ${formatSatoshis(indexPreTxOutputAmount)}`, 'success');
+        
+        // Step 6: Build and sign pre-transactions using merge tx outputs
+        updateProgress(60, 'Step 6/7: Building and signing pre-transactions...');
+        showNotification('Please confirm pre-transactions in wallet...', 'info');
+        
+        // Build chunk funding pre-tx using merge tx output
+        const chunkPreTxUtxo = {
+            utxos: [{
+                txId: mergeResult.mergeTxId,
+                outputIndex: mergeResult.chunkPreTxOutputIndex,
+                script: mergeResult.chunkPreTxScript,
+                satoshis: chunkPreTxOutputAmount
+            }],
+            totalAmount: chunkPreTxOutputAmount
+        };
+        const chunkPreTxHex = await buildChunkFundingPreTx(chunkPreTxUtxo, estimateResult.chunkPreTxFee);
+        addLog(`✅ Chunk funding pre-tx signed`, 'success');
+        
+        // Build index pre-tx using merge tx output
+        const indexPreTxUtxo = {
+            utxos: [{
+                txId: mergeResult.mergeTxId,
+                outputIndex: mergeResult.indexPreTxOutputIndex,
+                script: mergeResult.indexPreTxScript,
+                satoshis: indexPreTxOutputAmount
+            }],
+            totalAmount: indexPreTxOutputAmount
+        };
+        const indexPreTxHex = await buildIndexPreTx(indexPreTxUtxo, estimateResult.indexPreTxFee);
+        addLog(`✅ Index pre-tx signed`, 'success');
+        
+        // Step 7: Chunked upload (build chunk transactions and index transaction)
+        updateProgress(80, 'Step 7/7: Uploading chunks to chain...');
+        const uploadResult = await chunkedUpload(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
+        
+        // Completed
+        updateProgress(100, 'Upload completed!');
+        addLog(`✅ File uploaded successfully! Index TxID: ${uploadResult.indexTxId}`, 'success');
+        showNotification(`🎉 File uploaded successfully!`, 'success');
+        
+        // Show links
+        showUploadSuccessLinks(uploadResult.indexTxId, uploadResult.indexTxId + 'i0');
+        
+        // Show buzz section after successful upload
+        console.log('📝 About to show buzz section with pinId:', uploadResult.indexTxId + 'i0');
+        showBuzzSection(uploadResult.indexTxId + 'i0');
+        
+        // Reset button state on success
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = '🚀 Start Upload to Chain';
+        progress.classList.remove('show');
+        
+    } catch (error) {
+        console.error('❌ Chunked upload failed:', error);
+        addLog(`❌ Chunked upload failed: ${error.message}`, 'error');
+        
+        // Show different hints based on error type
+        if (error.message && error.message.includes('user cancelled')) {
+            showNotification('Upload operation cancelled', 'warning');
+        } else {
+            showNotification('Upload failed: ' + error.message, 'error');
+        }
+        
+        // Reset button state on error
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = '🚀 Start Upload to Chain';
+        progress.classList.remove('show');
+    }
+}
+
+// Read file as base64
+function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            // Remove data URL prefix (e.g., "data:image/jpeg;base64,")
+            const base64 = reader.result.split(',')[1] || reader.result;
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// Estimate chunked upload fee
+async function estimateChunkedUploadFee(fileContentBase64) {
+    try {
+        addLog('Calling EstimateChunkedUpload API...', 'info');
+        
+        const path = document.getElementById('pathInput').value;
+        const contentType = buildContentType(selectedFile);
+        
+        const requestBody = {
+            fileName: selectedFile.name,
+            content: fileContentBase64,
+            path: path,
+            contentType: contentType,
+            feeRate: Number(document.getElementById('feeRateInput').value) || 1
+        };
+        
+        const response = await fetch(`${API_BASE}/api/v1/files/estimate-chunked-upload`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.code !== 0) {
+            throw new Error(result.message);
+        }
+        
+        addLog(`✅ Estimate successful`, 'success');
+        return result.data;
+    } catch (error) {
+        console.error('❌ Failed to estimate chunked upload fee:', error);
+        throw new Error(`Failed to estimate fee: ${error.message}`);
+    }
+}
+
+// Show chunked upload confirmation dialog
+function showChunkedUploadConfirmation(estimateResult) {
+    return new Promise((resolve) => {
+        // Create modal dialog
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
+        
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        `;
+        
+        dialog.innerHTML = `
+            <h2 style="margin-top: 0; color: #333;">📦 Chunked Upload Confirmation</h2>
+            <div style="margin: 20px 0;">
+                <div style="margin: 10px 0;">
+                    <strong>📊 File Information:</strong>
+                    <ul style="margin: 5px 0; padding-left: 20px;">
+                        <li>File Name: ${selectedFile.name}</li>
+                        <li>File Size: ${formatFileSize(selectedFile.size)}</li>
+                        <li>Chunk Size: ${formatFileSize(estimateResult.chunkSize)}</li>
+                        <li>Number of Chunks: ${estimateResult.chunkNumber}</li>
+                    </ul>
+                </div>
+                <div style="margin: 10px 0;">
+                    <strong>💰 Fee Information:</strong>
+                    <ul style="margin: 5px 0; padding-left: 20px;">
+                        <li>Chunk Funding Fee: ${formatSatoshis(estimateResult.chunkPreTxFee)}</li>
+                        <li>Index Transaction Fee: ${formatSatoshis(estimateResult.indexPreTxFee)}</li>
+                        <li>Total Fee: ${formatSatoshis(estimateResult.totalFee)}</li>
+                        <li>Per Chunk Fee: ${formatSatoshis(estimateResult.perChunkFee)}</li>
+                    </ul>
+                </div>
+                <div style="margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 6px;">
+                    <strong>ℹ️ Note:</strong>
+                    <p style="margin: 5px 0; font-size: 14px; color: #666;">
+                        This large file will be split into ${estimateResult.chunkNumber} chunks. 
+                        You need to confirm ${estimateResult.chunkNumber + 2} transactions:
+                        <br>1. Chunk funding transaction (${estimateResult.chunkNumber} outputs)
+                        <br>2. ${estimateResult.chunkNumber} chunk transactions
+                        <br>3. Index transaction
+                    </p>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button id="cancelChunkedUpload" style="
+                    padding: 10px 20px;
+                    background: #ccc;
+                    color: #333;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                ">Cancel</button>
+                <button id="confirmChunkedUpload" style="
+                    padding: 10px 20px;
+                    background: #28a745;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: bold;
+                ">Confirm & Upload</button>
+            </div>
+        `;
+        
+        modal.appendChild(dialog);
+        document.body.appendChild(modal);
+        
+        // Handle button clicks
+        document.getElementById('confirmChunkedUpload').addEventListener('click', () => {
+            document.body.removeChild(modal);
+            resolve(true);
+        });
+        
+        document.getElementById('cancelChunkedUpload').addEventListener('click', () => {
+            document.body.removeChild(modal);
+            resolve(false);
+        });
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+                resolve(false);
+            }
+        });
+    });
+}
+
+// Build merge transaction for chunked upload (creates two outputs for chunkPreTx and indexPreTx)
+async function buildChunkedUploadMergeTx(utxoData, chunkPreTxOutputAmount, indexPreTxOutputAmount, mergeTxFee) {
+    try {
+        addLog('Building merge transaction for chunked upload...', 'info');
+        
+        const metaContract = window.metaContract;
+        if (!metaContract) {
+            throw new Error('meta-contract library not loaded');
+        }
+        
+        const mvc = metaContract.mvc;
+        const TxComposer = metaContract.TxComposer;
+        
+        // Create merge transaction with two outputs
+        const mergeTx = new mvc.Transaction();
+        mergeTx.version = 10;
+        
+        // Add inputs from UTXOs
+        for (const utxo of utxoData.utxos) {
+            mergeTx.from({
+                txId: utxo.txId,
+                outputIndex: utxo.outputIndex,
+                script: utxo.script,
+                satoshis: utxo.satoshis
+            });
+        }
+        
+        // Add two outputs: one for chunk PreTx, one for index PreTx
+        mergeTx.to(currentAddress, chunkPreTxOutputAmount);
+        mergeTx.to(currentAddress, indexPreTxOutputAmount);
+        
+        addLog(`📤 Merge transaction: ${chunkPreTxOutputAmount} sats for chunk, ${indexPreTxOutputAmount} sats for index`, 'info');
+        
+        // Use pay method to sign and broadcast (or just sign)
+        const wallet = getWallet();
+        if (!wallet || typeof wallet.pay !== 'function') {
+            throw new Error('Wallet does not support pay method');
+        }
+        
+        // Create TxComposer
+        const txComposer = new TxComposer(mergeTx);
+        const txComposerSerialize = txComposer.serialize();
+        
+        // Build pay params
+        const feeRate = Number(document.getElementById('feeRateInput').value) || 1;
+        const payParams = {
+            transactions: [
+                {
+                    txComposer: txComposerSerialize,
+                    message: 'Merge UTXOs for chunked upload',
+                }
+            ],
+            feeb: feeRate,
+        };
+        
+        addLog('📡 Calling pay method to merge UTXOs...', 'info');
+        const payResult = await wallet.pay(payParams);
+        
+        if (!payResult || !payResult.payedTransactions || payResult.payedTransactions.length === 0) {
+            throw new Error('Pay method returned invalid result');
+        }
+        
+        // Deserialize the payed transaction
+        const payedTxComposerStr = payResult.payedTransactions[0];
+        const payedTxComposer = TxComposer.deserialize(payedTxComposerStr);
+        
+        // Get signed transaction hex
+        const signedMergeTxHex = payedTxComposer.getRawHex();
+        const mergeTxId = payedTxComposer.getTxId();
+        
+        addLog('✅ Merge transaction created and signed', 'success');
+        
+        // Parse the transaction to get output info
+        const parsedMergeTx = new mvc.Transaction(signedMergeTxHex);
+        
+        // Find outputs by matching amounts (pay method may add change output, so order may vary)
+        let chunkPreTxOutputIndex = -1;
+        let indexPreTxOutputIndex = -1;
+        let chunkPreTxScript = null;
+        let indexPreTxScript = null;
+        
+        // Tolerance for amount matching (due to fee calculation differences)
+        const amountTolerance = 1000; // 1000 satoshis tolerance
+        
+        // First pass: find outputs by exact or near amount match
+        for (let i = 0; i < parsedMergeTx.outputs.length; i++) {
+            const output = parsedMergeTx.outputs[i];
+            const outputScript = output.script.toHex();
+            const outputAmount = output.satoshis;
+            
+            // Check if this output is to our address
+            try {
+                const addr = output.script.toAddress(mvc.Networks.livenet);
+                if (addr && addr.toString() === currentAddress) {
+                    // Match chunk PreTx output by amount
+                    if (chunkPreTxOutputIndex === -1 && 
+                        Math.abs(outputAmount - chunkPreTxOutputAmount) <= amountTolerance) {
+                        chunkPreTxOutputIndex = i;
+                        chunkPreTxScript = outputScript;
+                        addLog(`✅ Found chunk PreTx output at index ${i}: ${outputAmount} sats (expected: ${chunkPreTxOutputAmount})`, 'success');
+                    }
+                    // Match index PreTx output by amount
+                    else if (indexPreTxOutputIndex === -1 && 
+                             Math.abs(outputAmount - indexPreTxOutputAmount) <= amountTolerance) {
+                        indexPreTxOutputIndex = i;
+                        indexPreTxScript = outputScript;
+                        addLog(`✅ Found index PreTx output at index ${i}: ${outputAmount} sats (expected: ${indexPreTxOutputAmount})`, 'success');
+                    }
+                }
+            } catch (e) {
+                // Not a standard P2PKH output, skip
+                continue;
+            }
+        }
+        
+        // Fallback: if we couldn't find by amount, use first two outputs to our address
+        if (chunkPreTxOutputIndex === -1 || indexPreTxOutputIndex === -1) {
+            addLog('⚠️ Could not match outputs by amount, trying fallback...', 'warning');
+            let foundOutputs = [];
+            for (let i = 0; i < parsedMergeTx.outputs.length; i++) {
+                const output = parsedMergeTx.outputs[i];
+                try {
+                    const addr = output.script.toAddress(mvc.Networks.livenet);
+                    if (addr && addr.toString() === currentAddress) {
+                        foundOutputs.push({ index: i, script: output.script.toHex(), amount: output.satoshis });
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            
+            if (foundOutputs.length >= 2) {
+                // Use first two outputs to our address
+                chunkPreTxOutputIndex = foundOutputs[0].index;
+                chunkPreTxScript = foundOutputs[0].script;
+                indexPreTxOutputIndex = foundOutputs[1].index;
+                indexPreTxScript = foundOutputs[1].script;
+                addLog(`⚠️ Using first two outputs: chunk=${chunkPreTxOutputIndex}, index=${indexPreTxOutputIndex}`, 'warning');
+            } else {
+                throw new Error(`Merge transaction does not have enough outputs to our address. Found: ${foundOutputs.length}, need: 2`);
+            }
+        }
+        
+        addLog(`✅ Chunk PreTx output: index ${chunkPreTxOutputIndex}, amount ${parsedMergeTx.outputs[chunkPreTxOutputIndex].satoshis}`, 'success');
+        addLog(`✅ Index PreTx output: index ${indexPreTxOutputIndex}, amount ${parsedMergeTx.outputs[indexPreTxOutputIndex].satoshis}`, 'success');
+        
+        return {
+            mergeTxId: mergeTxId,
+            mergeTxHex: signedMergeTxHex,
+            chunkPreTxOutputIndex: chunkPreTxOutputIndex,
+            indexPreTxOutputIndex: indexPreTxOutputIndex,
+            chunkPreTxScript: chunkPreTxScript,
+            indexPreTxScript: indexPreTxScript
+        };
+        
+    } catch (error) {
+        console.error('❌ Failed to build merge transaction:', error);
+        throw new Error(`Failed to build merge transaction: ${error.message}`);
+    }
+}
+
+// Build chunk funding pre-tx (multiple outputs to assistent address)
+async function buildChunkFundingPreTx(utxoData, totalChunkFee) {
+    try {
+        addLog('Building chunk funding pre-transaction...', 'info');
+        
+        // Build a transaction with inputs signed with signNull
+        // Backend will add multiple outputs to assistent address
+        const metaContract = window.metaContract;
+        if (!metaContract) {
+            throw new Error('meta-contract library not loaded');
+        }
+        
+        const mvc = metaContract.mvc;
+        
+        // Create transaction with inputs only (no outputs - backend will add them)
+        const tx = new mvc.Transaction();
+        tx.version = 10;
+        
+        // Add inputs from UTXOs
+        for (const utxo of utxoData.utxos) {
+            tx.from({
+                txId: utxo.txId,
+                outputIndex: utxo.outputIndex,
+                script: utxo.script,
+                satoshis: utxo.satoshis
+            });
+        }
+        
+        // Sign with signNull (SIGHASH_NONE | SIGHASH_ANYONECANPAY = 0x80 | 0x40 = 0xC0)
+        const wallet = getWallet();
+        if (!wallet || typeof wallet.signTransaction !== 'function') {
+            throw new Error('Wallet does not support signTransaction');
+        }
+        
+        // Sign each input with signNull
+        for (let i = 0; i < utxoData.utxos.length; i++) {
+            const utxo = utxoData.utxos[i];
+            const signResult = await wallet.signTransaction({
+                transaction: {
+                    txHex: tx.toString(),
+                    address: currentAddress,
+                    inputIndex: i,
+                    scriptHex: utxo.script,
+                    satoshis: utxo.satoshis,
+                    sigtype: 0x2 | 0x40 // SIGHASH_NONE | SIGHASH_ForK_id
+                }
+            });
+            
+            const sig = signResult.signature.sig;
+            const publicKey = signResult.signature.publicKey;
+            const unlockingScript = mvc.Script.buildPublicKeyHashIn(
+                publicKey,
+                mvc.crypto.Signature.fromTxFormat(Buffer.from(sig, 'hex')).toDER(),
+                0x2 | 0x40
+            );
+            tx.inputs[i].setScript(unlockingScript);
+        }
+        
+        const signedTxHex = tx.toString();
+        addLog('✅ Chunk funding pre-tx signed (signNull)', 'success');
+        return signedTxHex;
+        
+    } catch (error) {
+        console.error('❌ Failed to build chunk funding pre-tx:', error);
+        throw new Error(`Failed to build chunk funding pre-tx: ${error.message}`);
+    }
+}
+
+// Build index pre-tx
+async function buildIndexPreTx(utxoData, indexFee) {
+    try {
+        addLog('Building index pre-transaction...', 'info');
+        
+        // Build a transaction with inputs signed with signNull
+        // Backend will add OP_RETURN output and change output
+        const metaContract = window.metaContract;
+        if (!metaContract) {
+            throw new Error('meta-contract library not loaded');
+        }
+        
+        const mvc = metaContract.mvc;
+        
+        const tx = new mvc.Transaction();
+        tx.version = 10;
+        
+        // Add inputs from UTXOs
+        for (const utxo of utxoData.utxos) {
+            tx.from({
+                txId: utxo.txId,
+                outputIndex: utxo.outputIndex,
+                script: utxo.script,
+                satoshis: utxo.satoshis
+            });
+        }
+        
+        // No outputs yet - backend will add OP_RETURN and change output
+        const wallet = getWallet();
+        if (!wallet || typeof wallet.signTransaction !== 'function') {
+            throw new Error('Wallet does not support signTransaction');
+        }
+        
+        // Sign each input with signNull
+        for (let i = 0; i < utxoData.utxos.length; i++) {
+            const utxo = utxoData.utxos[i];
+            const signResult = await wallet.signTransaction({
+                transaction: {
+                    txHex: tx.toString(),
+                    address: currentAddress,
+                    inputIndex: i,
+                    scriptHex: utxo.script,
+                    satoshis: utxo.satoshis,
+                    sigtype: 0x2 | 0x40 // SIGHASH_NONE | SIGHASH_ForK_id | SIGHASH_ANYONECANPAY
+                }
+            });
+            
+            const sig = signResult.signature.sig;
+            const publicKey = signResult.signature.publicKey;
+            const unlockingScript = mvc.Script.buildPublicKeyHashIn(
+                publicKey,
+                mvc.crypto.Signature.fromTxFormat(Buffer.from(sig, 'hex')).toDER(),
+                0x2 | 0x40
+            );
+            tx.inputs[i].setScript(unlockingScript);
+        }
+        
+        const signedTxHex = tx.toString();
+        addLog('✅ Index pre-tx signed (signNull)', 'success');
+        return signedTxHex;
+        
+    } catch (error) {
+        console.error('❌ Failed to build index pre-tx:', error);
+        throw new Error(`Failed to build index pre-tx: ${error.message}`);
+    }
+}
+
+// Chunked upload
+async function chunkedUpload(fileContentBase64, chunkPreTxHex, indexPreTxHex, mergeTxHex) {
+    try {
+        addLog('Calling ChunkedUpload API...', 'info');
+        
+        const path = document.getElementById('pathInput').value;
+        const contentType = buildContentType(selectedFile);
+        const metaId = await calculateMetaID(currentAddress);
+        
+        const requestBody = {
+            metaId: metaId,
+            address: currentAddress,
+            fileName: selectedFile.name,
+            content: fileContentBase64,
+            path: path,
+            operation: document.getElementById('operationSelect').value || 'create',
+            contentType: contentType,
+            chunkPreTxHex: chunkPreTxHex,
+            indexPreTxHex: indexPreTxHex,
+            mergeTxHex: mergeTxHex, // 合并交易 hex，用于广播
+            feeRate: Number(document.getElementById('feeRateInput').value) || 1,
+            isBroadcast: true // Auto broadcast
+        };
+        
+        const response = await fetch(`${API_BASE}/api/v1/files/chunked-upload`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.code !== 0) {
+            throw new Error(result.message);
+        }
+        
+        addLog(`✅ ChunkedUpload success!`, 'success');
+        addLog(`📝 Index TxID: ${result.data.indexTxId}`, 'success');
+        addLog(`📊 Status: ${result.data.status}`, 'success');
+        
+        return result.data;
+    } catch (error) {
+        console.error('❌ ChunkedUpload failed:', error);
+        throw new Error(`ChunkedUpload failed: ${error.message}`);
     }
 }
 

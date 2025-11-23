@@ -23,6 +23,12 @@ type Database interface {
 	UpdateIndexerUserAvatar(avatar *model.IndexerUserAvatar) error
 	ListIndexerUserAvatarsWithCursor(cursor int64, size int) ([]*model.IndexerUserAvatar, error)
 
+	// IndexerFileChunk operations
+	CreateIndexerFileChunk(chunk *model.IndexerFileChunk) error
+	GetIndexerFileChunkByPinID(pinID string) (*model.IndexerFileChunk, error)
+	GetIndexerFileChunksByParentPinID(parentPinID string) ([]*model.IndexerFileChunk, error)
+	UpdateIndexerFileChunk(chunk *model.IndexerFileChunk) error
+
 	// IndexerSyncStatus operations
 	CreateOrUpdateIndexerSyncStatus(status *model.IndexerSyncStatus) error
 	GetIndexerSyncStatusByChainName(chainName string) (*model.IndexerSyncStatus, error)

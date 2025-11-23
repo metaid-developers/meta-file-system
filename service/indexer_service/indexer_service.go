@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"meta-file-system/indexer"
 	"meta-file-system/model"
 	"meta-file-system/model/dao"
+	"meta-file-system/service/common_service/metaid_protocols"
 	"meta-file-system/storage"
 )
 
@@ -22,6 +24,7 @@ type IndexerService struct {
 	scanner              *indexer.BlockScanner
 	fileDAO              *dao.FileDAO
 	indexerFileDAO       *dao.IndexerFileDAO
+	indexerFileChunkDAO  *dao.IndexerFileChunkDAO
 	indexerUserAvatarDAO *dao.IndexerUserAvatarDAO
 	syncStatusDAO        *dao.IndexerSyncStatusDAO
 	storage              storage.Storage
@@ -99,6 +102,7 @@ func NewIndexerServiceWithChain(storage storage.Storage, chainType indexer.Chain
 		scanner:              scanner,
 		fileDAO:              dao.NewFileDAO(),
 		indexerFileDAO:       dao.NewIndexerFileDAO(),
+		indexerFileChunkDAO:  dao.NewIndexerFileChunkDAO(),
 		indexerUserAvatarDAO: dao.NewIndexerUserAvatarDAO(),
 		syncStatusDAO:        dao.NewIndexerSyncStatusDAO(),
 		storage:              storage,
@@ -185,8 +189,43 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 
 	// Process each PIN in the transaction
 	for _, metaData := range metaDataTx.MetaIDData {
-		// Check if this is a file PIN
-		if isFilePath(metaData.Path) {
+		// Check if this is a chunk or index PIN (for large file splitting)
+		log.Printf("Processing PIN: %s (path: %s, operation: %s, content type: %s)",
+			metaData.PinID, metaData.Path, metaData.Operation, metaData.ContentType)
+		if isChunkPath(metaData.Path) && isChunkContentType(metaData.ContentType) {
+			log.Printf("Processing chunk PIN: %s (path: %s, operation: %s)",
+				metaData.PinID, metaData.Path, metaData.Operation)
+
+			// Check if already exists
+			existingChunk, err := s.indexerFileChunkDAO.GetByPinID(metaData.PinID)
+			if err == nil && existingChunk != nil {
+				log.Printf("Chunk PIN already indexed: %s", metaData.PinID)
+				continue
+			}
+
+			// Process chunk content
+			if err := s.processChunkContent(metaData, height, timestamp); err != nil {
+				log.Printf("Failed to process chunk content for PIN %s: %v", metaData.PinID, err)
+				continue
+			}
+		} else if isIndexPath(metaData.Path) && isIndexContentType(metaData.ContentType) {
+			log.Printf("Processing index PIN: %s (path: %s, operation: %s)",
+				metaData.PinID, metaData.Path, metaData.Operation)
+
+			// Check if already exists
+			existingFile, err := s.indexerFileDAO.GetByPinID(metaData.PinID)
+			if err == nil && existingFile != nil {
+				log.Printf("Index PIN already indexed: %s", metaData.PinID)
+				continue
+			}
+
+			// Process index content
+			if err := s.processIndexContent(metaData, height, timestamp); err != nil {
+				log.Printf("Failed to process index content for PIN %s: %v", metaData.PinID, err)
+				continue
+			}
+		} else if isFilePath(metaData.Path) {
+			// Check if this is a file PIN
 			log.Printf("Processing file PIN: %s (path: %s, operation: %s)",
 				metaData.PinID, metaData.Path, metaData.Operation)
 
@@ -250,6 +289,10 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 // isFilePath check if path is a file path
 func isFilePath(path string) bool {
 	// Check if path starts with /file or contains /file
+	// But exclude chunk and index paths
+	if isChunkPath(path) || isIndexPath(path) {
+		return false
+	}
 	return strings.HasPrefix(path, "/file") || strings.Contains(path, "/file")
 }
 
@@ -257,6 +300,32 @@ func isFilePath(path string) bool {
 func isAvatarPath(path string) bool {
 	// Check if path starts with /info/avatar or contains /info/avatar
 	return strings.HasPrefix(path, "/info/avatar") || strings.Contains(path, "/info/avatar")
+}
+
+// isChunkPath check if path is a chunk path
+func isChunkPath(path string) bool {
+	// Check if path contains /file/_chunk
+	return strings.Contains(path, "/file/_chunk") || strings.Contains(path, "/file/"+metaid_protocols.MonitorFileChunk)
+}
+
+// isIndexPath check if path is an index path
+func isIndexPath(path string) bool {
+	// Check if path contains /file/index
+	return strings.Contains(path, "/file/index") || strings.Contains(path, "/file/"+metaid_protocols.MonitorFileIndex)
+}
+
+// isChunkContentType check if content type is metafile/chunk
+func isChunkContentType(contentType string) bool {
+	// Check if content type is metafile/chunk (with or without parameters)
+	normalized := strings.ToLower(strings.TrimSpace(contentType))
+	return strings.HasPrefix(normalized, "metafile/chunk")
+}
+
+// isIndexContentType check if content type is metafile/index
+func isIndexContentType(contentType string) bool {
+	// Check if content type is metafile/index (with or without parameters)
+	normalized := strings.ToLower(strings.TrimSpace(contentType))
+	return strings.HasPrefix(normalized, "metafile/index")
 }
 
 // processFileContent process and save file content
@@ -323,6 +392,7 @@ func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, height
 		Encryption:     metaData.Encryption,
 		Version:        metaData.Version,
 		ContentType:    metaData.ContentType,
+		ChunkType:      model.ChunkTypeSingle,
 		FileType:       fileType,
 		FileExtension:  fileExtension,
 		FileName:       fileName,
@@ -619,4 +689,239 @@ func calculateMetaID(address string) string {
 	}
 	hash := sha256.Sum256([]byte(address))
 	return hex.EncodeToString(hash[:])
+}
+
+// processChunkContent process and save chunk content
+func (s *IndexerService) processChunkContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
+	// Calculate chunk hashes
+	chunkMd5 := calculateMD5(metaData.Content)
+	chunkHash := calculateSHA256(metaData.Content)
+
+	// Determine storage path: indexer/chunk/{chain}/{txid}/{pinid}
+	storagePath := fmt.Sprintf("indexer/chunk/%s/%s/%s",
+		metaData.ChainName,
+		metaData.TxID,
+		metaData.PinID)
+
+	// Save chunk to storage
+	storageType := "local"
+	if conf.Cfg.Storage.Type == "oss" {
+		storageType = "oss"
+	}
+
+	if err := s.storage.Save(storagePath, metaData.Content); err != nil {
+		return fmt.Errorf("failed to save chunk to storage: %w", err)
+	}
+
+	log.Printf("Chunk saved to storage: %s (size: %d bytes)", storagePath, len(metaData.Content))
+
+	// Extract chunk index from path or metadata (if available)
+	// For now, we'll set it to 0 and it should be updated when index is processed
+	chunkIndex := 0
+
+	// Create database record
+	indexerFileChunk := &model.IndexerFileChunk{
+		PinID:       metaData.PinID,
+		TxID:        metaData.TxID,
+		Vout:        metaData.Vout,
+		Path:        metaData.Path,
+		Operation:   metaData.Operation,
+		ContentType: metaData.ContentType,
+		ChunkIndex:  chunkIndex,
+		ChunkSize:   int64(len(metaData.Content)),
+		ChunkMd5:    chunkMd5,
+		ParentPinID: "", // Will be set when index is processed
+		StorageType: storageType,
+		StoragePath: storagePath,
+		ChainName:   metaData.ChainName,
+		BlockHeight: height,
+		Status:      model.StatusSuccess,
+		State:       0,
+	}
+
+	// Save to database
+	if err := s.indexerFileChunkDAO.Create(indexerFileChunk); err != nil {
+		return fmt.Errorf("failed to save chunk to database: %w", err)
+	}
+
+	log.Printf("Chunk indexed successfully: PIN=%s, Path=%s, Size=%d, Hash=%s",
+		metaData.PinID, metaData.Path, len(metaData.Content), chunkHash)
+
+	return nil
+}
+
+// processIndexContent process and save index content, then merge chunks if all are available
+func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
+	// Get real creator address from CreatorInputLocation if available
+	creatorAddress := metaData.CreatorAddress
+	if metaData.CreatorInputLocation != "" {
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		if err != nil {
+			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
+				metaData.CreatorInputLocation, err)
+		} else {
+			creatorAddress = realAddress
+			log.Printf("Found real creator address for index: %s (from location: %s)", realAddress, metaData.CreatorInputLocation)
+		}
+	}
+
+	// Parse index JSON content
+	var metaFileIndex metaid_protocols.MetaFileIndex
+	if err := json.Unmarshal(metaData.Content, &metaFileIndex); err != nil {
+		return fmt.Errorf("failed to parse index JSON: %w", err)
+	}
+
+	log.Printf("Parsed index: sha256=%s, fileSize=%d, chunkNumber=%d, chunkSize=%d, dataType=%s, name=%s",
+		metaFileIndex.Sha256, metaFileIndex.FileSize, metaFileIndex.ChunkNumber,
+		metaFileIndex.ChunkSize, metaFileIndex.DataType, metaFileIndex.Name)
+
+	// Check if all chunks are available
+	allChunksAvailable := true
+	var chunks []*model.IndexerFileChunk
+	for _, chunkInfo := range metaFileIndex.ChunkList {
+		chunk, err := s.indexerFileChunkDAO.GetByPinID(chunkInfo.PinId)
+		if err != nil || chunk == nil {
+			log.Printf("Chunk not found: PIN=%s, SHA256=%s", chunkInfo.PinId, chunkInfo.Sha256)
+			allChunksAvailable = false
+			break
+		}
+
+		// Verify chunk hash matches
+		if chunk.ChunkMd5 != "" {
+			// We can verify using SHA256 if available, but for now just check existence
+			// The actual verification should be done when merging
+		}
+
+		chunks = append(chunks, chunk)
+	}
+
+	// Update parent_pin_id for all chunks
+	indexPinID := metaData.PinID
+	for i, chunk := range chunks {
+		if chunk.ParentPinID != indexPinID {
+			chunk.ParentPinID = indexPinID
+			chunk.ChunkIndex = i // Set chunk index based on order in chunkList
+			if err := s.indexerFileChunkDAO.Update(chunk); err != nil {
+				log.Printf("Failed to update chunk parent PIN ID: %v", err)
+			}
+		}
+	}
+
+	// If all chunks are available, merge and save complete file
+	if allChunksAvailable && len(chunks) > 0 {
+		log.Printf("All chunks available, merging file: index PIN=%s", indexPinID)
+
+		// Merge chunks in order
+		var mergedContent []byte
+		for _, chunk := range chunks {
+			// Load chunk content from storage
+			chunkContent, err := s.storage.Get(chunk.StoragePath)
+			if err != nil {
+				return fmt.Errorf("failed to load chunk from storage: %w", err)
+			}
+			mergedContent = append(mergedContent, chunkContent...)
+		}
+
+		// Verify merged file hash
+		mergedHash := calculateSHA256(mergedContent)
+		if mergedHash != metaFileIndex.Sha256 {
+			log.Printf("Warning: Merged file hash mismatch. Expected: %s, Got: %s", metaFileIndex.Sha256, mergedHash)
+			// Continue anyway, but log the warning
+		}
+
+		// Verify file size
+		if int64(len(mergedContent)) != metaFileIndex.FileSize {
+			log.Printf("Warning: Merged file size mismatch. Expected: %d, Got: %d", metaFileIndex.FileSize, len(mergedContent))
+		}
+
+		// Detect real content type
+		realContentType := detectRealContentType(mergedContent, metaFileIndex.DataType)
+
+		// Extract file extension
+		fileExtension := contentTypeToExtension(realContentType)
+		if fileExtension == "" && metaFileIndex.Name != "" {
+			// Try to get extension from name
+			fileExtension = filepath.Ext(metaFileIndex.Name)
+		}
+
+		// Calculate file hashes
+		fileMd5 := calculateMD5(mergedContent)
+		fileHash := calculateSHA256(mergedContent)
+
+		// Detect file type
+		fileType := detectFileType(realContentType)
+
+		// Determine storage path: indexer/{chain}/{indexPinID}{extension}
+		storagePath := fmt.Sprintf("indexer/%s/%s%s",
+			metaData.ChainName,
+			indexPinID,
+			fileExtension)
+
+		// Save merged file to storage
+		storageType := "local"
+		if conf.Cfg.Storage.Type == "oss" {
+			storageType = "oss"
+		}
+
+		if err := s.storage.Save(storagePath, mergedContent); err != nil {
+			return fmt.Errorf("failed to save merged file to storage: %w", err)
+		}
+
+		log.Printf("Merged file saved to storage: %s (size: %d bytes)", storagePath, len(mergedContent))
+
+		// Calculate Creator MetaID
+		creatorMetaID := calculateMetaID(creatorAddress)
+
+		data, err := json.Marshal(metaFileIndex)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metaFileIndex: %w", err)
+		}
+
+		// Create database record for merged file
+		indexerFile := &model.IndexerFile{
+			PinID:          indexPinID,
+			TxID:           metaData.TxID,
+			Vout:           metaData.Vout,
+			Path:           metaData.Path,
+			Operation:      metaData.Operation,
+			ParentPath:     metaData.ParentPath,
+			Encryption:     metaData.Encryption,
+			Version:        metaData.Version,
+			ContentType:    metaFileIndex.DataType,
+			Data:           string(data),
+			ChunkType:      model.ChunkTypeMulti,
+			FileType:       fileType,
+			FileExtension:  fileExtension,
+			FileName:       metaFileIndex.Name,
+			FileSize:       metaFileIndex.FileSize,
+			FileMd5:        fileMd5,
+			FileHash:       fileHash,
+			StorageType:    storageType,
+			StoragePath:    storagePath,
+			ChainName:      metaData.ChainName,
+			BlockHeight:    height,
+			Timestamp:      timestamp,
+			CreatorMetaId:  creatorMetaID,
+			CreatorAddress: creatorAddress,
+			OwnerAddress:   metaData.OwnerAddress,
+			OwnerMetaId:    calculateMetaID(metaData.OwnerAddress),
+			Status:         model.StatusSuccess,
+			State:          0,
+		}
+
+		// Save to database
+		if err := s.indexerFileDAO.Create(indexerFile); err != nil {
+			return fmt.Errorf("failed to save merged file to database: %w", err)
+		}
+
+		log.Printf("Merged file indexed successfully: PIN=%s, Name=%s, Type=%s, Ext=%s, Size=%d",
+			indexPinID, metaFileIndex.Name, fileType, fileExtension, metaFileIndex.FileSize)
+	} else {
+		log.Printf("Not all chunks available yet for index PIN=%s. Chunks found: %d/%d",
+			indexPinID, len(chunks), metaFileIndex.ChunkNumber)
+		// We still save the index information, but the file will be merged later when all chunks are available
+		// For now, we just log that chunks are missing
+	}
+
+	return nil
 }

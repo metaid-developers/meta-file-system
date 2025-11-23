@@ -171,6 +171,33 @@ func (m *MySQLDatabase) ListIndexerUserAvatarsWithCursor(cursor int64, size int)
 	return avatars, err
 }
 
+// IndexerFileChunk operations
+
+func (m *MySQLDatabase) CreateIndexerFileChunk(chunk *model.IndexerFileChunk) error {
+	return m.db.Create(chunk).Error
+}
+
+func (m *MySQLDatabase) GetIndexerFileChunkByPinID(pinID string) (*model.IndexerFileChunk, error) {
+	var chunk model.IndexerFileChunk
+	err := m.db.Where("pin_id = ?", pinID).First(&chunk).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, ErrNotFound
+	}
+	return &chunk, err
+}
+
+func (m *MySQLDatabase) GetIndexerFileChunksByParentPinID(parentPinID string) ([]*model.IndexerFileChunk, error) {
+	var chunks []*model.IndexerFileChunk
+	err := m.db.Where("parent_pin_id = ?", parentPinID).
+		Order("chunk_index ASC").
+		Find(&chunks).Error
+	return chunks, err
+}
+
+func (m *MySQLDatabase) UpdateIndexerFileChunk(chunk *model.IndexerFileChunk) error {
+	return m.db.Save(chunk).Error
+}
+
 // IndexerSyncStatus operations
 
 func (m *MySQLDatabase) CreateOrUpdateIndexerSyncStatus(status *model.IndexerSyncStatus) error {

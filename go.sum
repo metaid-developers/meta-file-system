@@ -202,8 +202,8 @@ github.com/magiconair/properties v1.8.7 h1:IeQXZAiQcpL9mgcAe1Nu6cX9LLw6ExEHKjN0V
 github.com/magiconair/properties v1.8.7/go.mod h1:Dhd985XPs7jluiymwWYZ0G4Z61jb3vdS329zhj2hYo0=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
-github.com/metaid-developers/metaid-script-decoder v1.0.5 h1:+jXyxR26HfmgrBbpoC1UKMjmegKqQ2t4bKY2QkuETtk=
-github.com/metaid-developers/metaid-script-decoder v1.0.5/go.mod h1:ich2R+T+K8t6mzjh7R/HZLEfiE+qKvwPYPD+C25Zuk8=
+github.com/metaid-developers/metaid-script-decoder v1.0.6 h1:CUIAAPBUByoWxhyHyzDHFGM2IZ63q3IWg1IWTgW1vL8=
+github.com/metaid-developers/metaid-script-decoder v1.0.6/go.mod h1:ich2R+T+K8t6mzjh7R/HZLEfiE+qKvwPYPD+C25Zuk8=
 github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db h1:62I3jR2EmQ4l5rM/4FEfDWcRD+abF5XlKShorW5LRoQ=
 github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db/go.mod h1:l0dey0ia/Uv7NcFFVbCLtqEBQbrT4OCwCSKTEv6enCw=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=

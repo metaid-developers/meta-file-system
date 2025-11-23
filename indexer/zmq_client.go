@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"meta-file-system/common"
 	"strings"
 	"sync"
 	"time"
@@ -205,7 +206,7 @@ func (c *ZMQClient) handleRawTx(topic string, data []byte) error {
 			return fmt.Errorf("failed to deserialize MVC transaction: %w", err)
 		}
 		tx = &mvcTx
-		log.Printf("Received MVC transaction from ZMQ: %s", mvcTx.TxHash().String())
+		log.Printf("Received MVC transaction from ZMQ: %s", common.GetMvcTxhashFromRaw(hex.EncodeToString(data)))
 	}
 
 	// Parse MetaID data

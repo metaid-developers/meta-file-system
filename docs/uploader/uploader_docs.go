@@ -59,6 +59,64 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "/files/chunked-upload": {
+            "post": {
+                "description": "Upload large file by splitting it into chunks, build transactions for chunks and index, optionally broadcast all transactions in order",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "Chunked file upload",
+                "parameters": [
+                    {
+                        "description": "Chunked upload request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller_handler.ChunkedUploadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Upload successful",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_service_upload_service.ChunkedUploadResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Parameter error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/files/commit-upload": {
             "post": {
                 "description": "Submit signed transaction for broadcast",
@@ -236,6 +294,64 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "/files/estimate-chunked-upload": {
+            "post": {
+                "description": "Estimate the fee required for chunked file upload, including chunk count and fees for ChunkPreTxHex and IndexPreTxHex",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "Estimate chunked upload fee",
+                "parameters": [
+                    {
+                        "description": "Estimate chunked upload request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller_handler.EstimateChunkedUploadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Estimate successful",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_service_upload_service.EstimateChunkedUploadResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Parameter error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/files/pre-upload": {
             "post": {
                 "description": "Upload file and generate unsigned transaction, return transaction for client signing",
@@ -351,6 +467,63 @@ const docTemplateuploader = `{
         }
     },
     "definitions": {
+        "controller_handler.ChunkedUploadRequest": {
+            "type": "object",
+            "required": [
+                "address",
+                "chunkPreTxHex",
+                "content",
+                "fileName",
+                "indexPreTxHex",
+                "metaId",
+                "path"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+                },
+                "chunkPreTxHex": {
+                    "type": "string",
+                    "example": "0100000..."
+                },
+                "content": {
+                    "type": "string"
+                },
+                "contentType": {
+                    "type": "string",
+                    "example": "image/jpeg"
+                },
+                "feeRate": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "fileName": {
+                    "type": "string",
+                    "example": "example.jpg"
+                },
+                "indexPreTxHex": {
+                    "type": "string",
+                    "example": "0100000..."
+                },
+                "isBroadcast": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "metaId": {
+                    "type": "string",
+                    "example": "metaid_abc123"
+                },
+                "operation": {
+                    "type": "string",
+                    "example": "create"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/file"
+                }
+            }
+        },
         "controller_handler.CommitUploadRequest": {
             "type": "object",
             "required": [
@@ -403,6 +576,35 @@ const docTemplateuploader = `{
                 "swaggerBaseUrl": {
                     "type": "string",
                     "example": "localhost:7282"
+                }
+            }
+        },
+        "controller_handler.EstimateChunkedUploadRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "fileName",
+                "path"
+            ],
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "contentType": {
+                    "type": "string",
+                    "example": "image/jpeg"
+                },
+                "feeRate": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "fileName": {
+                    "type": "string",
+                    "example": "example.jpg"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/file"
                 }
             }
         },
@@ -467,6 +669,105 @@ const docTemplateuploader = `{
                 "processingTime": {
                     "type": "integer",
                     "example": 123
+                }
+            }
+        },
+        "meta-file-system_service_upload_service.ChunkedUploadResponse": {
+            "type": "object",
+            "properties": {
+                "chunkFundingTx": {
+                    "description": "托管地址充值交易（构建完成，可直接签名/广播）",
+                    "type": "string"
+                },
+                "chunkNumber": {
+                    "description": "分片数量",
+                    "type": "integer"
+                },
+                "chunkTxIds": {
+                    "description": "Chunk 交易 ID 列表（按顺序）",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "chunkTxs": {
+                    "description": "Chunk 交易 hex 列表（按顺序）",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "fileHash": {
+                    "description": "文件 SHA256 hash",
+                    "type": "string"
+                },
+                "fileId": {
+                    "description": "文件 ID",
+                    "type": "string"
+                },
+                "fileMd5": {
+                    "description": "文件 MD5 hash",
+                    "type": "string"
+                },
+                "indexTx": {
+                    "description": "Index 交易 hex",
+                    "type": "string"
+                },
+                "indexTxId": {
+                    "description": "Index 交易 ID",
+                    "type": "string"
+                },
+                "message": {
+                    "description": "消息",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "状态",
+                    "type": "string"
+                }
+            }
+        },
+        "meta-file-system_service_upload_service.EstimateChunkedUploadResponse": {
+            "type": "object",
+            "properties": {
+                "chunkFees": {
+                    "description": "每个 chunk 的费用",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "chunkNumber": {
+                    "description": "分片数量",
+                    "type": "integer"
+                },
+                "chunkPerTxFee": {
+                    "description": "每个 chunk 的费用",
+                    "type": "integer"
+                },
+                "chunkPreTxFee": {
+                    "description": "ChunkPreTxHex 需要的总费用（所有 chunk 费用之和）",
+                    "type": "integer"
+                },
+                "chunkSize": {
+                    "description": "分片大小（字节）",
+                    "type": "integer"
+                },
+                "indexPreTxFee": {
+                    "description": "IndexPreTxHex 需要的费用",
+                    "type": "integer"
+                },
+                "message": {
+                    "description": "消息",
+                    "type": "string"
+                },
+                "perChunkFee": {
+                    "description": "每个 chunk 的平均费用",
+                    "type": "integer"
+                },
+                "totalFee": {
+                    "description": "总费用（ChunkPreTxFee + IndexPreTxFee）",
+                    "type": "integer"
                 }
             }
         }

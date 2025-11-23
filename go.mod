@@ -18,7 +18,7 @@ require (
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/godaddy-x/freego v1.0.174
 	github.com/imroc/req v0.3.2
-	github.com/metaid-developers/metaid-script-decoder v1.0.5
+	github.com/metaid-developers/metaid-script-decoder v1.0.6
 	github.com/schollz/progressbar/v3 v3.14.1
 	github.com/spf13/viper v1.18.2
 	github.com/swaggo/files v1.0.1

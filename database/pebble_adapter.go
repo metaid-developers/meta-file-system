@@ -44,6 +44,10 @@ const (
 	collectionAvatarHash            = "avatar_hash"           // key: {hash}:{pin_id}, value: JSON(IndexerUserAvatar) - 按 Hash 索引
 	collectionLasestAvatarMetaID    = "avatar_lasest_meta_id" // key: {meta_id}, value: JSON(IndexerUserAvatar) - 按 MetaID 索引
 
+	// FileChunk collections
+	collectionFileChunkPinID       = "file_chunk_pin"    // key: {pin_id}, value: JSON(IndexerFileChunk) - PinID 到 chunk 的映射
+	collectionFileChunkParentPinID = "file_chunk_parent" // key: {parent_pin_id}:{chunk_index}, value: JSON(IndexerFileChunk) - 按父 PIN ID 索引
+
 	// System collections
 	collectionSyncStatus = "sync_status" // key: {chain_name}, value: JSON(IndexerSyncStatus) - 同步状态
 	collectionCounters   = "counters"    // key: file/avatar/status, value: {max_id} - ID 计数器
@@ -82,6 +86,8 @@ func NewPebbleDatabase(config interface{}) (Database, error) {
 		collectionAvatarAddr,
 		collectionAvatarHash,
 		collectionLasestAvatarMetaID,
+		collectionFileChunkPinID,
+		collectionFileChunkParentPinID,
 		collectionSyncStatus,
 		collectionCounters,
 	}
@@ -613,6 +619,85 @@ func (p *PebbleDatabase) ListIndexerUserAvatarsWithCursor(cursor int64, size int
 	}
 
 	return avatars, nil
+}
+
+// IndexerFileChunk operations
+
+func (p *PebbleDatabase) CreateIndexerFileChunk(chunk *model.IndexerFileChunk) error {
+	// Serialize chunk
+	data, err := json.Marshal(chunk)
+	if err != nil {
+		return err
+	}
+
+	// Store in PinID collection (primary index)
+	if err := p.collections[collectionFileChunkPinID].Set([]byte(chunk.PinID), data, pebble.Sync); err != nil {
+		return err
+	}
+
+	// Store in ParentPinID collection if parent is set
+	if chunk.ParentPinID != "" {
+		parentKey := fmt.Sprintf("%s:%d", chunk.ParentPinID, chunk.ChunkIndex)
+		if err := p.collections[collectionFileChunkParentPinID].Set([]byte(parentKey), data, pebble.Sync); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *PebbleDatabase) GetIndexerFileChunkByPinID(pinID string) (*model.IndexerFileChunk, error) {
+	// Get chunk data directly from PinID collection
+	data, closer, err := p.collections[collectionFileChunkPinID].Get([]byte(pinID))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var chunk model.IndexerFileChunk
+	if err := json.Unmarshal(data, &chunk); err != nil {
+		return nil, err
+	}
+
+	return &chunk, nil
+}
+
+func (p *PebbleDatabase) GetIndexerFileChunksByParentPinID(parentPinID string) ([]*model.IndexerFileChunk, error) {
+	var chunks []*model.IndexerFileChunk
+
+	parentDB := p.collections[collectionFileChunkParentPinID]
+
+	// Create iterator with prefix filter for parentPinID
+	prefix := []byte(parentPinID + ":")
+	iter, err := parentDB.NewIter(&pebble.IterOptions{
+		LowerBound: prefix,
+		UpperBound: append(prefix, 0xFF),
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	// Iterate through all chunks with this parent
+	for iter.First(); iter.Valid(); iter.Next() {
+		var chunk model.IndexerFileChunk
+		if err := json.Unmarshal(iter.Value(), &chunk); err != nil {
+			continue
+		}
+		chunks = append(chunks, &chunk)
+	}
+
+	// Sort by chunk_index (they should already be in order due to key format)
+	// But we can verify and sort if needed
+	return chunks, nil
+}
+
+func (p *PebbleDatabase) UpdateIndexerFileChunk(chunk *model.IndexerFileChunk) error {
+	// Simply recreate (overwrite)
+	return p.CreateIndexerFileChunk(chunk)
 }
 
 // IndexerSyncStatus operations

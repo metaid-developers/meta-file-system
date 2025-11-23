@@ -12,7 +12,7 @@ type IndexerFileChunk struct {
 	Vout        uint32 `gorm:"type:int" json:"vout"`                                 // Output index
 	Path        string `gorm:"index;type:varchar(500);not null" json:"path"`         // MetaID path
 	Operation   string `gorm:"type:varchar(20)" json:"operation"`                    // create/modify/revoke
-	ContentType string `gorm:"type:varchar(100)" json:"content_type"`                // Content type
+	ContentType string `gorm:"type:varchar(100)" json:"content_type"`                // Content type - metafile/chunk
 
 	// Chunk related fields
 	ChunkIndex  int    `gorm:"type:int" json:"chunk_index"`                  // Chunk index (0-based)

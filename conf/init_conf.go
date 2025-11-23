@@ -84,6 +84,7 @@ type IndexerConfig struct {
 type UploaderConfig struct {
 	MaxFileSize    int64
 	FeeRate        int64
+	ChunkSize      int64
 	SwaggerBaseUrl string // Swagger API base URL (e.g., "example.com:7282")
 }
 
@@ -157,6 +158,7 @@ func InitConfig() error {
 		Uploader: UploaderConfig{
 			MaxFileSize:    viper.GetInt64("uploader.max_file_size") * 1024 * 1024, // MB to bytes
 			FeeRate:        viper.GetInt64("uploader.fee_rate"),
+			ChunkSize:      viper.GetInt64("uploader.chunk_size") * 1024 * 1024, // MB to bytes
 			SwaggerBaseUrl: viper.GetString("uploader.swagger_base_url"),
 		},
 	}
