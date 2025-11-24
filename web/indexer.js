@@ -443,7 +443,7 @@ function createFileCard(file) {
     const chainName = file.chain_name.toUpperCase();
     
     const fileSize = formatFileSize(file.file_size);
-    const createdAt = new Date(file.created_at).toLocaleString();
+    const createdAt = new Date(file.timestamp).toLocaleString();
     
     let pinIds = file.pin_id.split('i');
     let txId = pinIds[0];
@@ -453,13 +453,14 @@ function createFileCard(file) {
     const pinUrl = `https://man.metaid.io/pin/${file.pin_id}`;
     const contentUrl = `${API_BASE}/api/v1/files/content/${file.pin_id}`;
     
-    // Check if file is an image
+    // Check if file is an image or video
     const isImage = file.file_type === 'image' || (file.content_type && file.content_type.startsWith('image/'));
+    const isVideo = file.file_type === 'video' || (file.content_type && file.content_type.startsWith('video/'));
     
-    // Build image preview HTML
-    let imagePreviewHtml = '';
+    // Build preview HTML
+    let previewHtml = '';
     if (isImage) {
-        imagePreviewHtml = `
+        previewHtml = `
             <div style="margin: 15px 0; text-align: center; background: #f0f0f0; border-radius: 8px; padding: 10px;">
                 <img src="${contentUrl}" 
                      alt="${file.file_name || 'Image'}" 
@@ -468,14 +469,38 @@ function createFileCard(file) {
                      onerror="this.parentElement.innerHTML='<p style=\\'color: #999; padding: 20px;\\'>Failed to load image preview</p>'">
             </div>
         `;
+    } else if (isVideo) {
+        // Get video preview thumbnail URL
+        const videoPreviewUrl = `${API_BASE}/api/v1/files/accelerate/content/${file.pin_id}?process=video`;
+        const videoContainerId = `video-preview-${file.pin_id.replace(/[^a-zA-Z0-9]/g, '-')}`;
+        previewHtml = `
+            <div class="video-preview-container" id="${videoContainerId}" onclick="playVideo('${contentUrl}', '${file.file_name || 'Video'}')">
+                <img src="${videoPreviewUrl}" 
+                     alt="${file.file_name || 'Video'}" 
+                     class="video-preview-image"
+                     onerror="handleVideoPreviewError('${videoContainerId}')">
+                <div class="video-preview-placeholder">
+                    <div style="font-size: 48px; margin-bottom: 10px;">🎬</div>
+                    <div style="font-size: 14px;">点击播放视频</div>
+                </div>
+                <div class="video-play-overlay">
+                    <div class="video-play-icon"></div>
+                </div>
+            </div>
+        `;
     }
+    
+    // Get file icon
+    let fileIcon = '📄';
+    if (isImage) fileIcon = '🖼️';
+    else if (isVideo) fileIcon = '🎬';
     
     card.innerHTML = `
         <div class="file-card-header">
-            <div class="file-name">${isImage ? '🖼️' : '📄'} ${file.file_name || 'Unnamed File'}</div>
+            <div class="file-name">${fileIcon} ${file.file_name || 'Unnamed File'}</div>
             <span class="file-badge ${chainBadgeClass}">${chainName}</span>
         </div>
-        ${imagePreviewHtml}
+        ${previewHtml}
         <div class="file-info-grid">
             <div class="file-info-item">
                 <strong>Size:</strong> ${fileSize}
@@ -502,6 +527,11 @@ function createFileCard(file) {
             </div>
         </div>
         <div class="file-actions">
+            ${isVideo ? `
+            <button onclick="playVideo('${contentUrl}', '${file.file_name || 'Video'}')" class="btn btn-primary btn-small" style="background: #dc3545;">
+                ▶️ Play
+            </button>
+            ` : ''}
             <button onclick="window.open('${contentUrl}', '_blank')" class="btn btn-primary btn-small">
                 📥 Download
             </button>
@@ -598,5 +628,79 @@ function startWalletMonitoring() {
 
 window.addEventListener('load', () => {
     setTimeout(startWalletMonitoring, 1000);
+});
+
+// Video playback functions
+let videoModalInitialized = false;
+
+function initVideoModal() {
+    if (videoModalInitialized) return;
+    
+    const modal = document.getElementById('videoModal');
+    if (!modal) return;
+    
+    // Close modal when clicking outside video
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeVideoModal();
+        }
+    });
+    
+    // Close modal with Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal.classList.contains('show')) {
+            closeVideoModal();
+        }
+    });
+    
+    videoModalInitialized = true;
+}
+
+function playVideo(videoUrl, videoName) {
+    const modal = document.getElementById('videoModal');
+    const videoPlayer = document.getElementById('videoPlayer');
+    
+    if (!modal || !videoPlayer) {
+        // Fallback: open in new window if modal doesn't exist
+        window.open(videoUrl, '_blank');
+        return;
+    }
+    
+    // Initialize modal event listeners if not already done
+    initVideoModal();
+    
+    videoPlayer.src = videoUrl;
+    videoPlayer.load();
+    modal.classList.add('show');
+}
+
+function closeVideoModal() {
+    const modal = document.getElementById('videoModal');
+    const videoPlayer = document.getElementById('videoPlayer');
+    
+    if (modal && videoPlayer) {
+        modal.classList.remove('show');
+        videoPlayer.pause();
+        videoPlayer.src = '';
+    }
+}
+
+// Handle video preview image load error
+function handleVideoPreviewError(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const img = container.querySelector('.video-preview-image');
+    const placeholder = container.querySelector('.video-preview-placeholder');
+    
+    if (img) img.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'flex';
+}
+
+// Initialize video modal on page load
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        initVideoModal();
+    }, 500);
 });
 
