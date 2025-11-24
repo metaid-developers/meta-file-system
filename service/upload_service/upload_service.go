@@ -1261,12 +1261,12 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 			FileMd5:        md5hashStr,
 			ChunkNumber:    chunkNumber,
 			ChunkFundingTx: chunkFundingTxHex,
-			ChunkTxs:       chunkTxs,
-			ChunkTxIds:     chunkTxIds,
-			IndexTx:        indexTxHex,
-			IndexTxId:      indexTxId,
-			Status:         string(finalStatus),
-			Message:        finalMessage,
+			// ChunkTxs:       chunkTxs,
+			ChunkTxIds: chunkTxIds,
+			// IndexTx:        indexTxHex,
+			IndexTxId: indexTxId,
+			Status:    string(finalStatus),
+			Message:   finalMessage,
 		}, nil
 	}
 

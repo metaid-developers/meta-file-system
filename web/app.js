@@ -981,6 +981,13 @@ async function startChunkedUpload() {
         updateProgress(80, 'Step 7/7: Uploading chunks to chain...');
         const uploadResult = await chunkedUpload(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
         
+        // Check upload result status
+        if (uploadResult.status === 'failed') {
+            const errorMessage = uploadResult.message || 'Upload failed with unknown error';
+            addLog(`❌ Upload failed: ${errorMessage}`, 'error');
+            throw new Error(errorMessage);
+        }
+        
         // Completed
         updateProgress(100, 'Upload completed!');
         addLog(`✅ File uploaded successfully! Index TxID: ${uploadResult.indexTxId}`, 'success');
