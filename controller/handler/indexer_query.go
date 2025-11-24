@@ -357,11 +357,23 @@ func (h *IndexerQueryHandler) GetFastFileContent(c *gin.Context) {
 	// Get process type from query parameter
 	processType := c.DefaultQuery("process", "")
 
-	// Get OSS URL
-	ossURL, err := h.indexerFileService.GetFastFileOSSURL(pinID, processType)
+	// Get OSS URL, ContentType, FileName, and FileType
+	ossURL, contentType, fileName, fileType, err := h.indexerFileService.GetFastFileOSSURL(pinID, processType)
 	if err != nil {
 		respond.NotFound(c, err.Error())
 		return
+	}
+
+	// Determine if file should be previewed or downloaded
+	// Images, videos, audio can be previewed, others should be downloaded
+	shouldPreview := fileType == "image" || fileType == "video" || fileType == "audio" || fileType == "text"
+
+	// Set response headers
+	c.Header("Content-Type", contentType)
+	if shouldPreview {
+		c.Header("Content-Disposition", "inline; filename=\""+fileName+"\"")
+	} else {
+		c.Header("Content-Disposition", "attachment; filename=\""+fileName+"\"")
 	}
 
 	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)

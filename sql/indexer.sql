@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS `tb_indexer_file` (
     `file_size` BIGINT DEFAULT 0 COMMENT 'File size (bytes)',
     `file_md5` VARCHAR(64) DEFAULT '' COMMENT 'File MD5 hash',
     `file_hash` VARCHAR(64) DEFAULT '' COMMENT 'File SHA256 hash',
+    `is_gzip_compressed` TINYINT(1) DEFAULT 0 COMMENT 'Whether the original content was gzip compressed',
     
     -- Storage related fields
     `storage_type` VARCHAR(20) DEFAULT 'local' COMMENT 'Storage type: local/oss',
@@ -84,6 +85,7 @@ CREATE TABLE IF NOT EXISTS `tb_indexer_file_chunk` (
     `chunk_size` BIGINT DEFAULT 0 COMMENT 'Chunk size (bytes)',
     `chunk_md5` VARCHAR(64) DEFAULT '' COMMENT 'Chunk MD5 hash',
     `parent_pin_id` VARCHAR(255) NOT NULL COMMENT 'Parent file PIN ID',
+    `is_gzip_compressed` TINYINT(1) DEFAULT 0 COMMENT 'Whether the original content was gzip compressed',
     
     -- Storage related fields
     `storage_type` VARCHAR(20) DEFAULT 'local' COMMENT 'Storage type: local/oss',
@@ -187,6 +189,19 @@ ON DUPLICATE KEY UPDATE `chain_name` = `chain_name`;
 INSERT INTO `tb_indexer_sync_status` (`chain_name`, `current_sync_height`)
 VALUES ('btc', 0)
 ON DUPLICATE KEY UPDATE `chain_name` = `chain_name`;
+
+-- ============================================
+-- Migration: Add is_gzip_compressed field
+-- ============================================
+-- Add is_gzip_compressed field to tb_indexer_file table
+ALTER TABLE `tb_indexer_file` 
+ADD COLUMN `is_gzip_compressed` TINYINT(1) DEFAULT 0 COMMENT 'Whether the original content was gzip compressed' 
+AFTER `file_hash`;
+
+-- Add is_gzip_compressed field to tb_indexer_file_chunk table
+ALTER TABLE `tb_indexer_file_chunk` 
+ADD COLUMN `is_gzip_compressed` TINYINT(1) DEFAULT 0 COMMENT 'Whether the original content was gzip compressed' 
+AFTER `chunk_md5`;
 
 -- ============================================
 -- End of Indexer Database Schema

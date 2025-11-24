@@ -15,10 +15,11 @@ type IndexerFileChunk struct {
 	ContentType string `gorm:"type:varchar(100)" json:"content_type"`                // Content type - metafile/chunk
 
 	// Chunk related fields
-	ChunkIndex  int    `gorm:"type:int" json:"chunk_index"`                  // Chunk index (0-based)
-	ChunkSize   int64  `json:"chunk_size"`                                   // Chunk size
-	ChunkMd5    string `gorm:"type:varchar(64)" json:"chunk_md5"`            // Chunk MD5
-	ParentPinID string `gorm:"index;type:varchar(255)" json:"parent_pin_id"` // Parent file PIN ID
+	ChunkIndex       int    `gorm:"type:int" json:"chunk_index"`                         // Chunk index (0-based)
+	ChunkSize        int64  `json:"chunk_size"`                                          // Chunk size
+	ChunkMd5         string `gorm:"type:varchar(64)" json:"chunk_md5"`                   // Chunk MD5
+	ParentPinID      string `gorm:"index;type:varchar(255)" json:"parent_pin_id"`        // Parent file PIN ID
+	IsGzipCompressed bool   `gorm:"type:tinyint(1);default:0" json:"is_gzip_compressed"` // Whether the original content was gzip compressed
 
 	// Storage related fields
 	StorageType string `gorm:"type:varchar(20)" json:"storage_type"`  // local/oss

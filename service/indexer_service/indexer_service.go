@@ -1,11 +1,14 @@
 package indexer_service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -328,6 +331,32 @@ func isIndexContentType(contentType string) bool {
 	return strings.HasPrefix(normalized, "metafile/index")
 }
 
+// isGzipCompressed check if content is gzip compressed
+func isGzipCompressed(content []byte) bool {
+	// Gzip magic number: 1f 8b
+	if len(content) < 2 {
+		return false
+	}
+	return content[0] == 0x1f && content[1] == 0x8b
+}
+
+// decompressGzip decompress gzip compressed content
+func decompressGzip(content []byte) ([]byte, error) {
+	reader := bytes.NewReader(content)
+	gzReader, err := gzip.NewReader(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzReader.Close()
+
+	decompressed, err := io.ReadAll(gzReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decompress gzip content: %w", err)
+	}
+
+	return decompressed, nil
+}
+
 // processFileContent process and save file content
 func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
 	// Get real creator address from CreatorInputLocation if available
@@ -343,18 +372,34 @@ func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, height
 		}
 	}
 
+	// Check if content is gzip compressed and decompress if needed
+	fileContent := metaData.Content
+	isCompressed := isGzipCompressed(metaData.Content)
+	if isCompressed {
+		log.Printf("Detected gzip compressed content for PIN: %s, decompressing...", metaData.PinID)
+		decompressed, err := decompressGzip(metaData.Content)
+		if err != nil {
+			log.Printf("Failed to decompress gzip content for PIN %s: %v, using original content", metaData.PinID, err)
+			// Continue with original content if decompression fails
+		} else {
+			fileContent = decompressed
+			log.Printf("Successfully decompressed gzip content for PIN: %s (original size: %d, decompressed size: %d)",
+				metaData.PinID, len(metaData.Content), len(fileContent))
+		}
+	}
+
 	// Extract file name from path
 	fileName := extractFileName(metaData.Path)
 
-	// Detect real content type from file content
-	realContentType := detectRealContentType(metaData.Content, metaData.ContentType)
+	// Detect real content type from file content (use decompressed content if available)
+	realContentType := detectRealContentType(fileContent, metaData.ContentType)
 
 	// Extract file extension (using real content type and path)
-	fileExtension := extractFileExtension(metaData.Path, realContentType, metaData.Content)
+	fileExtension := extractFileExtension(metaData.Path, realContentType, fileContent)
 
-	// Calculate file hashes
-	fileMd5 := calculateMD5(metaData.Content)
-	fileHash := calculateSHA256(metaData.Content)
+	// Calculate file hashes (use decompressed content if available)
+	fileMd5 := calculateMD5(fileContent)
+	fileHash := calculateSHA256(fileContent)
 
 	// Detect file type from real content type
 	fileType := detectFileType(realContentType)
@@ -366,50 +411,51 @@ func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, height
 		metaData.PinID,
 		fileExtension)
 
-	// Save file to storage
+	// Save file to storage (save decompressed content if available)
 	storageType := "local"
 	if conf.Cfg.Storage.Type == "oss" {
 		storageType = "oss"
 	}
 
-	if err := s.storage.Save(storagePath, metaData.Content); err != nil {
+	if err := s.storage.Save(storagePath, fileContent); err != nil {
 		return fmt.Errorf("failed to save file to storage: %w", err)
 	}
 
-	log.Printf("File saved to storage: %s (size: %d bytes)", storagePath, len(metaData.Content))
+	log.Printf("File saved to storage: %s (size: %d bytes, compressed: %v)", storagePath, len(fileContent), isCompressed)
 
 	// Calculate Creator MetaID (SHA256 of address)
 	creatorMetaID := calculateMetaID(creatorAddress)
 
 	// Create database record
 	indexerFile := &model.IndexerFile{
-		PinID:          metaData.PinID,
-		TxID:           metaData.TxID,
-		Vout:           metaData.Vout,
-		Path:           metaData.Path,
-		Operation:      metaData.Operation,
-		ParentPath:     metaData.ParentPath,
-		Encryption:     metaData.Encryption,
-		Version:        metaData.Version,
-		ContentType:    metaData.ContentType,
-		ChunkType:      model.ChunkTypeSingle,
-		FileType:       fileType,
-		FileExtension:  fileExtension,
-		FileName:       fileName,
-		FileSize:       int64(len(metaData.Content)),
-		FileMd5:        fileMd5,
-		FileHash:       fileHash,
-		StorageType:    storageType,
-		StoragePath:    storagePath,
-		ChainName:      metaData.ChainName,
-		BlockHeight:    height,
-		Timestamp:      timestamp,
-		CreatorMetaId:  creatorMetaID,
-		CreatorAddress: creatorAddress, // Use real creator address
-		OwnerAddress:   metaData.OwnerAddress,
-		OwnerMetaId:    calculateMetaID(metaData.OwnerAddress),
-		Status:         model.StatusSuccess,
-		State:          0,
+		PinID:            metaData.PinID,
+		TxID:             metaData.TxID,
+		Vout:             metaData.Vout,
+		Path:             metaData.Path,
+		Operation:        metaData.Operation,
+		ParentPath:       metaData.ParentPath,
+		Encryption:       metaData.Encryption,
+		Version:          metaData.Version,
+		ContentType:      metaData.ContentType,
+		ChunkType:        model.ChunkTypeSingle,
+		FileType:         fileType,
+		FileExtension:    fileExtension,
+		FileName:         fileName,
+		FileSize:         int64(len(fileContent)),
+		FileMd5:          fileMd5,
+		FileHash:         fileHash,
+		IsGzipCompressed: isCompressed,
+		StorageType:      storageType,
+		StoragePath:      storagePath,
+		ChainName:        metaData.ChainName,
+		BlockHeight:      height,
+		Timestamp:        timestamp,
+		CreatorMetaId:    creatorMetaID,
+		CreatorAddress:   creatorAddress, // Use real creator address
+		OwnerAddress:     metaData.OwnerAddress,
+		OwnerMetaId:      calculateMetaID(metaData.OwnerAddress),
+		Status:           model.StatusSuccess,
+		State:            0,
 	}
 
 	// Save to database
@@ -417,8 +463,8 @@ func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, height
 		return fmt.Errorf("failed to save file to database: %w", err)
 	}
 
-	log.Printf("File indexed successfully: PIN=%s, Path=%s, Type=%s, Ext=%s, Size=%d",
-		metaData.PinID, metaData.Path, fileType, fileExtension, len(metaData.Content))
+	log.Printf("File indexed successfully: PIN=%s, Path=%s, Type=%s, Ext=%s, Size=%d, Compressed=%v",
+		metaData.PinID, metaData.Path, fileType, fileExtension, len(fileContent), isCompressed)
 
 	return nil
 }
@@ -693,9 +739,25 @@ func calculateMetaID(address string) string {
 
 // processChunkContent process and save chunk content
 func (s *IndexerService) processChunkContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
-	// Calculate chunk hashes
-	chunkMd5 := calculateMD5(metaData.Content)
-	chunkHash := calculateSHA256(metaData.Content)
+	// Check if content is gzip compressed and decompress if needed
+	chunkContent := metaData.Content
+	isCompressed := isGzipCompressed(metaData.Content)
+	if isCompressed {
+		log.Printf("Detected gzip compressed chunk content for PIN: %s, decompressing...", metaData.PinID)
+		decompressed, err := decompressGzip(metaData.Content)
+		if err != nil {
+			log.Printf("Failed to decompress gzip chunk content for PIN %s: %v, using original content", metaData.PinID, err)
+			// Continue with original content if decompression fails
+		} else {
+			chunkContent = decompressed
+			log.Printf("Successfully decompressed gzip chunk content for PIN: %s (original size: %d, decompressed size: %d)",
+				metaData.PinID, len(metaData.Content), len(chunkContent))
+		}
+	}
+
+	// Calculate chunk hashes (use decompressed content if available)
+	chunkMd5 := calculateMD5(chunkContent)
+	chunkHash := calculateSHA256(chunkContent)
 
 	// Determine storage path: indexer/chunk/{chain}/{txid}/{pinid}
 	storagePath := fmt.Sprintf("indexer/chunk/%s/%s/%s",
@@ -703,17 +765,17 @@ func (s *IndexerService) processChunkContent(metaData *indexer.MetaIDData, heigh
 		metaData.TxID,
 		metaData.PinID)
 
-	// Save chunk to storage
+	// Save chunk to storage (save decompressed content if available)
 	storageType := "local"
 	if conf.Cfg.Storage.Type == "oss" {
 		storageType = "oss"
 	}
 
-	if err := s.storage.Save(storagePath, metaData.Content); err != nil {
+	if err := s.storage.Save(storagePath, chunkContent); err != nil {
 		return fmt.Errorf("failed to save chunk to storage: %w", err)
 	}
 
-	log.Printf("Chunk saved to storage: %s (size: %d bytes)", storagePath, len(metaData.Content))
+	log.Printf("Chunk saved to storage: %s (size: %d bytes, compressed: %v)", storagePath, len(chunkContent), isCompressed)
 
 	// Extract chunk index from path or metadata (if available)
 	// For now, we'll set it to 0 and it should be updated when index is processed
@@ -721,22 +783,23 @@ func (s *IndexerService) processChunkContent(metaData *indexer.MetaIDData, heigh
 
 	// Create database record
 	indexerFileChunk := &model.IndexerFileChunk{
-		PinID:       metaData.PinID,
-		TxID:        metaData.TxID,
-		Vout:        metaData.Vout,
-		Path:        metaData.Path,
-		Operation:   metaData.Operation,
-		ContentType: metaData.ContentType,
-		ChunkIndex:  chunkIndex,
-		ChunkSize:   int64(len(metaData.Content)),
-		ChunkMd5:    chunkMd5,
-		ParentPinID: "", // Will be set when index is processed
-		StorageType: storageType,
-		StoragePath: storagePath,
-		ChainName:   metaData.ChainName,
-		BlockHeight: height,
-		Status:      model.StatusSuccess,
-		State:       0,
+		PinID:            metaData.PinID,
+		TxID:             metaData.TxID,
+		Vout:             metaData.Vout,
+		Path:             metaData.Path,
+		Operation:        metaData.Operation,
+		ContentType:      metaData.ContentType,
+		ChunkIndex:       chunkIndex,
+		ChunkSize:        int64(len(chunkContent)),
+		ChunkMd5:         chunkMd5,
+		IsGzipCompressed: isCompressed,
+		ParentPinID:      "", // Will be set when index is processed
+		StorageType:      storageType,
+		StoragePath:      storagePath,
+		ChainName:        metaData.ChainName,
+		BlockHeight:      height,
+		Status:           model.StatusSuccess,
+		State:            0,
 	}
 
 	// Save to database
@@ -744,8 +807,8 @@ func (s *IndexerService) processChunkContent(metaData *indexer.MetaIDData, heigh
 		return fmt.Errorf("failed to save chunk to database: %w", err)
 	}
 
-	log.Printf("Chunk indexed successfully: PIN=%s, Path=%s, Size=%d, Hash=%s",
-		metaData.PinID, metaData.Path, len(metaData.Content), chunkHash)
+	log.Printf("Chunk indexed successfully: PIN=%s, Path=%s, Size=%d, Hash=%s, Compressed=%v",
+		metaData.PinID, metaData.Path, len(chunkContent), chunkHash, isCompressed)
 
 	return nil
 }
@@ -810,6 +873,15 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, heigh
 	// If all chunks are available, merge and save complete file
 	if allChunksAvailable && len(chunks) > 0 {
 		log.Printf("All chunks available, merging file: index PIN=%s", indexPinID)
+
+		// Check if all chunks are gzip compressed
+		allChunksCompressed := true
+		for _, chunk := range chunks {
+			if !chunk.IsGzipCompressed {
+				allChunksCompressed = false
+				break
+			}
+		}
 
 		// Merge chunks in order
 		var mergedContent []byte
@@ -879,34 +951,35 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, heigh
 
 		// Create database record for merged file
 		indexerFile := &model.IndexerFile{
-			PinID:          indexPinID,
-			TxID:           metaData.TxID,
-			Vout:           metaData.Vout,
-			Path:           metaData.Path,
-			Operation:      metaData.Operation,
-			ParentPath:     metaData.ParentPath,
-			Encryption:     metaData.Encryption,
-			Version:        metaData.Version,
-			ContentType:    metaFileIndex.DataType,
-			Data:           string(data),
-			ChunkType:      model.ChunkTypeMulti,
-			FileType:       fileType,
-			FileExtension:  fileExtension,
-			FileName:       metaFileIndex.Name,
-			FileSize:       metaFileIndex.FileSize,
-			FileMd5:        fileMd5,
-			FileHash:       fileHash,
-			StorageType:    storageType,
-			StoragePath:    storagePath,
-			ChainName:      metaData.ChainName,
-			BlockHeight:    height,
-			Timestamp:      timestamp,
-			CreatorMetaId:  creatorMetaID,
-			CreatorAddress: creatorAddress,
-			OwnerAddress:   metaData.OwnerAddress,
-			OwnerMetaId:    calculateMetaID(metaData.OwnerAddress),
-			Status:         model.StatusSuccess,
-			State:          0,
+			PinID:            indexPinID,
+			TxID:             metaData.TxID,
+			Vout:             metaData.Vout,
+			Path:             metaData.Path,
+			Operation:        metaData.Operation,
+			ParentPath:       metaData.ParentPath,
+			Encryption:       metaData.Encryption,
+			Version:          metaData.Version,
+			ContentType:      metaFileIndex.DataType,
+			Data:             string(data),
+			ChunkType:        model.ChunkTypeMulti,
+			FileType:         fileType,
+			FileExtension:    fileExtension,
+			FileName:         metaFileIndex.Name,
+			FileSize:         metaFileIndex.FileSize,
+			FileMd5:          fileMd5,
+			FileHash:         fileHash,
+			IsGzipCompressed: allChunksCompressed,
+			StorageType:      storageType,
+			StoragePath:      storagePath,
+			ChainName:        metaData.ChainName,
+			BlockHeight:      height,
+			Timestamp:        timestamp,
+			CreatorMetaId:    creatorMetaID,
+			CreatorAddress:   creatorAddress,
+			OwnerAddress:     metaData.OwnerAddress,
+			OwnerMetaId:      calculateMetaID(metaData.OwnerAddress),
+			Status:           model.StatusSuccess,
+			State:            0,
 		}
 
 		// Save to database

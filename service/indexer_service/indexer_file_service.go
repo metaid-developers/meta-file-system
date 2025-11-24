@@ -239,21 +239,22 @@ func (s *IndexerFileService) GetAvatarContent(pinID string) ([]byte, string, str
 
 // GetFastFileOSSURL get OSS URL for fast file content redirect
 // processType: "preview" for image preview (640), "thumbnail" for thumbnail (235), "video" for video first frame, "" for original
-func (s *IndexerFileService) GetFastFileOSSURL(pinID string, processType string) (string, error) {
+// Returns: OSS URL, ContentType, FileName, FileType, error
+func (s *IndexerFileService) GetFastFileOSSURL(pinID string, processType string) (string, string, string, string, error) {
 	// Get file information
 	file, err := s.GetFileByPinID(pinID)
 	if err != nil {
-		return "", err
+		return "", "", "", "", err
 	}
 
 	// Check if storage type is OSS
 	if file.StorageType != "oss" {
-		return "", errors.New("file is not stored in OSS")
+		return "", "", "", "", errors.New("file is not stored in OSS")
 	}
 
 	// Check if domain is configured
 	if conf.Cfg.Storage.OSS.Domain == "" {
-		return "", errors.New("OSS domain is not configured")
+		return "", "", "", "", errors.New("OSS domain is not configured")
 	}
 
 	// Build base URL
@@ -261,10 +262,39 @@ func (s *IndexerFileService) GetFastFileOSSURL(pinID string, processType string)
 	storagePath := strings.TrimPrefix(file.StoragePath, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, storagePath)
 
+	// Determine Content-Type
+	contentType := file.ContentType
+	if contentType == "" {
+		// Fallback to default based on file type
+		switch file.FileType {
+		case "image":
+			contentType = "image/jpeg"
+		case "video":
+			contentType = "video/mp4"
+		case "audio":
+			contentType = "audio/mpeg"
+		case "text":
+			contentType = "text/plain"
+		case "document":
+			contentType = "application/pdf"
+		default:
+			contentType = "application/octet-stream"
+		}
+	}
+
+	// Determine filename
+	fileName := file.FileName
+	if fileName == "" {
+		fileName = pinID
+		if file.FileExtension != "" {
+			fileName = pinID + file.FileExtension
+		}
+	}
+
 	// Add process parameters based on file type and process type
 	if processType == "" {
 		// Original file, no processing
-		return url, nil
+		return url, contentType, fileName, file.FileType, nil
 	}
 
 	// Determine process parameter based on file type and process type
@@ -275,27 +305,27 @@ func (s *IndexerFileService) GetFastFileOSSURL(pinID string, processType string)
 		if file.FileType == "image" {
 			processParam = OssProcess640
 		} else {
-			return "", errors.New("preview only supports image files")
+			return "", "", "", "", errors.New("preview only supports image files")
 		}
 	case "thumbnail":
 		// Thumbnail: 235px width
 		if file.FileType == "image" {
 			processParam = OssProcess235
 		} else {
-			return "", errors.New("thumbnail only supports image files")
+			return "", "", "", "", errors.New("thumbnail only supports image files")
 		}
 	case "video":
 		// Video first frame
 		if file.FileType == "video" {
 			processParam = OssProcessVideoFirstImg
 		} else {
-			return "", errors.New("video process only supports video files")
+			return "", "", "", "", errors.New("video process only supports video files")
 		}
 	default:
-		return "", fmt.Errorf("unknown process type: %s", processType)
+		return "", "", "", "", fmt.Errorf("unknown process type: %s", processType)
 	}
 
-	return url + processParam, nil
+	return url + processParam, contentType, fileName, file.FileType, nil
 }
 
 // GetFastAvatarOSSURL get OSS URL for fast avatar content redirect
