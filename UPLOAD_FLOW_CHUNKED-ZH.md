@@ -529,6 +529,15 @@ async function buildChunkedUploadMergeTx(utxoData, chunkPreTxOutputAmount, index
 
 ### 步骤 8: 构建并签名预交易
 
+> **⚠️ 重要提示：预交易的签名类型**
+> 
+> **关键：** 构建预交易时，您**必须**使用正确的签名类型：
+> - **签名类型：** `SIGHASH_NONE | SIGHASH_ANYONECANPAY` = `0x2 | 0x40`
+> - **原因：** 此签名类型允许后端在签名后添加输出，这对于以下操作至关重要：
+>   - 分块 PreTx：后端添加向助手地址的多个输出（每个分块一个）
+>   - 索引 PreTx：后端添加 OP_RETURN 输出和找零输出
+> - **⚠️ 使用错误的签名类型将导致交易失败！**
+
 构建两个使用 SIGHASH_NONE 签名的预交易，允许后端稍后添加输出：
 
 #### 8.1 构建分块资助预交易

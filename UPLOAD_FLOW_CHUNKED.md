@@ -529,6 +529,15 @@ async function buildChunkedUploadMergeTx(utxoData, chunkPreTxOutputAmount, index
 
 ### Step 8: Build and Sign Pre-Transactions
 
+> **⚠️ IMPORTANT: Signature Type for Pre-Transactions**
+> 
+> **CRITICAL:** When building pre-transactions, you **MUST** use the correct signature type:
+> - **Signature Type:** `SIGHASH_NONE | SIGHASH_ANYONECANPAY` = `0x2 | 0x40`
+> - **Why:** This signature type allows the backend to add outputs after signing, which is essential for:
+>   - Chunk PreTx: Backend adds multiple outputs to assistant address (one per chunk)
+>   - Index PreTx: Backend adds OP_RETURN output and change output
+> - **⚠️ Using wrong signature type will cause transaction failure!**
+
 Build two pre-transactions signed with SIGHASH_NONE, which allows the backend to add outputs later:
 
 #### 8.1 Build Chunk Funding Pre-Transaction

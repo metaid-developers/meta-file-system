@@ -397,6 +397,14 @@ async function mergeUTXOs(utxoData, estimatedFee) {
 
 ### Step 6: Build and Sign Base Transaction
 
+> **⚠️ IMPORTANT: Signature Type for Pre-Transaction**
+> 
+> **CRITICAL:** When building the base transaction, you **MUST** use the correct signature type:
+> - **Signature Type:** `SIGHASH_SINGLE | SIGHASH_ANYONECANPAY` = `0x3 | 0x80 | 0x40`
+> - **Why:** This signature type allows the backend to modify the output amount and add the OP_RETURN output after signing
+> - **Requirement:** This signature type requires exactly **one input** (single UTXO)
+> - **⚠️ Using wrong signature type or multiple inputs will cause transaction failure!**
+
 Build a base transaction with SIGHASH_SINGLE signature (requires single UTXO):
 
 ```javascript

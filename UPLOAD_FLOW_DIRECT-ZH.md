@@ -395,6 +395,14 @@ async function mergeUTXOs(utxoData, estimatedFee) {
 
 ### 步骤 6: 构建并签名基础交易
 
+> **⚠️ 重要提示：预交易的签名类型**
+> 
+> **关键：** 构建基础交易时，您**必须**使用正确的签名类型：
+> - **签名类型：** `SIGHASH_SINGLE | SIGHASH_ANYONECANPAY` = `0x3 | 0x80 | 0x40`
+> - **原因：** 此签名类型允许后端在签名后修改输出金额并添加 OP_RETURN 输出
+> - **要求：** 此签名类型需要恰好**一个输入**（单个 UTXO）
+> - **⚠️ 使用错误的签名类型或多个输入将导致交易失败！**
+
 构建一个使用 SIGHASH_SINGLE 签名的基础交易（需要单个 UTXO）：
 
 ```javascript
