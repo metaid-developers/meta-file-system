@@ -867,24 +867,33 @@ async function startChunkedUpload() {
         uploadBtn.textContent = 'Preparing...';
         progress.classList.add('show');
         
+        // Show upload modal
+        showUploadModal();
+        updateUploadModalProgress(0, 'Preparing...');
+        
         showNotification('Starting Chunked Upload...', 'info');
         
         // Step 1: Read file and convert to base64
-        updateProgress(10, 'Step 1/6: Reading file...');
+        updateProgress(5, 'Step 1/7: Reading file...');
+        updateUploadModalProgress(5, 'Reading file...');
         const fileContent = await readFileAsBase64(selectedFile);
         addLog(`✅ File read successfully (${formatFileSize(selectedFile.size)})`, 'success');
         
         // Step 2: Estimate chunked upload fee
-        updateProgress(20, 'Step 2/6: Estimating chunked upload fee...');
+        updateProgress(10, 'Step 2/7: Estimating chunked upload fee...');
+        updateUploadModalProgress(10, 'Estimating fees...');
         const estimateResult = await estimateChunkedUploadFee(fileContent);
+        chunkedUploadChunkNumber = estimateResult.chunkNumber; // Store for progress calculation
         addLog(`✅ Fee estimation completed`, 'success');
         addLog(`📊 Chunks: ${estimateResult.chunkNumber}, Total fee: ${formatSatoshis(estimateResult.totalFee)}`, 'info');
         
         // Step 3: Show confirmation dialog with chunk details
-        updateProgress(30, 'Step 3/6: Showing confirmation...');
+        updateProgress(15, 'Step 3/7: Showing confirmation...');
+        updateUploadModalProgress(15, 'Waiting for confirmation...');
         const confirmed = await showChunkedUploadConfirmation(estimateResult);
         if (!confirmed) {
             addLog('⚠️ User cancelled chunked upload', 'warning');
+            closeUploadModal();
             uploadBtn.disabled = false;
             uploadBtn.textContent = '🚀 Start Upload to Chain';
             progress.classList.remove('show');
@@ -892,7 +901,8 @@ async function startChunkedUpload() {
         }
         
         // Step 4: Get UTXOs for merge transaction
-        updateProgress(40, 'Step 4/7: Getting UTXOs...');
+        updateProgress(20, 'Step 4/7: Getting UTXOs...');
+        updateUploadModalProgress(20, 'Getting UTXOs...');
         
         // Calculate fees for building PreTx transactions
         // PreTx size estimation: base + inputs + outputs (approximate)
@@ -933,7 +943,8 @@ async function startChunkedUpload() {
         addLog(`💰 Merge tx fee: ${formatSatoshis(mergeTxFee)}`, 'info');
         
         // Step 5: Build merge transaction with two outputs
-        updateProgress(50, 'Step 5/7: Building merge transaction...');
+        updateProgress(30, 'Step 5/7: Building merge transaction...');
+        updateUploadModalProgress(30, 'Building merge transaction, please confirm in wallet...');
         showNotification('Please confirm merge transaction in wallet...', 'info');
         
         const mergeResult = await buildChunkedUploadMergeTx(
@@ -948,7 +959,8 @@ async function startChunkedUpload() {
         addLog(`📦 Index PreTx UTXO: output ${mergeResult.indexPreTxOutputIndex}, ${formatSatoshis(indexPreTxOutputAmount)}`, 'success');
         
         // Step 6: Build and sign pre-transactions using merge tx outputs
-        updateProgress(60, 'Step 6/7: Building and signing pre-transactions...');
+        updateProgress(40, 'Step 6/7: Building and signing pre-transactions...');
+        updateUploadModalProgress(40, 'Building pre-transactions, please confirm in wallet...');
         showNotification('Please confirm pre-transactions in wallet...', 'info');
         
         // Build chunk funding pre-tx using merge tx output
@@ -978,19 +990,94 @@ async function startChunkedUpload() {
         addLog(`✅ Index pre-tx signed`, 'success');
         
         // Step 7: Chunked upload (build chunk transactions and index transaction)
-        updateProgress(80, 'Step 7/7: Uploading chunks to chain...');
-        const uploadResult = await chunkedUpload(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
+        // Progress: 50% (preparation) + 40% (uploading chunks, estimated) + 10% (final confirmation)
+        // Each chunk takes 3 seconds, so total estimated time = (chunkNumber + 1) * 3 seconds
+        const baseProgress = 50;
+        const uploadProgressRange = 40; // 50% to 90%
+        const totalTransactions = chunkedUploadChunkNumber + 1; // chunks + index transaction
+        const estimatedTotalSeconds = totalTransactions * 3; // 3 seconds per transaction
+        const progressPerSecond = uploadProgressRange / estimatedTotalSeconds; // Progress increment per second
+        
+        updateProgress(50, 'Step 7/7: Uploading chunks to chain...');
+        updateUploadModalProgress(50, `Uploading chunks to chain (0/${totalTransactions})...`);
+        
+        // Start progress simulation timer (only used if API takes time)
+        let currentProgress = baseProgress;
+        let elapsedSeconds = 0;
+        let progressInterval = null;
+        let isApiReturned = false; // Flag to track if API has returned
+        
+        // Start progress simulation timer
+        progressInterval = setInterval(() => {
+            // If API has already returned, stop the timer immediately
+            if (isApiReturned) {
+                clearInterval(progressInterval);
+                return;
+            }
+            
+            elapsedSeconds++;
+            currentProgress = baseProgress + (progressPerSecond * elapsedSeconds);
+            
+            // Cap progress at 90% during upload
+            if (currentProgress >= 90) {
+                currentProgress = 90;
+                clearInterval(progressInterval);
+                return;
+            }
+            
+            // Calculate which transaction we're on (approximately)
+            const currentTransaction = Math.min(
+                Math.floor((currentProgress - baseProgress) / (uploadProgressRange / totalTransactions)) + 1,
+                totalTransactions
+            );
+            
+            updateUploadModalProgress(
+                currentProgress,
+                `Uploading chunks to chain (${currentTransaction}/${totalTransactions})...`
+            );
+        }, 1000); // Update every second
+        
+        // Call the actual upload API (this is synchronous/blocking)
+        let uploadResult;
+        try {
+            uploadResult = await chunkedUpload(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
+            
+            // API has returned, stop the progress simulation immediately
+            isApiReturned = true;
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+            
+            // Immediately update progress to 90% (ignore any estimated progress)
+            updateUploadModalProgress(90, 'Confirming transactions...');
+        } catch (error) {
+            // API returned with error, stop the progress simulation immediately
+            isApiReturned = true;
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+            throw error;
+        }
         
         // Check upload result status
         if (uploadResult.status === 'failed') {
             const errorMessage = uploadResult.message || 'Upload failed with unknown error';
             addLog(`❌ Upload failed: ${errorMessage}`, 'error');
+            showUploadModalError('Upload Failed', errorMessage);
             throw new Error(errorMessage);
         }
         
         // Completed
         updateProgress(100, 'Upload completed!');
+        updateUploadModalProgress(100, 'Upload completed!');
         addLog(`✅ File uploaded successfully! Index TxID: ${uploadResult.indexTxId}`, 'success');
+        
+        // Show success in modal
+        const successMessage = `File uploaded successfully!\nTransaction ID: ${uploadResult.indexTxId}\nPinID: ${uploadResult.indexTxId + 'i0'}`;
+        showUploadModalSuccess('Upload Successful!', successMessage);
+        
         showNotification(`🎉 File uploaded successfully!`, 'success');
         
         // Show links
@@ -1008,6 +1095,10 @@ async function startChunkedUpload() {
     } catch (error) {
         console.error('❌ Chunked upload failed:', error);
         addLog(`❌ Chunked upload failed: ${error.message}`, 'error');
+        
+        // Show error in modal
+        const errorDetails = error.message || 'Unknown error';
+        showUploadModalError('Upload Failed', errorDetails);
         
         // Show different hints based on error type
         if (error.message && error.message.includes('user cancelled')) {
@@ -1094,7 +1185,7 @@ function showChunkedUploadConfirmation(estimateResult) {
             display: flex;
             justify-content: center;
             align-items: center;
-            z-index: 10000;
+            z-index: 10001;
         `;
         
         const dialog = document.createElement('div');
@@ -1130,14 +1221,16 @@ function showChunkedUploadConfirmation(estimateResult) {
                         <li>Per Chunk Fee: ${formatSatoshis(estimateResult.perChunkFee)}</li>
                     </ul>
                 </div>
-                <div style="margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 6px;">
-                    <strong>ℹ️ Note:</strong>
-                    <p style="margin: 5px 0; font-size: 14px; color: #666;">
+                <div style="margin: 10px 0; padding: 10px; background: #fff3cd; border-radius: 6px; border: 1px solid #ffc107;">
+                    <strong>⚠️ Important Notice:</strong>
+                    <p style="margin: 5px 0; font-size: 14px; color: #856404;">
                         This large file will be split into ${estimateResult.chunkNumber} chunks. 
                         You need to confirm ${estimateResult.chunkNumber + 2} transactions:
                         <br>1. Chunk funding transaction (${estimateResult.chunkNumber} outputs)
                         <br>2. ${estimateResult.chunkNumber} chunk transactions
                         <br>3. Index transaction
+                        <br><br>
+                        <strong>Please do not close the browser or refresh the page during upload!</strong>
                     </p>
                 </div>
             </div>
@@ -1160,7 +1253,7 @@ function showChunkedUploadConfirmation(estimateResult) {
                     cursor: pointer;
                     font-size: 14px;
                     font-weight: bold;
-                ">Confirm & Upload</button>
+                ">Confirm & Start Upload</button>
             </div>
         `;
         
@@ -1503,7 +1596,7 @@ async function chunkedUpload(fileContentBase64, chunkPreTxHex, indexPreTxHex, me
             contentType: contentType,
             chunkPreTxHex: chunkPreTxHex,
             indexPreTxHex: indexPreTxHex,
-            mergeTxHex: mergeTxHex, // 合并交易 hex，用于广播
+            mergeTxHex: mergeTxHex, // Merge transaction hex for broadcasting
             feeRate: Number(document.getElementById('feeRateInput').value) || 1,
             isBroadcast: true // Auto broadcast
         };
@@ -1561,15 +1654,21 @@ async function startUpload2() {
         uploadBtn.textContent = 'Uploading...';
         progress.classList.add('show');
         
+        // Show upload modal
+        showUploadModal();
+        updateUploadModalProgress(0, 'Preparing...');
+        
         showNotification('Starting Direct Upload...', 'info');
         
         // Step 1: Estimate file upload fee
         updateProgress(10, 'Step 1/5: Estimating upload fee...');
+        updateUploadModalProgress(10, 'Estimating fees...');
         const estimatedFee = await estimateUploadFee();
         addLog(`💰 Estimated fee: ${estimatedFee} satoshis`, 'info');
         
         // Step 2: Get UTXOs
         updateProgress(30, 'Step 2/5: Getting UTXOs...');
+        updateUploadModalProgress(30, 'Getting UTXOs...');
         const utxos = await getWalletUTXOs(estimatedFee);
         addLog(`✅ Got ${utxos.utxos.length} UTXO(s), total: ${utxos.totalAmount} satoshis`, 'success');
         
@@ -1579,6 +1678,7 @@ async function startUpload2() {
         
         if (utxos.utxos.length > 1) {
             updateProgress(40, 'Step 3/5: Merging UTXOs...');
+            updateUploadModalProgress(40, 'Merging UTXOs, please confirm in wallet...');
             addLog(`⚠️ Multiple UTXOs detected, merging into one UTXO...`, 'info');
             showNotification('Please confirm UTXO merge transaction...', 'info');
             const mergeResult = await mergeUTXOs(utxos, estimatedFee);
@@ -1599,17 +1699,25 @@ async function startUpload2() {
         
         // Step 4: Build and sign base transaction
         updateProgress(60, 'Step 4/5: Building and signing transaction...');
+        updateUploadModalProgress(60, 'Building and signing transaction, please confirm in wallet...');
         showNotification('Please confirm signature in wallet...', 'info');
         const preTxHex = await buildAndSignBaseTx(finalUtxo);
         addLog(`✅ Base transaction signed`, 'success');
         
         // Step 5: Direct upload (one-step: add OP_RETURN + calculate change + broadcast)
         updateProgress(80, 'Step 5/5: Uploading to chain...');
+        updateUploadModalProgress(80, 'Uploading to chain...');
         const uploadResult = await directUpload(preTxHex, finalUtxo.totalAmount, mergeTxHex);
         
         // Completed
         updateProgress(100, 'Upload completed!');
+        updateUploadModalProgress(100, 'Upload completed!');
         addLog(`✅ File uploaded successfully! TxID: ${uploadResult.txId}`, 'success');
+        
+        // Show success in modal
+        const successMessage = `File uploaded successfully!\nTransaction ID: ${uploadResult.txId}\nPinID: ${uploadResult.pinId}`;
+        showUploadModalSuccess('Upload Successful!', successMessage);
+        
         showNotification(`🎉 File uploaded successfully!`, 'success');
         
         // Show links
@@ -1627,6 +1735,10 @@ async function startUpload2() {
     } catch (error) {
         console.error('❌ Direct upload failed:', error);
         addLog(`❌ Direct upload failed: ${error.message}`, 'error');
+        
+        // Show error in modal
+        const errorDetails = error.message || 'Unknown error';
+        showUploadModalError('Upload Failed', errorDetails);
         
         // Show different hints based on error type
         if (error.message && error.message.includes('user cancelled')) {
@@ -2325,11 +2437,136 @@ async function commitUpload(fileId, signedRawTx) {
     return result.data;
 }
 
-// Update progress
+// Upload Modal Control Functions
+let uploadModal = null;
+let uploadModalIcon = null;
+let uploadModalTitle = null;
+let uploadModalMessage = null;
+let uploadModalProgress = null;
+let uploadModalProgressFill = null;
+let uploadModalProgressText = null;
+let uploadModalStatusText = null;
+let uploadModalWarning = null;
+let uploadModalSuccess = null;
+let uploadModalError = null;
+let uploadModalCloseBtn = null;
+let chunkedUploadChunkNumber = 0; // Store chunk number for progress calculation
+
+// Initialize upload modal elements
+function initUploadModal() {
+    uploadModal = document.getElementById('uploadModal');
+    uploadModalIcon = document.getElementById('uploadModalIcon');
+    uploadModalTitle = document.getElementById('uploadModalTitle');
+    uploadModalMessage = document.getElementById('uploadModalMessage');
+    uploadModalProgress = document.getElementById('uploadModalProgress');
+    uploadModalProgressFill = document.getElementById('uploadModalProgressFill');
+    uploadModalProgressText = document.getElementById('uploadModalProgressText');
+    uploadModalStatusText = document.getElementById('uploadModalStatusText');
+    uploadModalWarning = document.getElementById('uploadModalWarning');
+    uploadModalSuccess = document.getElementById('uploadModalSuccess');
+    uploadModalError = document.getElementById('uploadModalError');
+    uploadModalCloseBtn = document.getElementById('uploadModalCloseBtn');
+}
+
+// Show upload modal
+function showUploadModal() {
+    if (!uploadModal) {
+        initUploadModal();
+    }
+    
+    // Reset modal state
+    uploadModalIcon.textContent = '📤';
+    uploadModalTitle.textContent = 'Uploading to Chain';
+    uploadModalMessage.textContent = 'Processing your file, please wait...';
+    uploadModalProgressFill.style.width = '0%';
+    uploadModalProgressText.textContent = '0%';
+    uploadModalStatusText.textContent = 'Preparing...';
+    
+    // Show progress, hide success/error
+    uploadModalProgress.classList.remove('hidden');
+    uploadModalWarning.classList.remove('hidden');
+    uploadModalSuccess.classList.add('hidden');
+    uploadModalError.classList.add('hidden');
+    uploadModalCloseBtn.classList.add('hidden');
+    
+    // Show modal
+    uploadModal.classList.add('show');
+}
+
+// Update upload modal progress
+function updateUploadModalProgress(percent, statusText) {
+    if (!uploadModalProgressFill) return;
+    
+    uploadModalProgressFill.style.width = percent + '%';
+    uploadModalProgressText.textContent = Math.round(percent) + '%';
+    if (statusText) {
+        uploadModalStatusText.textContent = statusText;
+    }
+}
+
+// Show upload success
+function showUploadModalSuccess(message, details) {
+    if (!uploadModal) return;
+    
+    // Hide progress and warning
+    uploadModalProgress.classList.add('hidden');
+    uploadModalWarning.classList.add('hidden');
+    
+    // Show success
+    uploadModalSuccess.classList.remove('hidden');
+    uploadModalIcon.textContent = '✅';
+    uploadModalTitle.textContent = 'Upload Successful!';
+    uploadModalMessage.textContent = message || 'File uploaded successfully to blockchain';
+    
+    const successMessageEl = document.getElementById('uploadModalSuccessMessage');
+    if (successMessageEl) {
+        successMessageEl.textContent = details || 'Your file has been successfully uploaded to the blockchain network';
+    }
+    
+    // Show close button
+    uploadModalCloseBtn.classList.remove('hidden');
+}
+
+// Show upload error
+function showUploadModalError(message, details) {
+    if (!uploadModal) return;
+    
+    // Hide progress and warning
+    uploadModalProgress.classList.add('hidden');
+    uploadModalWarning.classList.add('hidden');
+    
+    // Show error
+    uploadModalError.classList.remove('hidden');
+    uploadModalIcon.textContent = '❌';
+    uploadModalTitle.textContent = 'Upload Failed';
+    uploadModalMessage.textContent = message || 'An error occurred during file upload';
+    
+    const errorMessageEl = document.getElementById('uploadModalErrorMessage');
+    if (errorMessageEl) {
+        errorMessageEl.textContent = details || 'Please check your network connection or try again later';
+    }
+    
+    // Show close button
+    uploadModalCloseBtn.classList.remove('hidden');
+}
+
+// Close upload modal
+function closeUploadModal() {
+    if (uploadModal) {
+        uploadModal.classList.remove('show');
+    }
+}
+
+// Update progress (keep old function for backward compatibility)
 function updateProgress(percent, text) {
     progressFill.style.width = percent + '%';
     progressText.textContent = text;
     addLog(`📊 progress: ${percent}% ${text}`, 'info');
+    
+    // Also update modal if it's open
+    if (uploadModal && uploadModal.classList.contains('show')) {
+        updateUploadModalProgress(percent, text);
+    }
 }
 
 // Add log
@@ -2626,7 +2863,7 @@ function showBuzzSuccessLinks(txId, pinId) {
     }
     
     if (pinId) {
-        // Show Buzz链接
+        // Show Buzz link
         const showBuzzUrl = `https://www.show.now/buzz/${pinId}`;
         linksHtml += `
             <div style="margin: 8px 0;">
@@ -2641,7 +2878,7 @@ function showBuzzSuccessLinks(txId, pinId) {
         `;
         addLog(`🔗 Show Buzz link: ${showBuzzUrl}`, 'success');
         
-        // MetaID Manager链接
+        // MetaID Manager link
         const metaidManagerUrl = `https://man.metaid.io/pin/${pinId}`;
         linksHtml += `
             <div style="margin: 8px 0;">
