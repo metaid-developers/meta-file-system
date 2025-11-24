@@ -1131,6 +1131,7 @@ function readFileAsBase64(file) {
 // Estimate chunked upload fee
 async function estimateChunkedUploadFee(fileContentBase64) {
     try {
+        console.log('[EstimateChunkedUpload] Estimating chunked upload fee...', 'info');
         addLog('Calling EstimateChunkedUpload API...', 'info');
         
         const path = document.getElementById('pathInput').value;
@@ -1144,12 +1145,16 @@ async function estimateChunkedUploadFee(fileContentBase64) {
             feeRate: Number(document.getElementById('feeRateInput').value) || 1
         };
         
+        console.log('[EstimateChunkedUpload] Preparing request body...', 'info');
+        const requestOptions = await prepareJsonRequestBody(requestBody);
+        console.log('[EstimateChunkedUpload] Request options prepared, headers:', requestOptions.headers);
+        console.log('[EstimateChunkedUpload] Body size:', requestOptions.body.byteLength || requestOptions.body.length);
+
+        console.log('[EstimateChunkedUpload] Calling API...', 'info');
         const response = await fetch(`${API_BASE}/api/v1/files/estimate-chunked-upload`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
+            headers: requestOptions.headers,
+            body: requestOptions.body
         });
         
         if (!response.ok) {
@@ -1601,12 +1606,12 @@ async function chunkedUpload(fileContentBase64, chunkPreTxHex, indexPreTxHex, me
             isBroadcast: true // Auto broadcast
         };
         
+        const requestOptions = await prepareJsonRequestBody(requestBody);
+        
         const response = await fetch(`${API_BASE}/api/v1/files/chunked-upload`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
+            headers: requestOptions.headers,
+            body: requestOptions.body
         });
         
         if (!response.ok) {
@@ -2451,6 +2456,96 @@ let uploadModalSuccess = null;
 let uploadModalError = null;
 let uploadModalCloseBtn = null;
 let chunkedUploadChunkNumber = 0; // Store chunk number for progress calculation
+
+// Build JSON request body with optional gzip compression (browser support dependent)
+async function prepareJsonRequestBody(data) {
+    try {
+        const jsonString = JSON.stringify(data);
+        console.log('[prepareJsonRequestBody] JSON string length:', jsonString.length);
+
+        if (typeof CompressionStream === 'function') {
+            try {
+                console.log('[prepareJsonRequestBody] Attempting gzip compression...');
+                const compressedBody = await gzipCompressString(jsonString);
+                console.log('[prepareJsonRequestBody] Gzip compression successful, compressed size:', compressedBody.byteLength);
+                return {
+                    body: compressedBody,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Encoding': 'gzip'
+                    }
+                };
+            } catch (error) {
+                console.warn('[prepareJsonRequestBody] Failed to gzip request body, fallback to plain JSON:', error);
+            }
+        } else {
+            console.log('[prepareJsonRequestBody] CompressionStream not available, using plain JSON');
+        }
+
+        console.log('[prepareJsonRequestBody] Returning plain JSON');
+        return {
+            body: jsonString,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        };
+    } catch (error) {
+        console.error('[prepareJsonRequestBody] Error:', error);
+        throw error;
+    }
+}
+
+async function gzipCompressString(str) {
+    try {
+        console.log('[gzipCompressString] Starting compression, input length:', str.length);
+        
+        // Use Blob.stream() to avoid blocking with TextEncoder for large strings
+        // Blob handles encoding internally and streams it, preventing main thread blocking
+        const blob = new Blob([str], { type: 'application/json' });
+        console.log('[gzipCompressString] Blob created, size:', blob.size);
+        
+        // Pipe through compression stream
+        const compressionStream = new CompressionStream('gzip');
+        const compressedStream = blob.stream().pipeThrough(compressionStream);
+        console.log('[gzipCompressString] Compression stream created');
+        
+        // Read compressed data from stream
+        const reader = compressedStream.getReader();
+        const chunks = [];
+        let totalLength = 0;
+        
+        console.log('[gzipCompressString] Starting to read compressed chunks...');
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                console.log('[gzipCompressString] Stream reading complete, total chunks:', chunks.length);
+                break;
+            }
+            chunks.push(value);
+            totalLength += value.length;
+            // Log progress for large files (every 50 chunks)
+            if (chunks.length % 50 === 0) {
+                console.log('[gzipCompressString] Progress:', chunks.length, 'chunks,', totalLength, 'bytes');
+            }
+        }
+        
+        console.log('[gzipCompressString] Combining', chunks.length, 'chunks into ArrayBuffer...');
+        // Combine all chunks into a single ArrayBuffer
+        const arrayBuffer = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+            arrayBuffer.set(chunk, offset);
+            offset += chunk.length;
+        }
+        
+        console.log('[gzipCompressString] Compression complete, output size:', arrayBuffer.byteLength, 
+                   'compression ratio:', (arrayBuffer.byteLength / blob.size * 100).toFixed(1) + '%');
+        return arrayBuffer.buffer;
+    } catch (error) {
+        console.error('[gzipCompressString] Error during compression:', error);
+        throw error;
+    }
+}
 
 // Initialize upload modal elements
 function initUploadModal() {

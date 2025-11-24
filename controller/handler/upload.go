@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"strconv"
+	"strings"
 
 	"meta-file-system/common"
 	"meta-file-system/conf"
@@ -24,6 +28,32 @@ func NewUploadHandler(uploadService *upload_service.UploadService) *UploadHandle
 	return &UploadHandler{
 		uploadService: uploadService,
 	}
+}
+
+// bindJSONWithOptionalGzip handles JSON payloads that may be gzip-compressed.
+// If the request header specifies gzip encoding, the body is decompressed before binding.
+func bindJSONWithOptionalGzip(c *gin.Context, obj interface{}) error {
+	encoding := strings.ToLower(strings.TrimSpace(c.GetHeader("Content-Encoding")))
+	if encoding == "gzip" || strings.Contains(encoding, "gzip") {
+		defer c.Request.Body.Close()
+
+		gzipReader, err := gzip.NewReader(c.Request.Body)
+		if err != nil {
+			return err
+		}
+		defer gzipReader.Close()
+
+		bodyBytes, err := io.ReadAll(gzipReader)
+		if err != nil {
+			return err
+		}
+
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		c.Request.ContentLength = int64(len(bodyBytes))
+		c.Request.Header.Del("Content-Encoding")
+	}
+
+	return c.ShouldBindJSON(obj)
 }
 
 // UploadFileRequest upload file request
@@ -387,7 +417,7 @@ type EstimateChunkedUploadRequest struct {
 // @Router       /files/estimate-chunked-upload [post]
 func (h *UploadHandler) EstimateChunkedUpload(c *gin.Context) {
 	var req EstimateChunkedUploadRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSONWithOptionalGzip(c, &req); err != nil {
 		respond.InvalidParam(c, err.Error())
 		return
 	}
@@ -447,7 +477,7 @@ type ChunkedUploadRequest struct {
 // @Router       /files/chunked-upload [post]
 func (h *UploadHandler) ChunkedUpload(c *gin.Context) {
 	var req ChunkedUploadRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSONWithOptionalGzip(c, &req); err != nil {
 		respond.InvalidParam(c, err.Error())
 		return
 	}
