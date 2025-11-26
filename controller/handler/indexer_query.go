@@ -56,7 +56,7 @@ func (h *IndexerQueryHandler) GetByPinID(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        address  path   string  true   "Creator address"
-// @Param        cursor   query  int     false  "Cursor (last file ID)" default(0)
+// @Param        cursor   query  int     false  "Cursor" default(0)
 // @Param        size     query  int     false  "Page size"             default(20)
 // @Success      200      {object}  respond.Response{data=respond.IndexerFileListResponse}
 // @Failure      500      {object}  respond.Response
@@ -92,7 +92,7 @@ func (h *IndexerQueryHandler) GetByCreatorAddress(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        metaId   path   string  true   "Creator MetaID"
-// @Param        cursor   query  int     false  "Cursor (last file ID)" default(0)
+// @Param        cursor   query  int     false  "Cursor" default(0)
 // @Param        size     query  int     false  "Page size"             default(20)
 // @Success      200      {object}  respond.Response{data=respond.IndexerFileListResponse}
 // @Failure      500      {object}  respond.Response
@@ -127,7 +127,7 @@ func (h *IndexerQueryHandler) GetByCreatorMetaID(c *gin.Context) {
 // @Tags         Indexer File Query
 // @Accept       json
 // @Produce      json
-// @Param        cursor  query  int  false  "Cursor (last file ID)" default(0)
+// @Param        cursor  query  int  false  "Cursor" default(0)
 // @Param        size    query  int  false  "Page size"             default(20)
 // @Success      200     {object}  respond.Response{data=respond.IndexerFileListResponse}
 // @Failure      500     {object}  respond.Response

@@ -8,6 +8,12 @@ let walletConnected = false;
 let currentAddress = null;
 let maxFileSize = 10485760; // Default 10MB, will be fetched from server
 let swaggerBaseUrl = ''; // Swagger base URL from server config
+let taskCursor = 0;
+let taskHasMore = true;
+let taskAutoRefreshTimer = null;
+let taskList = [];
+const TASK_PAGE_SIZE = 10;
+const CHUNKED_UPLOAD_THRESHOLD = 10 * 1024 * 1024; // 10MB threshold for chunked uploads
 
 // Helper function to get wallet object
 function getWallet() {
@@ -40,6 +46,8 @@ const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const fileInfo = document.getElementById('fileInfo');
 const uploadBtn = document.getElementById('uploadBtn');
+const asyncChunkUploadBtn = document.getElementById('asyncChunkUploadBtn');
+const asyncUploadHint = document.getElementById('asyncUploadHint');
 const walletStatus = document.getElementById('walletStatus');
 const walletAddress = document.getElementById('walletAddress');
 const addressText = document.getElementById('addressText');
@@ -49,6 +57,12 @@ const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
 const logContainer = document.getElementById('logContainer');
 const maxFileSizeText = document.getElementById('maxFileSizeText');
+const chunkTaskSection = document.getElementById('chunkTaskSection');
+const refreshTasksBtn = document.getElementById('refreshTasksBtn');
+const loadMoreTasksBtn = document.getElementById('loadMoreTasksBtn');
+const taskListContainer = document.getElementById('taskList');
+const taskListEmpty = document.getElementById('taskListEmpty');
+const autoRefreshTasksToggle = document.getElementById('autoRefreshTasksToggle');
 
 // Buzz related DOM elements
 const buzzSection = document.getElementById('buzzSection');
@@ -398,6 +412,10 @@ function initEventListeners() {
     } else {
         console.error('❌ uploadBtn element not found!');
     }
+
+    if (asyncChunkUploadBtn) {
+        asyncChunkUploadBtn.addEventListener('click', startUpload4);
+    }
     
     // Refresh balance button
     const refreshBalanceBtn = document.getElementById('refreshBalanceBtn');
@@ -417,6 +435,40 @@ function initEventListeners() {
         sendBuzzBtn.addEventListener('click', () => {
             console.log('📝 Send buzz button clicked');
             sendBuzz();
+        });
+    }
+
+    if (refreshTasksBtn) {
+        refreshTasksBtn.addEventListener('click', async () => {
+            console.log('🔄 Refresh chunk tasks');
+            if (refreshTasksBtn.disabled) {
+                return; // Prevent duplicate clicks
+            }
+            try {
+                refreshTasksBtn.disabled = true;
+                refreshTasksBtn.textContent = 'Refreshing...';
+                // Clear current list state before refreshing
+                clearTaskList();
+                await loadChunkTasks({ append: false, silent: false });
+            } catch (error) {
+                console.error('Failed to refresh tasks:', error);
+            } finally {
+                refreshTasksBtn.disabled = false;
+                refreshTasksBtn.textContent = 'Refresh';
+            }
+        });
+    }
+
+    if (loadMoreTasksBtn) {
+        loadMoreTasksBtn.addEventListener('click', () => {
+            console.log('➕ Load more chunk tasks');
+            loadChunkTasks({ append: true });
+        });
+    }
+
+    if (autoRefreshTasksToggle) {
+        autoRefreshTasksToggle.addEventListener('change', (e) => {
+            setTaskAutoRefresh(e.target.checked);
         });
     }
     
@@ -568,6 +620,8 @@ async function connectWallet() {
             
             updateUploadButton();
             updateBuzzButton();
+            updateTaskSectionVisibility(true);
+            loadChunkTasks();
             
             addLog(`✅ Wallet connected successfully`, 'success');
             addLog(`📍 Address: ${currentAddress}`, 'info');
@@ -637,6 +691,7 @@ function disconnectWallet() {
     // Update upload button state
     updateUploadButton();
     updateBuzzButton();
+    updateTaskSectionVisibility(false);
     
     addLog('🔌 Wallet disconnected', 'info');
     showNotification('Wallet disconnected', 'info');
@@ -663,6 +718,41 @@ function updateUploadButton() {
         selectedFile: !!selectedFile,
         canUpload
     });
+
+    updateAsyncUploadButton();
+}
+
+function updateAsyncUploadButton() {
+    if (!asyncChunkUploadBtn) {
+        return;
+    }
+
+    const requiresChunk = selectedFile && selectedFile.size > CHUNKED_UPLOAD_THRESHOLD;
+
+    if (!requiresChunk) {
+        asyncChunkUploadBtn.classList.add('hidden');
+        asyncChunkUploadBtn.disabled = true;
+        if (asyncUploadHint) {
+            asyncUploadHint.classList.add('hidden');
+        }
+        return;
+    }
+
+    asyncChunkUploadBtn.classList.remove('hidden');
+    if (asyncUploadHint) {
+        asyncUploadHint.classList.remove('hidden');
+    }
+
+    if (!walletConnected) {
+        asyncChunkUploadBtn.disabled = true;
+        asyncChunkUploadBtn.textContent = '📦 Please connect wallet first';
+    } else if (!selectedFile) {
+        asyncChunkUploadBtn.disabled = true;
+        asyncChunkUploadBtn.textContent = '📦 Please select file first';
+    } else {
+        asyncChunkUploadBtn.disabled = false;
+        asyncChunkUploadBtn.textContent = '📦 Start Async Chunk Upload Task';
+    }
 }
 
 // fetch and display balance
@@ -862,23 +952,39 @@ async function startUpload3() {
 
 // Start chunked upload flow
 async function startChunkedUpload() {
+    return runChunkedUploadFlow({ asynchronous: false });
+}
+
+// Start async chunked upload task flow (ChunkedUploadForTask)
+async function startUpload4() {
+    return runChunkedUploadFlow({ asynchronous: true });
+}
+
+async function runChunkedUploadFlow({ asynchronous = false } = {}) {
+    const triggerButton = asynchronous ? (asyncChunkUploadBtn || uploadBtn) : uploadBtn;
+    const defaultButtonText = asynchronous ? '📦 Start Async Chunk Upload Task' : '🚀 Start Upload to Chain';
+    const preparingText = asynchronous ? 'Preparing async chunk upload...' : 'Preparing...';
+    const flowLabel = asynchronous ? 'Async Chunked Upload Task' : 'Chunked Upload';
+
     try {
-        uploadBtn.disabled = true;
-        uploadBtn.textContent = 'Preparing...';
+        if (triggerButton) {
+            triggerButton.disabled = true;
+            triggerButton.textContent = preparingText;
+        }
         progress.classList.add('show');
-        
+
         // Show upload modal
         showUploadModal();
         updateUploadModalProgress(0, 'Preparing...');
-        
-        showNotification('Starting Chunked Upload...', 'info');
-        
+
+        showNotification(`Starting ${flowLabel}...`, 'info');
+
         // Step 1: Read file and convert to base64
         updateProgress(5, 'Step 1/7: Reading file...');
         updateUploadModalProgress(5, 'Reading file...');
         const fileContent = await readFileAsBase64(selectedFile);
         addLog(`✅ File read successfully (${formatFileSize(selectedFile.size)})`, 'success');
-        
+
         // Step 2: Estimate chunked upload fee
         updateProgress(10, 'Step 2/7: Estimating chunked upload fee...');
         updateUploadModalProgress(10, 'Estimating fees...');
@@ -886,7 +992,7 @@ async function startChunkedUpload() {
         chunkedUploadChunkNumber = estimateResult.chunkNumber; // Store for progress calculation
         addLog(`✅ Fee estimation completed`, 'success');
         addLog(`📊 Chunks: ${estimateResult.chunkNumber}, Total fee: ${formatSatoshis(estimateResult.totalFee)}`, 'info');
-        
+
         // Step 3: Show confirmation dialog with chunk details
         updateProgress(15, 'Step 3/7: Showing confirmation...');
         updateUploadModalProgress(15, 'Waiting for confirmation...');
@@ -894,38 +1000,37 @@ async function startChunkedUpload() {
         if (!confirmed) {
             addLog('⚠️ User cancelled chunked upload', 'warning');
             closeUploadModal();
-            uploadBtn.disabled = false;
-            uploadBtn.textContent = '🚀 Start Upload to Chain';
+            if (triggerButton) {
+                triggerButton.disabled = false;
+                triggerButton.textContent = defaultButtonText;
+            }
             progress.classList.remove('show');
             return;
         }
-        
+
         // Step 4: Get UTXOs for merge transaction
         updateProgress(20, 'Step 4/7: Getting UTXOs...');
         updateUploadModalProgress(20, 'Getting UTXOs...');
-        
+
         // Calculate fees for building PreTx transactions
         // PreTx size estimation: base + inputs + outputs (approximate)
         const preTxBaseSize = 200; // Base transaction overhead
         const preTxInputSize = 150; // Per input with signature
         const preTxOutputSize = 34; // Per output
         const feeRate = Number(document.getElementById('feeRateInput').value) || 1;
-        
+
         // Estimate chunk PreTx size (1 input, no outputs yet - backend will add)
         const chunkPreTxSize = preTxBaseSize + preTxInputSize;
         const chunkPreTxBuildFee = Math.ceil(chunkPreTxSize * feeRate);
-        
+
         // Estimate index PreTx size (1 input, no outputs yet - backend will add)
         const indexPreTxSize = preTxBaseSize + preTxInputSize;
         const indexPreTxBuildFee = Math.ceil(indexPreTxSize * feeRate);
-        
+
         // Calculate total required amount for merge transaction
-        // chunkPreTxOutput = chunkPreTxFee + chunkPreTxBuildFee
-        // indexPreTxOutput = indexPreTxFee + indexPreTxBuildFee
-        // mergeTxFee = merge transaction fee
         const chunkPreTxOutputAmount = estimateResult.chunkPreTxFee + chunkPreTxBuildFee;
         const indexPreTxOutputAmount = estimateResult.indexPreTxFee + indexPreTxBuildFee;
-        
+
         // Estimate merge transaction fee
         const mergeTxBaseSize = 200;
         const mergeTxInputSize = 150;
@@ -933,36 +1038,36 @@ async function startChunkedUpload() {
         const estimatedMergeTxInputs = 2; // Assume 2 inputs
         const mergeTxSize = mergeTxBaseSize + (mergeTxInputSize * estimatedMergeTxInputs) + (mergeTxOutputSize * 2); // 2 outputs
         const mergeTxFee = Math.ceil(mergeTxSize * feeRate);
-        
+
         const totalRequiredAmount = chunkPreTxOutputAmount + indexPreTxOutputAmount + mergeTxFee;
-        
+
         const allUtxos = await getWalletUTXOs(totalRequiredAmount);
         addLog(`✅ Got ${allUtxos.utxos.length} UTXO(s), total: ${allUtxos.totalAmount} satoshis`, 'success');
         addLog(`💰 Chunk PreTx output: ${formatSatoshis(chunkPreTxOutputAmount)}`, 'info');
         addLog(`💰 Index PreTx output: ${formatSatoshis(indexPreTxOutputAmount)}`, 'info');
         addLog(`💰 Merge tx fee: ${formatSatoshis(mergeTxFee)}`, 'info');
-        
+
         // Step 5: Build merge transaction with two outputs
         updateProgress(30, 'Step 5/7: Building merge transaction...');
         updateUploadModalProgress(30, 'Building merge transaction, please confirm in wallet...');
         showNotification('Please confirm merge transaction in wallet...', 'info');
-        
+
         const mergeResult = await buildChunkedUploadMergeTx(
             allUtxos,
             chunkPreTxOutputAmount,
             indexPreTxOutputAmount,
             mergeTxFee
         );
-        
+
         addLog(`✅ Merge transaction built: ${mergeResult.mergeTxId}`, 'success');
         addLog(`📦 Chunk PreTx UTXO: output ${mergeResult.chunkPreTxOutputIndex}, ${formatSatoshis(chunkPreTxOutputAmount)}`, 'success');
         addLog(`📦 Index PreTx UTXO: output ${mergeResult.indexPreTxOutputIndex}, ${formatSatoshis(indexPreTxOutputAmount)}`, 'success');
-        
+
         // Step 6: Build and sign pre-transactions using merge tx outputs
         updateProgress(40, 'Step 6/7: Building and signing pre-transactions...');
         updateUploadModalProgress(40, 'Building pre-transactions, please confirm in wallet...');
         showNotification('Please confirm pre-transactions in wallet...', 'info');
-        
+
         // Build chunk funding pre-tx using merge tx output
         const chunkPreTxUtxo = {
             utxos: [{
@@ -975,7 +1080,7 @@ async function startChunkedUpload() {
         };
         const chunkPreTxHex = await buildChunkFundingPreTx(chunkPreTxUtxo, estimateResult.chunkPreTxFee);
         addLog(`✅ Chunk funding pre-tx signed`, 'success');
-        
+
         // Build index pre-tx using merge tx output
         const indexPreTxUtxo = {
             utxos: [{
@@ -988,129 +1093,151 @@ async function startChunkedUpload() {
         };
         const indexPreTxHex = await buildIndexPreTx(indexPreTxUtxo, estimateResult.indexPreTxFee);
         addLog(`✅ Index pre-tx signed`, 'success');
-        
-        // Step 7: Chunked upload (build chunk transactions and index transaction)
-        // Progress: 50% (preparation) + 40% (uploading chunks, estimated) + 10% (final confirmation)
-        // Each chunk takes 3 seconds, so total estimated time = (chunkNumber + 1) * 3 seconds
-        const baseProgress = 50;
-        const uploadProgressRange = 40; // 50% to 90%
-        const totalTransactions = chunkedUploadChunkNumber + 1; // chunks + index transaction
-        const estimatedTotalSeconds = totalTransactions * 3; // 3 seconds per transaction
-        const progressPerSecond = uploadProgressRange / estimatedTotalSeconds; // Progress increment per second
-        
-        updateProgress(50, 'Step 7/7: Uploading chunks to chain...');
-        updateUploadModalProgress(50, `Uploading chunks to chain (0/${totalTransactions})...`);
-        
-        // Start progress simulation timer (only used if API takes time)
-        let currentProgress = baseProgress;
-        let elapsedSeconds = 0;
-        let progressInterval = null;
-        let isApiReturned = false; // Flag to track if API has returned
-        
-        // Start progress simulation timer
-        progressInterval = setInterval(() => {
-            // If API has already returned, stop the timer immediately
-            if (isApiReturned) {
-                clearInterval(progressInterval);
-                return;
+
+        if (asynchronous) {
+            updateProgress(50, 'Step 7/7: Creating async chunk upload task...');
+            updateUploadModalProgress(50, 'Submitting async task...');
+
+            const taskResult = await createChunkedUploadTask(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
+
+            updateProgress(100, 'Task created successfully!');
+            updateUploadModalProgress(100, 'Task created successfully!');
+            addLog(`✅ Chunked upload task created! Task ID: ${taskResult.taskId}`, 'success');
+            showUploadModalSuccess('Task Created!', `Task ID: ${taskResult.taskId}\nStatus: ${taskResult.status}\n${taskResult.message || ''}`);
+            showNotification('🎉 Async chunk upload task created! Monitor progress in task list.', 'success');
+
+            if (chunkTaskSection) {
+                chunkTaskSection.classList.remove('hidden');
             }
-            
-            elapsedSeconds++;
-            currentProgress = baseProgress + (progressPerSecond * elapsedSeconds);
-            
-            // Cap progress at 90% during upload
-            if (currentProgress >= 90) {
-                currentProgress = 90;
-                clearInterval(progressInterval);
-                return;
+            loadChunkTasks({ append: false, silent: true });
+        } else {
+            // Step 7: Chunked upload (build chunk transactions and index transaction)
+            // Progress: 50% (preparation) + 40% (uploading chunks, estimated) + 10% (final confirmation)
+            // Each chunk takes 3 seconds, so total estimated time = (chunkNumber + 1) * 3 seconds
+            const baseProgress = 50;
+            const uploadProgressRange = 40; // 50% to 90%
+            const totalTransactions = chunkedUploadChunkNumber + 1; // chunks + index transaction
+            const estimatedTotalSeconds = totalTransactions * 3; // 3 seconds per transaction
+            const progressPerSecond = uploadProgressRange / estimatedTotalSeconds; // Progress increment per second
+
+            updateProgress(50, 'Step 7/7: Uploading chunks to chain...');
+            updateUploadModalProgress(50, `Uploading chunks to chain (0/${totalTransactions})...`);
+
+            // Start progress simulation timer (only used if API takes time)
+            let currentProgress = baseProgress;
+            let elapsedSeconds = 0;
+            let progressInterval = null;
+            let isApiReturned = false; // Flag to track if API has returned
+
+            // Start progress simulation timer
+            progressInterval = setInterval(() => {
+                // If API has already returned, stop the timer immediately
+                if (isApiReturned) {
+                    clearInterval(progressInterval);
+                    return;
+                }
+
+                elapsedSeconds++;
+                currentProgress = baseProgress + (progressPerSecond * elapsedSeconds);
+
+                // Cap progress at 90% during upload
+                if (currentProgress >= 90) {
+                    currentProgress = 90;
+                    clearInterval(progressInterval);
+                    return;
+                }
+
+                // Calculate which transaction we're on (approximately)
+                const currentTransaction = Math.min(
+                    Math.floor((currentProgress - baseProgress) / (uploadProgressRange / totalTransactions)) + 1,
+                    totalTransactions
+                );
+
+                updateUploadModalProgress(
+                    currentProgress,
+                    `Uploading chunks to chain (${currentTransaction}/${totalTransactions})...`
+                );
+            }, 1000); // Update every second
+
+            // Call the actual upload API (this is synchronous/blocking)
+            let uploadResult;
+            try {
+                uploadResult = await chunkedUpload(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
+
+                // API has returned, stop the progress simulation immediately
+                isApiReturned = true;
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
+
+                // Immediately update progress to 90% (ignore any estimated progress)
+                updateUploadModalProgress(90, 'Confirming transactions...');
+            } catch (error) {
+                // API returned with error, stop the progress simulation immediately
+                isApiReturned = true;
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
+                throw error;
             }
-            
-            // Calculate which transaction we're on (approximately)
-            const currentTransaction = Math.min(
-                Math.floor((currentProgress - baseProgress) / (uploadProgressRange / totalTransactions)) + 1,
-                totalTransactions
-            );
-            
-            updateUploadModalProgress(
-                currentProgress,
-                `Uploading chunks to chain (${currentTransaction}/${totalTransactions})...`
-            );
-        }, 1000); // Update every second
-        
-        // Call the actual upload API (this is synchronous/blocking)
-        let uploadResult;
-        try {
-            uploadResult = await chunkedUpload(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
-            
-            // API has returned, stop the progress simulation immediately
-            isApiReturned = true;
-            if (progressInterval) {
-                clearInterval(progressInterval);
-                progressInterval = null;
+
+            // Check upload result status
+            if (uploadResult.status === 'failed') {
+                const errorMessage = uploadResult.message || 'Upload failed with unknown error';
+                addLog(`❌ Upload failed: ${errorMessage}`, 'error');
+                showUploadModalError('Upload Failed', errorMessage);
+                throw new Error(errorMessage);
             }
-            
-            // Immediately update progress to 90% (ignore any estimated progress)
-            updateUploadModalProgress(90, 'Confirming transactions...');
-        } catch (error) {
-            // API returned with error, stop the progress simulation immediately
-            isApiReturned = true;
-            if (progressInterval) {
-                clearInterval(progressInterval);
-                progressInterval = null;
-            }
-            throw error;
+
+            // Completed
+            updateProgress(100, 'Upload completed!');
+            updateUploadModalProgress(100, 'Upload completed!');
+            addLog(`✅ File uploaded successfully! Index TxID: ${uploadResult.indexTxId}`, 'success');
+
+            // Show success in modal
+            const successMessage = `File uploaded successfully!\nTransaction ID: ${uploadResult.indexTxId}\nPinID: ${uploadResult.indexTxId + 'i0'}`;
+            showUploadModalSuccess('Upload Successful!', successMessage);
+
+            showNotification(`🎉 File uploaded successfully!`, 'success');
+
+            // Show links
+            showUploadSuccessLinks(uploadResult.indexTxId, uploadResult.indexTxId + 'i0');
+
+            // Show buzz section after successful upload
+            console.log('📝 About to show buzz section with pinId:', uploadResult.indexTxId + 'i0');
+            showBuzzSection(uploadResult.indexTxId + 'i0');
         }
-        
-        // Check upload result status
-        if (uploadResult.status === 'failed') {
-            const errorMessage = uploadResult.message || 'Upload failed with unknown error';
-            addLog(`❌ Upload failed: ${errorMessage}`, 'error');
-            showUploadModalError('Upload Failed', errorMessage);
-            throw new Error(errorMessage);
+
+        if (triggerButton) {
+            triggerButton.disabled = false;
+            triggerButton.textContent = defaultButtonText;
         }
-        
-        // Completed
-        updateProgress(100, 'Upload completed!');
-        updateUploadModalProgress(100, 'Upload completed!');
-        addLog(`✅ File uploaded successfully! Index TxID: ${uploadResult.indexTxId}`, 'success');
-        
-        // Show success in modal
-        const successMessage = `File uploaded successfully!\nTransaction ID: ${uploadResult.indexTxId}\nPinID: ${uploadResult.indexTxId + 'i0'}`;
-        showUploadModalSuccess('Upload Successful!', successMessage);
-        
-        showNotification(`🎉 File uploaded successfully!`, 'success');
-        
-        // Show links
-        showUploadSuccessLinks(uploadResult.indexTxId, uploadResult.indexTxId + 'i0');
-        
-        // Show buzz section after successful upload
-        console.log('📝 About to show buzz section with pinId:', uploadResult.indexTxId + 'i0');
-        showBuzzSection(uploadResult.indexTxId + 'i0');
-        
-        // Reset button state on success
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = '🚀 Start Upload to Chain';
         progress.classList.remove('show');
-        
+        updateUploadButton();
     } catch (error) {
-        console.error('❌ Chunked upload failed:', error);
-        addLog(`❌ Chunked upload failed: ${error.message}`, 'error');
-        
+        console.error('❌ Chunked upload flow failed:', error);
+        addLog(`❌ ${flowLabel} failed: ${error.message}`, 'error');
+
         // Show error in modal
         const errorDetails = error.message || 'Unknown error';
         showUploadModalError('Upload Failed', errorDetails);
-        
+
         // Show different hints based on error type
         if (error.message && error.message.includes('user cancelled')) {
-            showNotification('Upload operation cancelled', 'warning');
+            showNotification(`${flowLabel} cancelled`, 'warning');
         } else {
-            showNotification('Upload failed: ' + error.message, 'error');
+            showNotification(`${flowLabel} failed: ` + error.message, 'error');
         }
-        
+
         // Reset button state on error
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = '🚀 Start Upload to Chain';
+        if (triggerButton) {
+            triggerButton.disabled = false;
+            triggerButton.textContent = defaultButtonText;
+        }
         progress.classList.remove('show');
+        updateUploadButton();
     }
 }
 
@@ -1632,6 +1759,52 @@ async function chunkedUpload(fileContentBase64, chunkPreTxHex, indexPreTxHex, me
     } catch (error) {
         console.error('❌ ChunkedUpload failed:', error);
         throw new Error(`ChunkedUpload failed: ${error.message}`);
+    }
+}
+
+// Create async chunked upload task
+async function createChunkedUploadTask(fileContentBase64, chunkPreTxHex, indexPreTxHex, mergeTxHex) {
+    try {
+        addLog('Submitting async chunked upload task...', 'info');
+        const path = document.getElementById('pathInput').value;
+        const contentType = buildContentType(selectedFile);
+        const metaId = await calculateMetaID(currentAddress);
+
+        const requestBody = {
+            metaId: metaId,
+            address: currentAddress,
+            fileName: selectedFile.name,
+            content: fileContentBase64,
+            path: path,
+            operation: document.getElementById('operationSelect').value || 'create',
+            contentType: contentType,
+            chunkPreTxHex: chunkPreTxHex,
+            indexPreTxHex: indexPreTxHex,
+            mergeTxHex: mergeTxHex,
+            feeRate: Number(document.getElementById('feeRateInput').value) || 1
+        };
+
+        const requestOptions = await prepareJsonRequestBody(requestBody);
+        const response = await fetch(`${API_BASE}/api/v1/files/chunked-upload-task`, {
+            method: 'POST',
+            headers: requestOptions.headers,
+            body: requestOptions.body
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.code !== 0) {
+            throw new Error(result.message);
+        }
+
+        addLog(`✅ Async task created: ${result.data.taskId}`, 'success');
+        return result.data;
+    } catch (error) {
+        console.error('❌ Failed to create chunked upload task:', error);
+        throw new Error(`Chunked upload task failed: ${error.message}`);
     }
 }
 
@@ -2755,6 +2928,214 @@ function updateBuzzButton() {
         sendBuzzBtn.textContent = '📝 Please connect wallet first';
     } else {
         sendBuzzBtn.textContent = '📝 Send Buzz';
+    }
+}
+
+function updateTaskSectionVisibility(isConnected) {
+    if (!chunkTaskSection) return;
+    if (isConnected) {
+        chunkTaskSection.classList.remove('hidden');
+        if (taskList.length === 0) {
+            loadChunkTasks({ silent: true });
+        }
+    } else {
+        chunkTaskSection.classList.add('hidden');
+        clearTaskList();
+        setTaskAutoRefresh(false);
+        if (autoRefreshTasksToggle) {
+            autoRefreshTasksToggle.checked = false;
+        }
+    }
+}
+
+function clearTaskList() {
+    taskList = [];
+    taskCursor = 0;
+    taskHasMore = true;
+    if (taskListContainer) {
+        taskListContainer.innerHTML = '';
+    }
+    if (taskListEmpty) {
+        taskListEmpty.classList.remove('hidden');
+    }
+    if (loadMoreTasksBtn) {
+        loadMoreTasksBtn.disabled = false;
+    }
+}
+
+async function loadChunkTasks(options = {}) {
+    const { append = false, silent = false } = options;
+
+    if (!walletConnected) {
+        if (!silent) {
+            showNotification('⚠️ Please connect wallet first', 'warning');
+        }
+        return;
+    }
+
+    if (!taskListContainer) return;
+
+    if (append && !taskHasMore) {
+        showNotification('No more tasks to load', 'info');
+        return;
+    }
+
+    try {
+        const cursorParam = append ? taskCursor : 0;
+        const url = new URL(`${API_BASE}/api/v1/files/tasks`);
+        url.searchParams.set('address', currentAddress);
+        url.searchParams.set('cursor', cursorParam);
+        url.searchParams.set('size', TASK_PAGE_SIZE);
+
+        if (!silent) {
+            addLog(`Fetching chunked tasks (cursor=${cursorParam})...`, 'info');
+        }
+
+        const response = await fetch(url.toString());
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.code !== 0) {
+            throw new Error(result.message || 'Failed to fetch tasks');
+        }
+
+        const data = result.data || { tasks: [], nextCursor: 0, hasMore: false };
+        const tasks = data.tasks || [];
+
+        if (!append) {
+            taskList = tasks;
+        } else {
+            taskList = taskList.concat(tasks);
+        }
+
+        renderTaskList(taskList);
+        taskCursor = data.nextCursor || 0;
+        taskHasMore = !!data.hasMore;
+
+        if (loadMoreTasksBtn) {
+            loadMoreTasksBtn.disabled = !taskHasMore;
+        }
+
+        if (!silent) {
+            addLog(`✅ Loaded ${tasks.length} task(s)`, 'success');
+        }
+    } catch (error) {
+        console.error('❌ Failed to load tasks:', error);
+        addLog(`❌ Failed to load tasks: ${error.message}`, 'error');
+        if (!silent) {
+            showNotification('Failed to load tasks: ' + error.message, 'error');
+        }
+    }
+}
+
+function renderTaskList(tasks) {
+    if (!taskListContainer) return;
+
+    if (!tasks || tasks.length === 0) {
+        taskListContainer.innerHTML = '';
+        if (taskListEmpty) {
+            taskListEmpty.classList.remove('hidden');
+        }
+        return;
+    }
+
+    if (taskListEmpty) {
+        taskListEmpty.classList.add('hidden');
+    }
+
+    taskListContainer.innerHTML = '';
+    tasks.forEach(task => {
+        const card = document.createElement('div');
+        card.className = 'task-card';
+        const statusClass = getStatusClass(task.status);
+        const progress = Math.min(Math.max(task.progress || 0, 0), 100);
+        const processedInfo = `${task.processedChunks || 0}/${task.totalChunks || 0}`;
+
+        // Build IndexTxId display (clickable link if available)
+        let indexTxIdHtml = '-';
+        if (task.indexTxId && task.indexTxId.trim()) {
+            const txUrl = `https://www.mvcscan.com/tx/${task.indexTxId}`;
+            indexTxIdHtml = `
+                <a href="${txUrl}" target="_blank" 
+                   style="color: #667eea; text-decoration: none; font-family: monospace; font-size: 12px; word-break: break-all;"
+                   onmouseover="this.style.textDecoration='underline'" 
+                   onmouseout="this.style.textDecoration='none'">
+                    ${task.indexTxId}
+                </a>
+                <button onclick="window.open('${txUrl}', '_blank')" 
+                        style="margin-left: 8px; padding: 2px 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">
+                    🔗
+                </button>
+            `;
+        }
+
+        card.innerHTML = `
+            <div class="task-card-header">
+                <div>
+                    <div style="font-weight: 600; color: #333;">Task ID: ${task.taskId}</div>
+                    <div style="font-size: 12px; color: #777;">Created: ${formatDateTime(task.createdAt)}</div>
+                </div>
+                <div class="task-status ${statusClass}">
+                    <span>${formatStatusText(task.status)}</span>
+                    <span>${progress}%</span>
+                </div>
+            </div>
+            <div class="task-progress-bar">
+                <div class="task-progress-fill" style="width: ${progress}%;"></div>
+            </div>
+            <div class="task-meta">
+                <div><strong>File:</strong> ${task.fileName || 'N/A'}</div>
+                <div><strong>Chunks:</strong> ${processedInfo}</div>
+                <div><strong>Step:</strong> ${task.currentStep || 'Pending'}</div>
+                <div><strong>Index TxID:</strong> ${indexTxIdHtml}</div>
+                <div><strong>Message:</strong> ${(task.errorMessage || task.status || '-')}</div>
+            </div>
+        `;
+
+        taskListContainer.appendChild(card);
+    });
+}
+
+function getStatusClass(status = '') {
+    const normalized = (status || '').toLowerCase();
+    if (normalized === 'success') return 'success';
+    if (normalized === 'failed') return 'failed';
+    if (normalized === 'processing') return 'processing';
+    return 'pending';
+}
+
+function formatStatusText(status = '') {
+    if (!status) return 'Pending';
+    return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function formatDateTime(value) {
+    if (!value) return '-';
+    try {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+    } catch {
+        return value;
+    }
+}
+
+function setTaskAutoRefresh(enabled) {
+    if (taskAutoRefreshTimer) {
+        clearInterval(taskAutoRefreshTimer);
+        taskAutoRefreshTimer = null;
+    }
+
+    if (enabled) {
+        taskAutoRefreshTimer = setInterval(() => {
+            loadChunkTasks({ append: false, silent: true });
+        }, 15000);
+        loadChunkTasks({ append: false, silent: true });
+        addLog('Auto refresh for tasks enabled (15s interval)', 'info');
+    } else {
+        addLog('Auto refresh for tasks disabled', 'info');
     }
 }
 

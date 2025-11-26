@@ -10,9 +10,9 @@ type Database interface {
 	CreateIndexerFile(file *model.IndexerFile) error
 	GetIndexerFileByPinID(pinID string) (*model.IndexerFile, error)
 	UpdateIndexerFile(file *model.IndexerFile) error
-	ListIndexerFilesWithCursor(cursor int64, size int) ([]*model.IndexerFile, error)
-	GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, error)
-	GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, error)
+	ListIndexerFilesWithCursor(cursor int64, size int) ([]*model.IndexerFile, int64, error)
+	GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
+	GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
 	GetIndexerFilesCount() (int64, error)
 
 	// IndexerUserAvatar operations

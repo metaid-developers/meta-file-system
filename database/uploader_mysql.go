@@ -28,7 +28,8 @@ func InitUploaderDB() error {
 
 	// Connect database
 	UploaderDB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		// Reduce log noise by only logging errors
+		Logger: logger.Default.LogMode(logger.Error),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)

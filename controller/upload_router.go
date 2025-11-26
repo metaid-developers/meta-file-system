@@ -15,7 +15,7 @@ import (
 )
 
 // SetupUploadRouter setup upload service router
-func SetupUploadRouter(stor storage.Storage) *gin.Engine {
+func SetupUploadRouter(stor storage.Storage) (*gin.Engine, *upload_service.UploadService) {
 	// Set Swagger host from config
 	uploaderDocs.SwaggerInfouploader.Host = conf.Cfg.Uploader.SwaggerBaseUrl
 
@@ -56,6 +56,9 @@ func SetupUploadRouter(stor storage.Storage) *gin.Engine {
 		v1.POST("/files/direct-upload", uploadHandler.DirectUpload)                    // One-step upload (recommended)
 		v1.POST("/files/estimate-chunked-upload", uploadHandler.EstimateChunkedUpload) // Estimate chunked upload fee
 		v1.POST("/files/chunked-upload", uploadHandler.ChunkedUpload)                  // Chunked file upload
+		v1.POST("/files/chunked-upload-task", uploadHandler.ChunkedUploadForTask)      // Async chunked file upload (create task)
+		v1.GET("/files/task/:taskId", uploadHandler.GetTaskProgress)                   // Get task progress
+		v1.GET("/files/tasks", uploadHandler.ListUploadTasks)                          // List tasks by address
 
 		// Configuration
 		v1.GET("/config", uploadHandler.GetConfig)
@@ -78,5 +81,5 @@ func SetupUploadRouter(stor storage.Storage) *gin.Engine {
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
 		ginSwagger.InstanceName("uploader")))
 
-	return r
+	return r, uploadService
 }

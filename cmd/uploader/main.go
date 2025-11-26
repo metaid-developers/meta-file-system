@@ -14,6 +14,7 @@ import (
 	"meta-file-system/conf"
 	"meta-file-system/controller"
 	"meta-file-system/database"
+	"meta-file-system/service/upload_service"
 	"meta-file-system/storage"
 )
 
@@ -102,13 +103,18 @@ func initAll() (*http.Server, func()) {
 	log.Printf("Storage initialized: type=%s", conf.Cfg.Storage.Type)
 
 	// Setup upload service router
-	router := controller.SetupUploadRouter(stor)
+	router, uploadService := controller.SetupUploadRouter(stor)
 
 	// Create HTTP server
 	srv := &http.Server{
 		Addr:    ":" + conf.Cfg.UploaderPort,
 		Handler: router,
 	}
+
+	// Start task processor
+	taskProcessor := upload_service.NewTaskProcessor(uploadService)
+	taskProcessor.Start()
+	log.Println("Task processor started")
 
 	// Return server instance and cleanup function
 	cleanup := func() {

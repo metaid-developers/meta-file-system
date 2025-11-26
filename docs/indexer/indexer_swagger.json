@@ -381,7 +381,7 @@
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Cursor (last file ID)",
+                        "description": "Cursor",
                         "name": "cursor",
                         "in": "query"
                     },
@@ -532,7 +532,7 @@
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Cursor (last file ID)",
+                        "description": "Cursor",
                         "name": "cursor",
                         "in": "query"
                     },
@@ -596,7 +596,7 @@
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Cursor (last file ID)",
+                        "description": "Cursor",
                         "name": "cursor",
                         "in": "query"
                     },
@@ -900,6 +900,10 @@
                 "creator_meta_id": {
                     "type": "string",
                     "example": "abc123def456..."
+                },
+                "encryption": {
+                    "type": "string",
+                    "example": "0"
                 },
                 "file_extension": {
                     "type": "string",

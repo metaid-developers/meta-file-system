@@ -13,6 +13,7 @@ type IndexerFileResponse struct {
 	TxID          string `json:"tx_id" example:"abc123def456789"`
 	Path          string `json:"path" example:"/file/test.jpg"`
 	Operation     string `json:"operation" example:"create"`
+	Encryption    string `json:"encryption" example:"0"`
 	ContentType   string `json:"content_type" example:"image/jpeg"`
 	FileType      string `json:"file_type" example:"image"`
 	FileExtension string `json:"file_extension" example:".jpg"`
@@ -95,6 +96,7 @@ func ToIndexerFileResponse(file *model.IndexerFile) IndexerFileResponse {
 		TxID:          file.TxID,
 		Path:          file.Path,
 		Operation:     file.Operation,
+		Encryption:    file.Encryption,
 		ContentType:   file.ContentType,
 		FileType:      file.FileType,
 		FileExtension: file.FileExtension,

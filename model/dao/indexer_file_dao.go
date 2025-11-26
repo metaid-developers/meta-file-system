@@ -37,23 +37,26 @@ func (dao *IndexerFileDAO) Update(file *model.IndexerFile) error {
 }
 
 // ListWithCursor get file list with cursor pagination
-// cursor: last file ID (0 for first page)
+// cursor: number of records to skip (0 for first page)
 // size: page size
-func (dao *IndexerFileDAO) ListWithCursor(cursor int64, size int) ([]*model.IndexerFile, error) {
+// Returns: files, nextCursor, error
+func (dao *IndexerFileDAO) ListWithCursor(cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	return dao.db.ListIndexerFilesWithCursor(cursor, size)
 }
 
 // GetByCreatorAddressWithCursor get file list by creator address with cursor pagination
-// cursor: last file ID (0 for first page)
+// cursor: number of records to skip (0 for first page)
 // size: page size
-func (dao *IndexerFileDAO) GetByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, error) {
+// Returns: files, nextCursor, error
+func (dao *IndexerFileDAO) GetByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	return dao.db.GetIndexerFilesByCreatorAddressWithCursor(address, cursor, size)
 }
 
 // GetByCreatorMetaIDWithCursor get file list by creator MetaID with cursor pagination
-// cursor: last file ID (0 for first page)
+// cursor: number of records to skip (0 for first page)
 // size: page size
-func (dao *IndexerFileDAO) GetByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, error) {
+// Returns: files, nextCursor, error
+func (dao *IndexerFileDAO) GetByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	return dao.db.GetIndexerFilesByCreatorMetaIDWithCursor(metaID, cursor, size)
 }
 

@@ -74,7 +74,7 @@ func (m *MySQLDatabase) UpdateIndexerFile(file *model.IndexerFile) error {
 	return m.db.Save(file).Error
 }
 
-func (m *MySQLDatabase) ListIndexerFilesWithCursor(cursor int64, size int) ([]*model.IndexerFile, error) {
+func (m *MySQLDatabase) ListIndexerFilesWithCursor(cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	var files []*model.IndexerFile
 	query := m.db.Where("status = ?", model.StatusSuccess)
 
@@ -83,10 +83,16 @@ func (m *MySQLDatabase) ListIndexerFilesWithCursor(cursor int64, size int) ([]*m
 	}
 
 	err := query.Order("id DESC").Limit(size).Find(&files).Error
-	return files, err
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Calculate nextCursor: cursor + number of records returned
+	nextCursor := cursor + int64(len(files))
+	return files, nextCursor, nil
 }
 
-func (m *MySQLDatabase) GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, error) {
+func (m *MySQLDatabase) GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	var files []*model.IndexerFile
 	query := m.db.Where("creator_address = ? AND status = ?", address, model.StatusSuccess)
 
@@ -95,10 +101,16 @@ func (m *MySQLDatabase) GetIndexerFilesByCreatorAddressWithCursor(address string
 	}
 
 	err := query.Order("id DESC").Limit(size).Find(&files).Error
-	return files, err
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Calculate nextCursor: cursor + number of records returned
+	nextCursor := cursor + int64(len(files))
+	return files, nextCursor, nil
 }
 
-func (m *MySQLDatabase) GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, error) {
+func (m *MySQLDatabase) GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	var files []*model.IndexerFile
 	query := m.db.Where("creator_meta_id = ? AND status = ?", metaID, model.StatusSuccess)
 
@@ -107,7 +119,13 @@ func (m *MySQLDatabase) GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, 
 	}
 
 	err := query.Order("id DESC").Limit(size).Find(&files).Error
-	return files, err
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Calculate nextCursor: cursor + number of records returned
+	nextCursor := cursor + int64(len(files))
+	return files, nextCursor, nil
 }
 
 func (m *MySQLDatabase) GetIndexerFilesCount() (int64, error) {

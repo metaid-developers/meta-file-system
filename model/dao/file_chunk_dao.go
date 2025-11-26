@@ -28,6 +28,16 @@ func (dao *FileChunkDAO) GetByPinID(pinID string) (*model.FileChunk, error) {
 	return &chunk, nil
 }
 
+// GetByTxID get chunk by transaction ID
+func (dao *FileChunkDAO) GetByTxID(txID string) (*model.FileChunk, error) {
+	var chunk model.FileChunk
+	err := database.UploaderDB.Where("tx_id = ?", txID).First(&chunk).Error
+	if err != nil {
+		return nil, err
+	}
+	return &chunk, nil
+}
+
 // GetByFileHash get chunks by file hash
 func (dao *FileChunkDAO) GetByFileHash(fileHash string) ([]*model.FileChunk, error) {
 	var chunks []*model.FileChunk

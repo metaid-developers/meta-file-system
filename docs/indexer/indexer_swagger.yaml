@@ -95,6 +95,9 @@ definitions:
       creator_meta_id:
         example: abc123def456...
         type: string
+      encryption:
+        example: "0"
+        type: string
       file_extension:
         example: .jpg
         type: string
@@ -423,7 +426,7 @@ paths:
       description: Query file list with cursor pagination
       parameters:
       - default: 0
-        description: Cursor (last file ID)
+        description: Cursor
         in: query
         name: cursor
         type: integer
@@ -552,7 +555,7 @@ paths:
         required: true
         type: string
       - default: 0
-        description: Cursor (last file ID)
+        description: Cursor
         in: query
         name: cursor
         type: integer
@@ -592,7 +595,7 @@ paths:
         required: true
         type: string
       - default: 0
-        description: Cursor (last file ID)
+        description: Cursor
         in: query
         name: cursor
         type: integer

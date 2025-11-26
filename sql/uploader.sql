@@ -145,6 +145,62 @@ CREATE TABLE IF NOT EXISTS `tb_file_assistent` (
 -- 6. meta_id, address: VARCHAR(100) - MetaID and address
 
 -- =============================================
+-- File uploader task table (tb_file_uploader_task)
+-- =============================================
+CREATE TABLE IF NOT EXISTS `tb_file_uploader_task` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key ID',
+    
+    -- Task identifier (task_id_fileHash_timestamp)
+    `task_id` VARCHAR(120) NOT NULL COMMENT 'Task unique ID',
+    
+    -- File information
+    `meta_id` VARCHAR(80) DEFAULT NULL COMMENT 'MetaID',
+    `address` VARCHAR(80) DEFAULT NULL COMMENT 'User address',
+    `file_name` VARCHAR(100) DEFAULT NULL COMMENT 'File name',
+    `file_hash` VARCHAR(80) DEFAULT NULL COMMENT 'File SHA256 hash',
+    `file_md5` VARCHAR(80) DEFAULT NULL COMMENT 'File MD5',
+    `file_size` BIGINT DEFAULT NULL COMMENT 'File size',
+    `content_type` VARCHAR(50) DEFAULT NULL COMMENT 'File content type',
+    `path` VARCHAR(50) DEFAULT NULL COMMENT 'MetaID path',
+    `operation` VARCHAR(20) DEFAULT NULL COMMENT 'create/update',
+    `content_base64` LONGTEXT COMMENT 'File content (base64 encoded)',
+    
+    -- Transaction information
+    `chunk_pre_tx_hex` TEXT COMMENT 'Pre-built chunk transaction',
+    `index_pre_tx_hex` TEXT COMMENT 'Pre-built index transaction',
+    `merge_tx_hex` TEXT COMMENT 'Merge transaction hex',
+    `fee_rate` BIGINT DEFAULT NULL COMMENT 'Fee rate',
+    
+    -- Task status and progress
+    `status` VARCHAR(20) DEFAULT 'pending' COMMENT 'pending/processing/success/failed',
+    `progress` INT DEFAULT 0 COMMENT 'Progress percentage (0-100)',
+    `total_chunks` INT DEFAULT 0 COMMENT 'Total chunks',
+    `processed_chunks` INT DEFAULT 0 COMMENT 'Processed chunks',
+    `current_step` VARCHAR(100) DEFAULT NULL COMMENT 'Current step description',
+    `stage` VARCHAR(50) NOT NULL DEFAULT 'created' COMMENT 'Task stage (created/prepared/funding_broadcast/chunk_broadcast/index_broadcast/completed)',
+    
+    -- Result information
+    `file_id` VARCHAR(80) DEFAULT NULL COMMENT 'File ID (after success)',
+    `chunk_funding_tx` TEXT COMMENT 'Chunk funding transaction',
+    `chunk_tx_ids` TEXT COMMENT 'Chunk transaction ID list (JSON array)',
+    `chunk_tx_hexes` LONGTEXT COMMENT 'Chunk transaction hex list (JSON array, internal use only)',
+    `index_tx_id` VARCHAR(64) DEFAULT NULL COMMENT 'Index transaction ID',
+    `error_message` TEXT COMMENT 'Error message',
+    
+    -- Timestamps
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    `started_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'Started at',
+    `finished_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'Finished at',
+    
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_task_id` (`task_id`),
+    KEY `idx_status` (`status`),
+    KEY `idx_created_at` (`created_at`),
+    KEY `idx_file_hash` (`file_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='File uploader task table';
+
+-- =============================================
 -- Composite index optimization(optional, add based on query needs)
 -- =============================================
 -- query files by user(by time descending)

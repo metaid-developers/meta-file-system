@@ -383,7 +383,7 @@ const docTemplateindexer = `{
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Cursor (last file ID)",
+                        "description": "Cursor",
                         "name": "cursor",
                         "in": "query"
                     },
@@ -534,7 +534,7 @@ const docTemplateindexer = `{
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Cursor (last file ID)",
+                        "description": "Cursor",
                         "name": "cursor",
                         "in": "query"
                     },
@@ -598,7 +598,7 @@ const docTemplateindexer = `{
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Cursor (last file ID)",
+                        "description": "Cursor",
                         "name": "cursor",
                         "in": "query"
                     },
@@ -902,6 +902,10 @@ const docTemplateindexer = `{
                 "creator_meta_id": {
                     "type": "string",
                     "example": "abc123def456..."
+                },
+                "encryption": {
+                    "type": "string",
+                    "example": "0"
                 },
                 "file_extension": {
                     "type": "string",

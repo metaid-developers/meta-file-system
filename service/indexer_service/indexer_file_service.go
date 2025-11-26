@@ -50,7 +50,7 @@ func (s *IndexerFileService) GetFileByPinID(pinID string) (*model.IndexerFile, e
 }
 
 // GetFilesByCreatorAddress get file list by creator address with cursor pagination
-// cursor: last file ID (0 for first page)
+// cursor: number of records to skip (0 for first page)
 // size: page size
 // Returns: files, next_cursor, has_more, error
 func (s *IndexerFileService) GetFilesByCreatorAddress(address string, cursor int64, size int) ([]*model.IndexerFile, int64, bool, error) {
@@ -58,28 +58,19 @@ func (s *IndexerFileService) GetFilesByCreatorAddress(address string, cursor int
 		size = 20
 	}
 
-	files, err := s.indexerFileDAO.GetByCreatorAddressWithCursor(address, cursor, size)
+	files, nextCursor, err := s.indexerFileDAO.GetByCreatorAddressWithCursor(address, cursor, size)
 	if err != nil {
 		return nil, 0, false, fmt.Errorf("failed to get files by creator address: %w", err)
 	}
 
-	// Determine next cursor and has_more
-	var nextCursor int64
-	hasMore := false
-
-	if len(files) > 0 {
-		// Next cursor is the ID of the last file
-		nextCursor = files[len(files)-1].ID
-
-		// Check if there are more records
-		hasMore = len(files) == size
-	}
+	// Determine has_more: if we got exactly size records, there might be more
+	hasMore := len(files) == size
 
 	return files, nextCursor, hasMore, nil
 }
 
 // GetFilesByCreatorMetaID get file list by creator MetaID with cursor pagination
-// cursor: last file ID (0 for first page)
+// cursor: number of records to skip (0 for first page)
 // size: page size
 // Returns: files, next_cursor, has_more, error
 func (s *IndexerFileService) GetFilesByCreatorMetaID(metaID string, cursor int64, size int) ([]*model.IndexerFile, int64, bool, error) {
@@ -87,28 +78,19 @@ func (s *IndexerFileService) GetFilesByCreatorMetaID(metaID string, cursor int64
 		size = 20
 	}
 
-	files, err := s.indexerFileDAO.GetByCreatorMetaIDWithCursor(metaID, cursor, size)
+	files, nextCursor, err := s.indexerFileDAO.GetByCreatorMetaIDWithCursor(metaID, cursor, size)
 	if err != nil {
 		return nil, 0, false, fmt.Errorf("failed to get files by creator MetaID: %w", err)
 	}
 
-	// Determine next cursor and has_more
-	var nextCursor int64
-	hasMore := false
-
-	if len(files) > 0 {
-		// Next cursor is the ID of the last file
-		nextCursor = files[len(files)-1].ID
-
-		// Check if there are more records
-		hasMore = len(files) == size
-	}
+	// Determine has_more: if we got exactly size records, there might be more
+	hasMore := len(files) == size
 
 	return files, nextCursor, hasMore, nil
 }
 
 // ListFiles get file list with cursor pagination
-// cursor: last file ID (0 for first page)
+// cursor: number of records to skip (0 for first page)
 // size: page size
 // Returns: files, next_cursor, has_more, error
 func (s *IndexerFileService) ListFiles(cursor int64, size int) ([]*model.IndexerFile, int64, bool, error) {
@@ -116,22 +98,13 @@ func (s *IndexerFileService) ListFiles(cursor int64, size int) ([]*model.Indexer
 		size = 20
 	}
 
-	files, err := s.indexerFileDAO.ListWithCursor(cursor, size)
+	files, nextCursor, err := s.indexerFileDAO.ListWithCursor(cursor, size)
 	if err != nil {
 		return nil, 0, false, fmt.Errorf("failed to list files: %w", err)
 	}
 
-	// Determine next cursor and has_more
-	var nextCursor int64
-	hasMore := false
-
-	if len(files) > 0 {
-		// Next cursor is the ID of the last file
-		nextCursor = files[len(files)-1].ID
-
-		// Check if there are more records
-		hasMore = len(files) == size
-	}
+	// Determine has_more: if we got exactly size records, there might be more
+	hasMore := len(files) == size
 
 	return files, nextCursor, hasMore, nil
 }

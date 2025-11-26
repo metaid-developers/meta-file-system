@@ -1,5 +1,48 @@
 basePath: /api/v1
 definitions:
+  controller_handler.ChunkedUploadForTaskRequest:
+    properties:
+      address:
+        example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+        type: string
+      chunkPreTxHex:
+        example: 0100000...
+        type: string
+      content:
+        type: string
+      contentType:
+        example: image/jpeg
+        type: string
+      feeRate:
+        example: 1
+        type: integer
+      fileName:
+        example: example.jpg
+        type: string
+      indexPreTxHex:
+        example: 0100000...
+        type: string
+      mergeTxHex:
+        example: 0100000...
+        type: string
+      metaId:
+        example: metaid_abc123
+        type: string
+      operation:
+        example: create
+        type: string
+      path:
+        example: /file
+        type: string
+    required:
+    - address
+    - chunkPreTxHex
+    - content
+    - fileName
+    - indexPreTxHex
+    - metaId
+    - path
+    type: object
   controller_handler.ChunkedUploadRequest:
     properties:
       address:
@@ -25,6 +68,9 @@ definitions:
       isBroadcast:
         example: false
         type: boolean
+      mergeTxHex:
+        example: 0100000...
+        type: string
       metaId:
         example: metaid_abc123
         type: string
@@ -136,6 +182,18 @@ definitions:
         example: abc123...
         type: string
     type: object
+  meta-file-system_controller_respond.ChunkedUploadTaskResponse:
+    properties:
+      message:
+        example: task created
+        type: string
+      status:
+        example: pending
+        type: string
+      taskId:
+        example: task_123
+        type: string
+    type: object
   meta-file-system_controller_respond.Response:
     description: Unified API response structure
     properties:
@@ -150,76 +208,149 @@ definitions:
         example: 123
         type: integer
     type: object
+  meta-file-system_controller_respond.UploadTask:
+    properties:
+      address:
+        type: string
+      chunkFundingTx:
+        type: string
+      chunkTxIds:
+        items:
+          type: string
+        type: array
+      contentType:
+        type: string
+      createdAt:
+        type: string
+      currentStep:
+        type: string
+      errorMessage:
+        type: string
+      fileHash:
+        type: string
+      fileId:
+        type: string
+      fileMd5:
+        type: string
+      fileName:
+        type: string
+      fileSize:
+        type: integer
+      finishedAt:
+        type: string
+      indexTxId:
+        type: string
+      metaId:
+        type: string
+      operation:
+        type: string
+      path:
+        type: string
+      processedChunks:
+        type: integer
+      progress:
+        type: integer
+      stage:
+        type: string
+      startedAt:
+        type: string
+      status:
+        type: string
+      taskId:
+        type: string
+      totalChunks:
+        type: integer
+      updatedAt:
+        type: string
+    type: object
+  meta-file-system_controller_respond.UploadTaskDetailResponse:
+    properties:
+      task:
+        $ref: '#/definitions/meta-file-system_controller_respond.UploadTask'
+    type: object
+  meta-file-system_controller_respond.UploadTaskListResponse:
+    properties:
+      hasMore:
+        example: true
+        type: boolean
+      nextCursor:
+        example: 123
+        type: integer
+      tasks:
+        items:
+          $ref: '#/definitions/meta-file-system_controller_respond.UploadTask'
+        type: array
+    type: object
   meta-file-system_service_upload_service.ChunkedUploadResponse:
     properties:
       chunkFundingTx:
-        description: 托管地址充值交易（构建完成，可直接签名/广播）
+        description: Funding transaction for chunk outputs
         type: string
       chunkNumber:
-        description: 分片数量
+        description: Number of chunks
         type: integer
       chunkTxIds:
-        description: Chunk 交易 ID 列表（按顺序）
+        description: Chunk transaction IDs (ordered)
         items:
           type: string
         type: array
       chunkTxs:
-        description: Chunk 交易 hex 列表（按顺序）
+        description: Chunk transaction hex list (ordered)
         items:
           type: string
         type: array
       fileHash:
-        description: 文件 SHA256 hash
+        description: File SHA256 hash
         type: string
       fileId:
-        description: 文件 ID
+        description: File ID
         type: string
       fileMd5:
-        description: 文件 MD5 hash
+        description: File MD5 hash
         type: string
       indexTx:
-        description: Index 交易 hex
+        description: Index transaction hex
         type: string
       indexTxId:
-        description: Index 交易 ID
+        description: Index transaction ID
         type: string
       message:
-        description: 消息
+        description: Additional message
         type: string
       status:
-        description: 状态
+        description: Status string
         type: string
     type: object
   meta-file-system_service_upload_service.EstimateChunkedUploadResponse:
     properties:
       chunkFees:
-        description: 每个 chunk 的费用
+        description: Fee per chunk
         items:
           type: integer
         type: array
       chunkNumber:
-        description: 分片数量
+        description: Number of chunks
         type: integer
       chunkPerTxFee:
-        description: 每个 chunk 的费用
+        description: Fee required per chunk transaction
         type: integer
       chunkPreTxFee:
-        description: ChunkPreTxHex 需要的总费用（所有 chunk 费用之和）
+        description: Total funding required for chunk transactions
         type: integer
       chunkSize:
-        description: 分片大小（字节）
+        description: Chunk size in bytes
         type: integer
       indexPreTxFee:
-        description: IndexPreTxHex 需要的费用
+        description: Funding required for the index transaction
         type: integer
       message:
-        description: 消息
+        description: Additional message
         type: string
       perChunkFee:
-        description: 每个 chunk 的平均费用
+        description: Average fee per chunk
         type: integer
       totalFee:
-        description: 总费用（ChunkPreTxFee + IndexPreTxFee）
+        description: Total fee (ChunkPreTxFee + IndexPreTxFee)
         type: integer
     type: object
 host: localhost:7282
@@ -291,6 +422,42 @@ paths:
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
       summary: Chunked file upload
+      tags:
+      - File Upload
+  /files/chunked-upload-task:
+    post:
+      consumes:
+      - application/json
+      description: Create an async chunked upload task and return the task ID so the
+        client can poll for progress
+      parameters:
+      - description: Async chunked upload request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.ChunkedUploadForTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.ChunkedUploadTaskResponse'
+              type: object
+        "400":
+          description: Invalid parameter
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Async chunked upload (create task)
       tags:
       - File Upload
   /files/commit-upload:
@@ -518,6 +685,89 @@ paths:
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
       summary: Pre-upload file
+      tags:
+      - File Upload
+  /files/task/{taskId}:
+    get:
+      consumes:
+      - application/json
+      description: Get async upload task progress and status by task ID
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.UploadTaskDetailResponse'
+              type: object
+        "400":
+          description: Invalid parameter
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "404":
+          description: Task not found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Query task progress
+      tags:
+      - File Upload
+  /files/tasks:
+    get:
+      consumes:
+      - application/json
+      description: List chunked upload tasks for a given address with cursor-based
+        pagination
+      parameters:
+      - description: User address
+        in: query
+        name: address
+        required: true
+        type: string
+      - default: 0
+        description: Cursor (last task ID)
+        in: query
+        name: cursor
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.UploadTaskListResponse'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: List upload tasks
       tags:
       - File Upload
 schemes:

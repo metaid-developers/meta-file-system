@@ -117,6 +117,64 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "/files/chunked-upload-task": {
+            "post": {
+                "description": "Create an async chunked upload task and return the task ID so the client can poll for progress",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "Async chunked upload (create task)",
+                "parameters": [
+                    {
+                        "description": "Async chunked upload request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller_handler.ChunkedUploadForTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.ChunkedUploadTaskResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid parameter",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/files/commit-upload": {
             "post": {
                 "description": "Submit signed transaction for broadcast",
@@ -464,9 +522,198 @@ const docTemplateuploader = `{
                     }
                 }
             }
+        },
+        "/files/task/{taskId}": {
+            "get": {
+                "description": "Get async upload task progress and status by task ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "Query task progress",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task ID",
+                        "name": "taskId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.UploadTaskDetailResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid parameter",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Task not found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/tasks": {
+            "get": {
+                "description": "List chunked upload tasks for a given address with cursor-based pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "List upload tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User address",
+                        "name": "address",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Cursor (last task ID)",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.UploadTaskListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Parameter error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "controller_handler.ChunkedUploadForTaskRequest": {
+            "type": "object",
+            "required": [
+                "address",
+                "chunkPreTxHex",
+                "content",
+                "fileName",
+                "indexPreTxHex",
+                "metaId",
+                "path"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+                },
+                "chunkPreTxHex": {
+                    "type": "string",
+                    "example": "0100000..."
+                },
+                "content": {
+                    "type": "string"
+                },
+                "contentType": {
+                    "type": "string",
+                    "example": "image/jpeg"
+                },
+                "feeRate": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "fileName": {
+                    "type": "string",
+                    "example": "example.jpg"
+                },
+                "indexPreTxHex": {
+                    "type": "string",
+                    "example": "0100000..."
+                },
+                "mergeTxHex": {
+                    "type": "string",
+                    "example": "0100000..."
+                },
+                "metaId": {
+                    "type": "string",
+                    "example": "metaid_abc123"
+                },
+                "operation": {
+                    "type": "string",
+                    "example": "create"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/file"
+                }
+            }
+        },
         "controller_handler.ChunkedUploadRequest": {
             "type": "object",
             "required": [
@@ -509,6 +756,10 @@ const docTemplateuploader = `{
                 "isBroadcast": {
                     "type": "boolean",
                     "example": false
+                },
+                "mergeTxHex": {
+                    "type": "string",
+                    "example": "0100000..."
                 },
                 "metaId": {
                     "type": "string",
@@ -653,6 +904,23 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "meta-file-system_controller_respond.ChunkedUploadTaskResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "task created"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "pending"
+                },
+                "taskId": {
+                    "type": "string",
+                    "example": "task_123"
+                }
+            }
+        },
         "meta-file-system_controller_respond.Response": {
             "description": "Unified API response structure",
             "type": "object",
@@ -672,57 +940,167 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "meta-file-system_controller_respond.UploadTask": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "chunkFundingTx": {
+                    "type": "string"
+                },
+                "chunkTxIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "contentType": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "currentStep": {
+                    "type": "string"
+                },
+                "errorMessage": {
+                    "type": "string"
+                },
+                "fileHash": {
+                    "type": "string"
+                },
+                "fileId": {
+                    "type": "string"
+                },
+                "fileMd5": {
+                    "type": "string"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "fileSize": {
+                    "type": "integer"
+                },
+                "finishedAt": {
+                    "type": "string"
+                },
+                "indexTxId": {
+                    "type": "string"
+                },
+                "metaId": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "processedChunks": {
+                    "type": "integer"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "taskId": {
+                    "type": "string"
+                },
+                "totalChunks": {
+                    "type": "integer"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "meta-file-system_controller_respond.UploadTaskDetailResponse": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "$ref": "#/definitions/meta-file-system_controller_respond.UploadTask"
+                }
+            }
+        },
+        "meta-file-system_controller_respond.UploadTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "hasMore": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "nextCursor": {
+                    "type": "integer",
+                    "example": 123
+                },
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meta-file-system_controller_respond.UploadTask"
+                    }
+                }
+            }
+        },
         "meta-file-system_service_upload_service.ChunkedUploadResponse": {
             "type": "object",
             "properties": {
                 "chunkFundingTx": {
-                    "description": "托管地址充值交易（构建完成，可直接签名/广播）",
+                    "description": "Funding transaction for chunk outputs",
                     "type": "string"
                 },
                 "chunkNumber": {
-                    "description": "分片数量",
+                    "description": "Number of chunks",
                     "type": "integer"
                 },
                 "chunkTxIds": {
-                    "description": "Chunk 交易 ID 列表（按顺序）",
+                    "description": "Chunk transaction IDs (ordered)",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "chunkTxs": {
-                    "description": "Chunk 交易 hex 列表（按顺序）",
+                    "description": "Chunk transaction hex list (ordered)",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "fileHash": {
-                    "description": "文件 SHA256 hash",
+                    "description": "File SHA256 hash",
                     "type": "string"
                 },
                 "fileId": {
-                    "description": "文件 ID",
+                    "description": "File ID",
                     "type": "string"
                 },
                 "fileMd5": {
-                    "description": "文件 MD5 hash",
+                    "description": "File MD5 hash",
                     "type": "string"
                 },
                 "indexTx": {
-                    "description": "Index 交易 hex",
+                    "description": "Index transaction hex",
                     "type": "string"
                 },
                 "indexTxId": {
-                    "description": "Index 交易 ID",
+                    "description": "Index transaction ID",
                     "type": "string"
                 },
                 "message": {
-                    "description": "消息",
+                    "description": "Additional message",
                     "type": "string"
                 },
                 "status": {
-                    "description": "状态",
+                    "description": "Status string",
                     "type": "string"
                 }
             }
@@ -731,42 +1109,42 @@ const docTemplateuploader = `{
             "type": "object",
             "properties": {
                 "chunkFees": {
-                    "description": "每个 chunk 的费用",
+                    "description": "Fee per chunk",
                     "type": "array",
                     "items": {
                         "type": "integer"
                     }
                 },
                 "chunkNumber": {
-                    "description": "分片数量",
+                    "description": "Number of chunks",
                     "type": "integer"
                 },
                 "chunkPerTxFee": {
-                    "description": "每个 chunk 的费用",
+                    "description": "Fee required per chunk transaction",
                     "type": "integer"
                 },
                 "chunkPreTxFee": {
-                    "description": "ChunkPreTxHex 需要的总费用（所有 chunk 费用之和）",
+                    "description": "Total funding required for chunk transactions",
                     "type": "integer"
                 },
                 "chunkSize": {
-                    "description": "分片大小（字节）",
+                    "description": "Chunk size in bytes",
                     "type": "integer"
                 },
                 "indexPreTxFee": {
-                    "description": "IndexPreTxHex 需要的费用",
+                    "description": "Funding required for the index transaction",
                     "type": "integer"
                 },
                 "message": {
-                    "description": "消息",
+                    "description": "Additional message",
                     "type": "string"
                 },
                 "perChunkFee": {
-                    "description": "每个 chunk 的平均费用",
+                    "description": "Average fee per chunk",
                     "type": "integer"
                 },
                 "totalFee": {
-                    "description": "总费用（ChunkPreTxFee + IndexPreTxFee）",
+                    "description": "Total fee (ChunkPreTxFee + IndexPreTxFee)",
                     "type": "integer"
                 }
             }

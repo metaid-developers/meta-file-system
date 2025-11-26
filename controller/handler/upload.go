@@ -514,3 +514,149 @@ func (h *UploadHandler) ChunkedUpload(c *gin.Context) {
 
 	respond.Success(c, resp)
 }
+
+// ChunkedUploadForTaskRequest defines the payload for creating an async chunked upload task.
+type ChunkedUploadForTaskRequest struct {
+	MetaId        string `json:"metaId" binding:"required" example:"metaid_abc123" description:"MetaID"`
+	Address       string `json:"address" binding:"required" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" description:"User address"`
+	FileName      string `json:"fileName" binding:"required" example:"example.jpg" description:"File name"`
+	Content       string `json:"content" binding:"required" description:"Base64 encoded file content"`
+	Path          string `json:"path" binding:"required" example:"/file" description:"Base MetaID path (will append /file/_chunk and /file/index)"`
+	Operation     string `json:"operation" example:"create" description:"Operation type (create/update)"`
+	ContentType   string `json:"contentType" example:"image/jpeg" description:"MIME type"`
+	ChunkPreTxHex string `json:"chunkPreTxHex" binding:"required" example:"0100000..." description:"Pre-built chunk transaction (contains inputs, signNull)"`
+	IndexPreTxHex string `json:"indexPreTxHex" binding:"required" example:"0100000..." description:"Pre-built index transaction (contains inputs, signNull)"`
+	MergeTxHex    string `json:"mergeTxHex" example:"0100000..." description:"Merge transaction hex (optional, broadcast first)"`
+	FeeRate       int64  `json:"feeRate" example:"1" description:"Fee rate (optional, defaults to config)"`
+}
+
+// ChunkedUploadForTask creates an async chunked upload task.
+// @Summary      Async chunked upload (create task)
+// @Description  Create an async chunked upload task and return the task ID so the client can poll for progress
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        request  body      ChunkedUploadForTaskRequest  true  "Async chunked upload request"
+// @Success      200      {object}  respond.Response{data=respond.ChunkedUploadTaskResponse}
+// @Failure      400      {object}  respond.Response  "Invalid parameter"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/chunked-upload-task [post]
+func (h *UploadHandler) ChunkedUploadForTask(c *gin.Context) {
+	var req ChunkedUploadForTaskRequest
+	if err := bindJSONWithOptionalGzip(c, &req); err != nil {
+		respond.InvalidParam(c, err.Error())
+		return
+	}
+
+	// Decode base64 payload
+	content, err := base64.StdEncoding.DecodeString(req.Content)
+	if err != nil {
+		respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+		return
+	}
+
+	// Convert to service request
+	serviceReq := &upload_service.ChunkedUploadRequest{
+		MetaId:        req.MetaId,
+		Address:       req.Address,
+		FileName:      req.FileName,
+		Content:       content,
+		Path:          req.Path,
+		Operation:     req.Operation,
+		ContentType:   req.ContentType,
+		ChunkPreTxHex: req.ChunkPreTxHex,
+		IndexPreTxHex: req.IndexPreTxHex,
+		MergeTxHex:    req.MergeTxHex,
+		FeeRate:       req.FeeRate,
+		IsBroadcast:   false, // handled asynchronously by background worker
+	}
+
+	// Create async task
+	resp, err := h.uploadService.ChunkedUploadForTask(serviceReq)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, respond.ChunkedUploadTaskResponse{
+		TaskId:  resp.TaskId,
+		Status:  resp.Status,
+		Message: resp.Message,
+	})
+}
+
+// GetTaskProgress returns detailed task info by task ID.
+// @Summary      Query task progress
+// @Description  Get async upload task progress and status by task ID
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        taskId  path      string  true  "Task ID"
+// @Success      200     {object}  respond.Response{data=respond.UploadTaskDetailResponse}
+// @Failure      400     {object}  respond.Response  "Invalid parameter"
+// @Failure      404     {object}  respond.Response  "Task not found"
+// @Failure      500     {object}  respond.Response  "Server error"
+// @Router       /files/task/{taskId} [get]
+func (h *UploadHandler) GetTaskProgress(c *gin.Context) {
+	taskId := c.Param("taskId")
+	if taskId == "" {
+		respond.InvalidParam(c, "taskId is required")
+		return
+	}
+
+	task, err := h.uploadService.GetTaskProgress(taskId)
+	if err != nil {
+		respond.ServerError(c, "task not found: "+err.Error())
+		return
+	}
+
+	respond.Success(c, respond.UploadTaskDetailResponse{Task: respond.ToUploadTask(task)})
+}
+
+// ListUploadTasks list upload tasks by address with cursor pagination
+// @Summary      List upload tasks
+// @Description  List chunked upload tasks for a given address with cursor-based pagination
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        address  query     string  true   "User address"
+// @Param        cursor   query     int     false  "Cursor (last task ID)"  default(0)
+// @Param        size     query     int     false  "Page size"              default(20)
+// @Success      200      {object}  respond.Response{data=respond.UploadTaskListResponse}
+// @Failure      400      {object}  respond.Response  "Parameter error"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/tasks [get]
+func (h *UploadHandler) ListUploadTasks(c *gin.Context) {
+	address := c.Query("address")
+	if strings.TrimSpace(address) == "" {
+		respond.InvalidParam(c, "address is required")
+		return
+	}
+
+	cursorStr := c.DefaultQuery("cursor", "0")
+	sizeStr := c.DefaultQuery("size", "20")
+
+	cursor, err := strconv.ParseInt(cursorStr, 10, 64)
+	if err != nil {
+		respond.InvalidParam(c, "invalid cursor")
+		return
+	}
+
+	size, err := strconv.Atoi(sizeStr)
+	if err != nil {
+		respond.InvalidParam(c, "invalid size")
+		return
+	}
+
+	resp, err := h.uploadService.ListTasksByAddress(address, cursor, size)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, respond.UploadTaskListResponse{
+		Tasks:      respond.ToUploadTaskList(resp.Tasks),
+		NextCursor: resp.NextCursor,
+		HasMore:    resp.HasMore,
+	})
+}

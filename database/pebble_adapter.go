@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync/atomic"
 
@@ -157,6 +158,38 @@ func (p *PebbleDatabase) loadCounters() error {
 
 // IndexerFile operations
 
+// paginateFilesByTimestampDesc sorts files by timestamp desc (fallback PinID) then slices by cursor+size.
+func paginateFilesByTimestampDesc(files []*model.IndexerFile, cursor int64, size int) ([]*model.IndexerFile, int64) {
+	if len(files) == 0 || size <= 0 {
+		return nil, cursor
+	}
+
+	if cursor < 0 {
+		cursor = 0
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].Timestamp == files[j].Timestamp {
+			return files[i].PinID > files[j].PinID
+		}
+		return files[i].Timestamp > files[j].Timestamp
+	})
+
+	start := int(cursor)
+	if start >= len(files) {
+		return nil, cursor
+	}
+
+	end := start + size
+	if end > len(files) {
+		end = len(files)
+	}
+
+	paged := files[start:end]
+	nextCursor := cursor + int64(len(paged))
+	return paged, nextCursor
+}
+
 func (p *PebbleDatabase) CreateIndexerFile(file *model.IndexerFile) error {
 	// Serialize file
 	data, err := json.Marshal(file)
@@ -218,58 +251,34 @@ func (p *PebbleDatabase) UpdateIndexerFile(file *model.IndexerFile) error {
 	return p.CreateIndexerFile(file)
 }
 
-func (p *PebbleDatabase) ListIndexerFilesWithCursor(cursor int64, size int) ([]*model.IndexerFile, error) {
-	var files []*model.IndexerFile
-
+func (p *PebbleDatabase) ListIndexerFilesWithCursor(cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	filePinDB := p.collections[collectionFilePinID]
 
 	// Create iterator for PinID collection
 	iter, err := filePinDB.NewIter(nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer iter.Close()
 
-	// Cursor is not used for PinID-based iteration (PinID is string, not sequential)
-	// We iterate from last to first
-	iter.Last()
-
-	// Skip items until we reach the cursor PinID (if provided)
-	cursorPinID := ""
-	if cursor > 0 {
-		// In this case, cursor would need to be a PinID or we skip cursor-based logic
-		// For simplicity, we'll just iterate from the end
-	}
-
-	count := 0
-	for iter.Valid() && count < size {
+	var files []*model.IndexerFile
+	for iter.First(); iter.Valid(); iter.Next() {
 		var file model.IndexerFile
 		if err := json.Unmarshal(iter.Value(), &file); err != nil {
-			iter.Prev()
-			continue
-		}
-
-		// Skip until we reach cursor (if cursorPinID is set)
-		if cursorPinID != "" && file.PinID == cursorPinID {
-			cursorPinID = "" // Found cursor, start collecting from next
-			iter.Prev()
 			continue
 		}
 
 		if file.Status == model.StatusSuccess {
-			files = append(files, &file)
-			count++
+			fileCopy := file
+			files = append(files, &fileCopy)
 		}
-
-		iter.Prev()
 	}
 
-	return files, nil
+	sorted, nextCursor := paginateFilesByTimestampDesc(files, cursor, size)
+	return sorted, nextCursor, nil
 }
 
-func (p *PebbleDatabase) GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, error) {
-	var files []*model.IndexerFile
-
+func (p *PebbleDatabase) GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	addressDB := p.collections[collectionFileAddress]
 	prefix := address + ":"
 
@@ -280,49 +289,28 @@ func (p *PebbleDatabase) GetIndexerFilesByCreatorAddressWithCursor(address strin
 		UpperBound: []byte(prefix + "~"),
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer iter.Close()
 
-	// Start from last (most recent)
-	iter.Last()
-
-	// Cursor is based on PinID (not sequential ID)
-	cursorPinID := ""
-	if cursor > 0 {
-		// For PinID-based keys, cursor would be a PinID string
-		// For now, we'll skip cursor logic and iterate from end
-	}
-
-	count := 0
-	for iter.Valid() && count < size {
+	var files []*model.IndexerFile
+	for iter.First(); iter.Valid(); iter.Next() {
 		var file model.IndexerFile
 		if err := json.Unmarshal(iter.Value(), &file); err != nil {
-			iter.Prev()
-			continue
-		}
-
-		// Skip until cursor is reached
-		if cursorPinID != "" && file.PinID == cursorPinID {
-			cursorPinID = ""
-			iter.Prev()
 			continue
 		}
 
 		if file.Status == model.StatusSuccess {
-			files = append(files, &file)
-			count++
+			fileCopy := file
+			files = append(files, &fileCopy)
 		}
-
-		iter.Prev()
 	}
 
-	return files, nil
+	sorted, nextCursor := paginateFilesByTimestampDesc(files, cursor, size)
+	return sorted, nextCursor, nil
 }
 
-func (p *PebbleDatabase) GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, error) {
-	var files []*model.IndexerFile
-
+func (p *PebbleDatabase) GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
 	metaIDDB := p.collections[collectionFileMetaID]
 	prefix := metaID + ":"
 
@@ -333,44 +321,25 @@ func (p *PebbleDatabase) GetIndexerFilesByCreatorMetaIDWithCursor(metaID string,
 		UpperBound: []byte(prefix + "~"),
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer iter.Close()
 
-	// Start from last (most recent)
-	iter.Last()
-
-	// Cursor is based on PinID (not sequential ID)
-	cursorPinID := ""
-	if cursor > 0 {
-		// For PinID-based keys, cursor would be a PinID string
-		// For now, we'll skip cursor logic and iterate from end
-	}
-
-	count := 0
-	for iter.Valid() && count < size {
+	var files []*model.IndexerFile
+	for iter.First(); iter.Valid(); iter.Next() {
 		var file model.IndexerFile
 		if err := json.Unmarshal(iter.Value(), &file); err != nil {
-			iter.Prev()
-			continue
-		}
-
-		// Skip until cursor is reached
-		if cursorPinID != "" && file.PinID == cursorPinID {
-			cursorPinID = ""
-			iter.Prev()
 			continue
 		}
 
 		if file.Status == model.StatusSuccess {
-			files = append(files, &file)
-			count++
+			fileCopy := file
+			files = append(files, &fileCopy)
 		}
-
-		iter.Prev()
 	}
 
-	return files, nil
+	sorted, nextCursor := paginateFilesByTimestampDesc(files, cursor, size)
+	return sorted, nextCursor, nil
 }
 
 func (p *PebbleDatabase) GetIndexerFilesCount() (int64, error) {
