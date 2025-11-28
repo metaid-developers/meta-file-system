@@ -34,6 +34,26 @@
             font-size: 32px;
         }
 
+        #langSwitchBtn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        #langSwitchBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
         .subtitle {
             text-align: center;
             color: #666;
@@ -465,6 +485,78 @@
             min-height: 20px;
         }
 
+        /* OSS Upload Progress Section */
+        .oss-upload-progress {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .oss-upload-progress.hidden {
+            display: none;
+        }
+
+        .oss-upload-progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .oss-upload-progress-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .oss-upload-status {
+            font-size: 13px;
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .oss-upload-progress-bar {
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .oss-upload-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #17a2b8 0%, #667eea 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        .oss-upload-progress-details {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .oss-upload-progress-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .oss-upload-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .oss-upload-value {
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            font-family: monospace;
+        }
+
         .upload-modal-warning {
             background: #fff3cd;
             border: 1px solid #ffc107;
@@ -703,6 +795,10 @@
                 <span class="header-link-icon">⭐</span>
                 <span>GitHub</span>
             </a>
+            <button id="langSwitchBtn" class="header-link" style="border: none; cursor: pointer; font-family: inherit;">
+                <span class="header-link-icon">🌐</span>
+                <span>English</span>
+            </button>
         </div>
 
         <!-- Metalet Wallet Connection -->
@@ -827,14 +923,8 @@
 
         <!-- Upload Button -->
         <button id="uploadBtn" class="btn btn-success" style="width: 100%; padding: 16px; font-size: 16px;" disabled>
-            🚀 Start Upload to Chain
-        </button>
-        <button id="asyncChunkUploadBtn" class="btn btn-primary hidden" style="width: 100%; padding: 14px; font-size: 15px; margin-top: 12px;">
             📦 Start Async Chunk Upload Task
         </button>
-        <p id="asyncUploadHint" class="hidden" style="margin-top: 6px; text-align: center; font-size: 12px; color: #666;">
-            Large files (&gt;10MB) can be uploaded asynchronously as background tasks.
-        </p>
 
         <!-- Buzz Section (hidden by default) -->
         <div id="buzzSection" class="hidden" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
@@ -898,6 +988,31 @@
                 Processing your file, please wait...
             </div>
             
+            <!-- OSS Upload Progress Section (hidden by default) -->
+            <div id="ossUploadProgress" class="oss-upload-progress hidden">
+                <div class="oss-upload-progress-header">
+                    <span class="oss-upload-progress-title">📤 Uploading to OSS</span>
+                    <span id="ossUploadStatus" class="oss-upload-status">Initializing...</span>
+                </div>
+                <div class="oss-upload-progress-bar">
+                    <div id="ossUploadProgressFill" class="oss-upload-progress-fill"></div>
+                </div>
+                <div class="oss-upload-progress-details">
+                    <div class="oss-upload-progress-item">
+                        <span class="oss-upload-label">Parts:</span>
+                        <span id="ossUploadParts" class="oss-upload-value">0 / 0</span>
+                    </div>
+                    <div class="oss-upload-progress-item">
+                        <span class="oss-upload-label">Size:</span>
+                        <span id="ossUploadSize" class="oss-upload-value">0 / 0</span>
+                    </div>
+                    <div class="oss-upload-progress-item">
+                        <span class="oss-upload-label">Speed:</span>
+                        <span id="ossUploadSpeed" class="oss-upload-value">-</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Progress Section -->
             <div id="uploadModalProgress" class="upload-modal-progress">
                 <div class="upload-modal-progress-bar">

@@ -201,6 +201,39 @@ CREATE TABLE IF NOT EXISTS `tb_file_uploader_task` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='File uploader task table';
 
 -- =============================================
+-- Multipart upload table (tb_multipart_upload)
+-- =============================================
+CREATE TABLE IF NOT EXISTS `tb_multipart_upload` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key ID',
+    
+    -- Upload identifier
+    `upload_id` VARCHAR(80) NOT NULL COMMENT 'Upload ID from storage (unique)',
+    `key` VARCHAR(150) NOT NULL COMMENT 'Storage key (OSS key or local path)',
+    
+    -- File information
+    `file_name` VARCHAR(50) DEFAULT NULL COMMENT 'File name',
+    `file_size` BIGINT DEFAULT NULL COMMENT 'Total file size (bytes)',
+    `meta_id` VARCHAR(80) DEFAULT NULL COMMENT 'MetaID (optional)',
+    `address` VARCHAR(80) DEFAULT NULL COMMENT 'User address (optional)',
+    `part_count` INT DEFAULT 0 COMMENT 'Total number of parts',
+    
+    -- Upload status
+    `status` VARCHAR(20) DEFAULT 'initiated' COMMENT 'Upload status: initiated/uploading/completed/aborted/expired',
+    
+    -- Timestamps
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    `expires_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'Expiration time for cleanup',
+    
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_upload_id` (`upload_id`),
+    KEY `idx_key` (`key`),
+    KEY `idx_status` (`status`),
+    KEY `idx_expires_at` (`expires_at`),
+    KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Multipart upload session table (temporary storage for cleanup)';
+
+-- =============================================
 -- Composite index optimization(optional, add based on query needs)
 -- =============================================
 -- query files by user(by time descending)

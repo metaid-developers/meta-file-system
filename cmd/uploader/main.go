@@ -116,8 +116,15 @@ func initAll() (*http.Server, func()) {
 	taskProcessor.Start()
 	log.Println("Task processor started")
 
+	// Start cleanup processor
+	cleanupProcessor := upload_service.NewCleanupProcessor(uploadService)
+	cleanupProcessor.Start()
+	log.Println("Cleanup processor started")
+
 	// Return server instance and cleanup function
 	cleanup := func() {
+		taskProcessor.Stop()
+		cleanupProcessor.Stop()
 		database.CloseUploaderDB()
 	}
 

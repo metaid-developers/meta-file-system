@@ -56,6 +56,8 @@ func AutoMigrate() error {
 		&model.File{},
 		&model.FileChunk{},
 		&model.Assistant{},
+		&model.MultipartUpload{},
+		&model.FileUploaderTask{},
 	)
 }
 

@@ -60,6 +60,13 @@ func SetupUploadRouter(stor storage.Storage) (*gin.Engine, *upload_service.Uploa
 		v1.GET("/files/task/:taskId", uploadHandler.GetTaskProgress)                   // Get task progress
 		v1.GET("/files/tasks", uploadHandler.ListUploadTasks)                          // List tasks by address
 
+		// Multipart upload (for large files with resume support)
+		v1.POST("/files/multipart/initiate", uploadHandler.InitiateMultipartUpload) // Initiate multipart upload
+		v1.POST("/files/multipart/upload-part", uploadHandler.UploadPart)           // Upload a part
+		v1.POST("/files/multipart/complete", uploadHandler.CompleteMultipartUpload) // Complete multipart upload
+		v1.POST("/files/multipart/list-parts", uploadHandler.ListParts)             // List uploaded parts (for resume)
+		v1.POST("/files/multipart/abort", uploadHandler.AbortMultipartUpload)       // Abort multipart upload
+
 		// Configuration
 		v1.GET("/config", uploadHandler.GetConfig)
 	}

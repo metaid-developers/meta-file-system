@@ -11,6 +11,21 @@ type Storage interface {
 	Get(key string) ([]byte, error)
 	Delete(key string) error
 	Exists(key string) bool
+
+	// Multipart upload methods for large files
+	InitiateMultipartUpload(key string) (string, error)                           // Returns uploadId
+	UploadPart(key, uploadId string, partNumber int, data []byte) (string, error) // Returns etag
+	CompleteMultipartUpload(key, uploadId string, parts []PartInfo) error         // Complete upload
+	AbortMultipartUpload(key, uploadId string) error                              // Abort upload
+	ListParts(key, uploadId string) ([]PartInfo, error)                           // List uploaded parts for resume
+	GetMultipartUpload(key, uploadId string) ([]byte, error)                      // Get complete file from multipart upload
+}
+
+// PartInfo part information for multipart upload
+type PartInfo struct {
+	PartNumber int    `json:"partNumber"`
+	ETag       string `json:"etag"`
+	Size       int64  `json:"size"`
 }
 
 var (

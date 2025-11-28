@@ -14,6 +14,7 @@ import (
 	"meta-file-system/conf"
 	"meta-file-system/controller/respond"
 	"meta-file-system/service/upload_service"
+	"meta-file-system/storage"
 
 	"github.com/gin-gonic/gin"
 )
@@ -398,7 +399,8 @@ func (h *UploadHandler) GetConfig(c *gin.Context) {
 // EstimateChunkedUploadRequest estimate chunked upload request
 type EstimateChunkedUploadRequest struct {
 	FileName    string `json:"fileName" binding:"required" example:"example.jpg" description:"File name"`
-	Content     string `json:"content" binding:"required" description:"File content (base64 encoded string)"`
+	Content     string `json:"content" description:"File content (base64 encoded string, optional if storageKey is provided)"`
+	StorageKey  string `json:"storageKey" description:"Storage key from multipart upload (optional, if provided, file will be read from storage)"`
 	Path        string `json:"path" binding:"required" example:"/file" description:"MetaID path (base path, will auto-add /file/_chunk and /file/index)"`
 	ContentType string `json:"contentType" example:"image/jpeg" description:"File content type"`
 	FeeRate     int64  `json:"feeRate" example:"1" description:"Fee rate (optional, defaults to config)"`
@@ -422,10 +424,25 @@ func (h *UploadHandler) EstimateChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Decode base64 content
-	content, err := base64.StdEncoding.DecodeString(req.Content)
-	if err != nil {
-		respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+	// Get content from storage or request body
+	var content []byte
+	var err error
+	if req.StorageKey != "" {
+		// Read from storage
+		content, err = h.uploadService.GetFileFromStorage(req.StorageKey)
+		if err != nil {
+			respond.InvalidParam(c, "failed to read file from storage: "+err.Error())
+			return
+		}
+	} else if req.Content != "" {
+		// Decode base64 content
+		content, err = base64.StdEncoding.DecodeString(req.Content)
+		if err != nil {
+			respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+			return
+		}
+	} else {
+		respond.InvalidParam(c, "either content or storageKey must be provided")
 		return
 	}
 
@@ -453,7 +470,8 @@ type ChunkedUploadRequest struct {
 	MetaId        string `json:"metaId" binding:"required" example:"metaid_abc123" description:"MetaID"`
 	Address       string `json:"address" binding:"required" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" description:"User address"`
 	FileName      string `json:"fileName" binding:"required" example:"example.jpg" description:"File name"`
-	Content       string `json:"content" binding:"required" description:"File content (base64 encoded string)"`
+	Content       string `json:"content" description:"File content (base64 encoded string, optional if storageKey is provided)"`
+	StorageKey    string `json:"storageKey" description:"Storage key from multipart upload (optional, if provided, file will be read from storage)"`
 	Path          string `json:"path" binding:"required" example:"/file" description:"MetaID path (base path, will auto-add /file/_chunk and /file/index)"`
 	Operation     string `json:"operation" example:"create" description:"Operation type (create/update)"`
 	ContentType   string `json:"contentType" example:"image/jpeg" description:"File content type"`
@@ -482,10 +500,25 @@ func (h *UploadHandler) ChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Decode base64 content
-	content, err := base64.StdEncoding.DecodeString(req.Content)
-	if err != nil {
-		respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+	// Get content from storage or request body
+	var content []byte
+	var err error
+	if req.StorageKey != "" {
+		// Read from storage
+		content, err = h.uploadService.GetFileFromStorage(req.StorageKey)
+		if err != nil {
+			respond.InvalidParam(c, "failed to read file from storage: "+err.Error())
+			return
+		}
+	} else if req.Content != "" {
+		// Decode base64 content
+		content, err = base64.StdEncoding.DecodeString(req.Content)
+		if err != nil {
+			respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+			return
+		}
+	} else {
+		respond.InvalidParam(c, "either content or storageKey must be provided")
 		return
 	}
 
@@ -520,7 +553,8 @@ type ChunkedUploadForTaskRequest struct {
 	MetaId        string `json:"metaId" binding:"required" example:"metaid_abc123" description:"MetaID"`
 	Address       string `json:"address" binding:"required" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" description:"User address"`
 	FileName      string `json:"fileName" binding:"required" example:"example.jpg" description:"File name"`
-	Content       string `json:"content" binding:"required" description:"Base64 encoded file content"`
+	Content       string `json:"content" description:"Base64 encoded file content (optional if storageKey is provided)"`
+	StorageKey    string `json:"storageKey" description:"Storage key from multipart upload (optional, if provided, file will be read from storage)"`
 	Path          string `json:"path" binding:"required" example:"/file" description:"Base MetaID path (will append /file/_chunk and /file/index)"`
 	Operation     string `json:"operation" example:"create" description:"Operation type (create/update)"`
 	ContentType   string `json:"contentType" example:"image/jpeg" description:"MIME type"`
@@ -548,10 +582,25 @@ func (h *UploadHandler) ChunkedUploadForTask(c *gin.Context) {
 		return
 	}
 
-	// Decode base64 payload
-	content, err := base64.StdEncoding.DecodeString(req.Content)
-	if err != nil {
-		respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+	// Get content from storage or request body
+	var content []byte
+	var err error
+	if req.StorageKey != "" {
+		// Read from storage
+		content, err = h.uploadService.GetFileFromStorage(req.StorageKey)
+		if err != nil {
+			respond.InvalidParam(c, "failed to read file from storage: "+err.Error())
+			return
+		}
+	} else if req.Content != "" {
+		// Decode base64 payload
+		content, err = base64.StdEncoding.DecodeString(req.Content)
+		if err != nil {
+			respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+			return
+		}
+	} else {
+		respond.InvalidParam(c, "either content or storageKey must be provided")
 		return
 	}
 
@@ -600,17 +649,227 @@ func (h *UploadHandler) ChunkedUploadForTask(c *gin.Context) {
 func (h *UploadHandler) GetTaskProgress(c *gin.Context) {
 	taskId := c.Param("taskId")
 	if taskId == "" {
-		respond.InvalidParam(c, "taskId is required")
+		respond.InvalidParam(c, "task ID is required")
 		return
 	}
 
 	task, err := h.uploadService.GetTaskProgress(taskId)
 	if err != nil {
-		respond.ServerError(c, "task not found: "+err.Error())
+		respond.ServerError(c, err.Error())
 		return
 	}
 
-	respond.Success(c, respond.UploadTaskDetailResponse{Task: respond.ToUploadTask(task)})
+	respond.Success(c, task)
+}
+
+// InitiateMultipartUploadRequest request for initiating multipart upload
+type InitiateMultipartUploadRequest struct {
+	FileName string `json:"fileName" binding:"required"`
+	FileSize int64  `json:"fileSize" binding:"required"`
+	MetaId   string `json:"metaId"`  // Optional, for file organization
+	Address  string `json:"address"` // Optional, user address
+}
+
+// InitiateMultipartUpload initiates a multipart upload session
+// @Summary      Initiate multipart upload
+// @Description  Start a multipart upload session for large file uploads with resume support
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        request  body      InitiateMultipartUploadRequest  true  "Initiate multipart upload request"
+// @Success      200      {object}  respond.Response{data=upload_service.InitiateMultipartUploadResponse}
+// @Failure      400      {object}  respond.Response  "Parameter error"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/multipart/initiate [post]
+func (h *UploadHandler) InitiateMultipartUpload(c *gin.Context) {
+	var req InitiateMultipartUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respond.InvalidParam(c, err.Error())
+		return
+	}
+
+	serviceReq := &upload_service.MultipartUploadRequest{
+		FileName: req.FileName,
+		FileSize: req.FileSize,
+		MetaId:   req.MetaId,
+		Address:  req.Address,
+	}
+
+	resp, err := h.uploadService.InitiateMultipartUpload(serviceReq)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, resp)
+}
+
+// UploadPartRequest request for uploading a part
+type UploadPartRequest struct {
+	UploadId   string `json:"uploadId" binding:"required"`
+	Key        string `json:"key" binding:"required"` // Storage key from initiate
+	PartNumber int    `json:"partNumber" binding:"required"`
+	Content    string `json:"content" binding:"required"` // Base64 encoded part data
+}
+
+// UploadPart uploads a part of the file
+// @Summary      Upload part
+// @Description  Upload a single part of the file in a multipart upload session
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UploadPartRequest  true  "Upload part request"
+// @Success      200      {object}  respond.Response{data=upload_service.UploadPartResponse}
+// @Failure      400      {object}  respond.Response  "Parameter error"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/multipart/upload-part [post]
+func (h *UploadHandler) UploadPart(c *gin.Context) {
+	var req UploadPartRequest
+	if err := bindJSONWithOptionalGzip(c, &req); err != nil {
+		respond.InvalidParam(c, err.Error())
+		return
+	}
+
+	// Decode base64 content
+	content, err := base64.StdEncoding.DecodeString(req.Content)
+	if err != nil {
+		respond.InvalidParam(c, "invalid base64 content: "+err.Error())
+		return
+	}
+
+	serviceReq := &upload_service.UploadPartRequest{
+		UploadId:   req.UploadId,
+		Key:        req.Key,
+		PartNumber: req.PartNumber,
+		Data:       content,
+	}
+
+	resp, err := h.uploadService.UploadPart(serviceReq)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, resp)
+}
+
+// CompleteMultipartUploadRequest request for completing multipart upload
+type CompleteMultipartUploadRequest struct {
+	UploadId string `json:"uploadId" binding:"required"`
+	Key      string `json:"key" binding:"required"`
+	Parts    []struct {
+		PartNumber int    `json:"partNumber"`
+		ETag       string `json:"etag"`
+		Size       int64  `json:"size"`
+	} `json:"parts" binding:"required"`
+}
+
+// CompleteMultipartUpload completes the multipart upload
+// @Summary      Complete multipart upload
+// @Description  Complete a multipart upload session and merge all parts into a single file
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        request  body      CompleteMultipartUploadRequest  true  "Complete multipart upload request"
+// @Success      200      {object}  respond.Response{data=upload_service.CompleteMultipartUploadResponse}
+// @Failure      400      {object}  respond.Response  "Parameter error"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/multipart/complete [post]
+func (h *UploadHandler) CompleteMultipartUpload(c *gin.Context) {
+	var req CompleteMultipartUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respond.InvalidParam(c, err.Error())
+		return
+	}
+
+	// Convert parts
+	parts := make([]storage.PartInfo, 0, len(req.Parts))
+	for _, p := range req.Parts {
+		parts = append(parts, storage.PartInfo{
+			PartNumber: p.PartNumber,
+			ETag:       p.ETag,
+			Size:       p.Size,
+		})
+	}
+
+	serviceReq := &upload_service.CompleteMultipartUploadRequest{
+		UploadId: req.UploadId,
+		Parts:    parts,
+	}
+
+	resp, err := h.uploadService.CompleteMultipartUpload(req.Key, serviceReq)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, resp)
+}
+
+// ListPartsRequest request for listing parts
+type ListPartsRequest struct {
+	UploadId string `json:"uploadId" binding:"required"`
+	Key      string `json:"key" binding:"required"`
+}
+
+// ListParts lists all uploaded parts for resuming upload
+// @Summary      List uploaded parts
+// @Description  List all uploaded parts in a multipart upload session for resume support
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        request  body      ListPartsRequest  true  "List parts request"
+// @Success      200      {object}  respond.Response{data=upload_service.ListPartsResponse}
+// @Failure      400      {object}  respond.Response  "Parameter error"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/multipart/list-parts [post]
+func (h *UploadHandler) ListParts(c *gin.Context) {
+	var req ListPartsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respond.InvalidParam(c, err.Error())
+		return
+	}
+
+	resp, err := h.uploadService.ListParts(req.Key, req.UploadId)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, resp)
+}
+
+// AbortMultipartUploadRequest request for aborting multipart upload
+type AbortMultipartUploadRequest struct {
+	UploadId string `json:"uploadId" binding:"required"`
+	Key      string `json:"key" binding:"required"`
+}
+
+// AbortMultipartUpload aborts a multipart upload
+// @Summary      Abort multipart upload
+// @Description  Abort a multipart upload session and clean up resources
+// @Tags         File Upload
+// @Accept       json
+// @Produce      json
+// @Param        request  body      AbortMultipartUploadRequest  true  "Abort multipart upload request"
+// @Success      200      {object}  respond.Response  "Abort successful"
+// @Failure      400      {object}  respond.Response  "Parameter error"
+// @Failure      500      {object}  respond.Response  "Server error"
+// @Router       /files/multipart/abort [post]
+func (h *UploadHandler) AbortMultipartUpload(c *gin.Context) {
+	var req AbortMultipartUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respond.InvalidParam(c, err.Error())
+		return
+	}
+
+	err := h.uploadService.AbortMultipartUpload(req.Key, req.UploadId)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+
+	respond.Success(c, gin.H{"message": "Upload aborted successfully"})
 }
 
 // ListUploadTasks list upload tasks by address with cursor pagination

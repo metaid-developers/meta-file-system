@@ -410,6 +410,284 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "/files/multipart/abort": {
+            "post": {
+                "description": "Abort a multipart upload session and clean up resources",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "Abort multipart upload",
+                "parameters": [
+                    {
+                        "description": "Abort multipart upload request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller_handler.AbortMultipartUploadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Abort successful",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Parameter error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/multipart/complete": {
+            "post": {
+                "description": "Complete a multipart upload session and merge all parts into a single file",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "Complete multipart upload",
+                "parameters": [
+                    {
+                        "description": "Complete multipart upload request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller_handler.CompleteMultipartUploadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_service_upload_service.CompleteMultipartUploadResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Parameter error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/multipart/initiate": {
+            "post": {
+                "description": "Start a multipart upload session for large file uploads with resume support",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "Initiate multipart upload",
+                "parameters": [
+                    {
+                        "description": "Initiate multipart upload request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller_handler.InitiateMultipartUploadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_service_upload_service.InitiateMultipartUploadResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Parameter error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/multipart/list-parts": {
+            "post": {
+                "description": "List all uploaded parts in a multipart upload session for resume support",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "List uploaded parts",
+                "parameters": [
+                    {
+                        "description": "List parts request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller_handler.ListPartsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_service_upload_service.ListPartsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Parameter error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/multipart/upload-part": {
+            "post": {
+                "description": "Upload a single part of the file in a multipart upload session",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "File Upload"
+                ],
+                "summary": "Upload part",
+                "parameters": [
+                    {
+                        "description": "Upload part request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller_handler.UploadPartRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_service_upload_service.UploadPartResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Parameter error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/files/pre-upload": {
             "post": {
                 "description": "Upload file and generate unsigned transaction, return transaction for client signing",
@@ -657,12 +935,26 @@ const docTemplateuploader = `{
         }
     },
     "definitions": {
+        "controller_handler.AbortMultipartUploadRequest": {
+            "type": "object",
+            "required": [
+                "key",
+                "uploadId"
+            ],
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "uploadId": {
+                    "type": "string"
+                }
+            }
+        },
         "controller_handler.ChunkedUploadForTaskRequest": {
             "type": "object",
             "required": [
                 "address",
                 "chunkPreTxHex",
-                "content",
                 "fileName",
                 "indexPreTxHex",
                 "metaId",
@@ -711,6 +1003,9 @@ const docTemplateuploader = `{
                 "path": {
                     "type": "string",
                     "example": "/file"
+                },
+                "storageKey": {
+                    "type": "string"
                 }
             }
         },
@@ -719,7 +1014,6 @@ const docTemplateuploader = `{
             "required": [
                 "address",
                 "chunkPreTxHex",
-                "content",
                 "fileName",
                 "indexPreTxHex",
                 "metaId",
@@ -772,6 +1066,9 @@ const docTemplateuploader = `{
                 "path": {
                     "type": "string",
                     "example": "/file"
+                },
+                "storageKey": {
+                    "type": "string"
                 }
             }
         },
@@ -817,6 +1114,39 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "controller_handler.CompleteMultipartUploadRequest": {
+            "type": "object",
+            "required": [
+                "key",
+                "parts",
+                "uploadId"
+            ],
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "parts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "etag": {
+                                "type": "string"
+                            },
+                            "partNumber": {
+                                "type": "integer"
+                            },
+                            "size": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                },
+                "uploadId": {
+                    "type": "string"
+                }
+            }
+        },
         "controller_handler.ConfigResponse": {
             "type": "object",
             "properties": {
@@ -833,7 +1163,6 @@ const docTemplateuploader = `{
         "controller_handler.EstimateChunkedUploadRequest": {
             "type": "object",
             "required": [
-                "content",
                 "fileName",
                 "path"
             ],
@@ -856,6 +1185,47 @@ const docTemplateuploader = `{
                 "path": {
                     "type": "string",
                     "example": "/file"
+                },
+                "storageKey": {
+                    "type": "string"
+                }
+            }
+        },
+        "controller_handler.InitiateMultipartUploadRequest": {
+            "type": "object",
+            "required": [
+                "fileName",
+                "fileSize"
+            ],
+            "properties": {
+                "address": {
+                    "description": "Optional, user address",
+                    "type": "string"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "fileSize": {
+                    "type": "integer"
+                },
+                "metaId": {
+                    "description": "Optional, for file organization",
+                    "type": "string"
+                }
+            }
+        },
+        "controller_handler.ListPartsRequest": {
+            "type": "object",
+            "required": [
+                "key",
+                "uploadId"
+            ],
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "uploadId": {
+                    "type": "string"
                 }
             }
         },
@@ -901,6 +1271,31 @@ const docTemplateuploader = `{
                 "txId": {
                     "type": "string",
                     "example": "abc123..."
+                }
+            }
+        },
+        "controller_handler.UploadPartRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "key",
+                "partNumber",
+                "uploadId"
+            ],
+            "properties": {
+                "content": {
+                    "description": "Base64 encoded part data",
+                    "type": "string"
+                },
+                "key": {
+                    "description": "Storage key from initiate",
+                    "type": "string"
+                },
+                "partNumber": {
+                    "type": "integer"
+                },
+                "uploadId": {
+                    "type": "string"
                 }
             }
         },
@@ -1105,6 +1500,23 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "meta-file-system_service_upload_service.CompleteMultipartUploadResponse": {
+            "type": "object",
+            "properties": {
+                "fileSize": {
+                    "description": "Total file size",
+                    "type": "integer"
+                },
+                "key": {
+                    "description": "Storage key",
+                    "type": "string"
+                },
+                "uploadId": {
+                    "description": "Upload ID",
+                    "type": "string"
+                }
+            }
+        },
         "meta-file-system_service_upload_service.EstimateChunkedUploadResponse": {
             "type": "object",
             "properties": {
@@ -1145,6 +1557,60 @@ const docTemplateuploader = `{
                 },
                 "totalFee": {
                     "description": "Total fee (ChunkPreTxFee + IndexPreTxFee)",
+                    "type": "integer"
+                }
+            }
+        },
+        "meta-file-system_service_upload_service.InitiateMultipartUploadResponse": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "description": "Storage key",
+                    "type": "string"
+                },
+                "uploadId": {
+                    "description": "Upload ID for subsequent operations",
+                    "type": "string"
+                }
+            }
+        },
+        "meta-file-system_service_upload_service.ListPartsResponse": {
+            "type": "object",
+            "properties": {
+                "parts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.PartInfo"
+                    }
+                },
+                "uploadId": {
+                    "type": "string"
+                }
+            }
+        },
+        "meta-file-system_service_upload_service.UploadPartResponse": {
+            "type": "object",
+            "properties": {
+                "etag": {
+                    "description": "ETag for this part",
+                    "type": "string"
+                },
+                "partNumber": {
+                    "description": "Part number",
+                    "type": "integer"
+                }
+            }
+        },
+        "storage.PartInfo": {
+            "type": "object",
+            "properties": {
+                "etag": {
+                    "type": "string"
+                },
+                "partNumber": {
+                    "type": "integer"
+                },
+                "size": {
                     "type": "integer"
                 }
             }

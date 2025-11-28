@@ -1,5 +1,15 @@
 basePath: /api/v1
 definitions:
+  controller_handler.AbortMultipartUploadRequest:
+    properties:
+      key:
+        type: string
+      uploadId:
+        type: string
+    required:
+    - key
+    - uploadId
+    type: object
   controller_handler.ChunkedUploadForTaskRequest:
     properties:
       address:
@@ -34,10 +44,11 @@ definitions:
       path:
         example: /file
         type: string
+      storageKey:
+        type: string
     required:
     - address
     - chunkPreTxHex
-    - content
     - fileName
     - indexPreTxHex
     - metaId
@@ -80,10 +91,11 @@ definitions:
       path:
         example: /file
         type: string
+      storageKey:
+        type: string
     required:
     - address
     - chunkPreTxHex
-    - content
     - fileName
     - indexPreTxHex
     - metaId
@@ -119,6 +131,28 @@ definitions:
         example: abc123...
         type: string
     type: object
+  controller_handler.CompleteMultipartUploadRequest:
+    properties:
+      key:
+        type: string
+      parts:
+        items:
+          properties:
+            etag:
+              type: string
+            partNumber:
+              type: integer
+            size:
+              type: integer
+          type: object
+        type: array
+      uploadId:
+        type: string
+    required:
+    - key
+    - parts
+    - uploadId
+    type: object
   controller_handler.ConfigResponse:
     properties:
       maxFileSize:
@@ -144,10 +178,37 @@ definitions:
       path:
         example: /file
         type: string
+      storageKey:
+        type: string
     required:
-    - content
     - fileName
     - path
+    type: object
+  controller_handler.InitiateMultipartUploadRequest:
+    properties:
+      address:
+        description: Optional, user address
+        type: string
+      fileName:
+        type: string
+      fileSize:
+        type: integer
+      metaId:
+        description: Optional, for file organization
+        type: string
+    required:
+    - fileName
+    - fileSize
+    type: object
+  controller_handler.ListPartsRequest:
+    properties:
+      key:
+        type: string
+      uploadId:
+        type: string
+    required:
+    - key
+    - uploadId
     type: object
   controller_handler.PreUploadResponseData:
     properties:
@@ -181,6 +242,24 @@ definitions:
       txId:
         example: abc123...
         type: string
+    type: object
+  controller_handler.UploadPartRequest:
+    properties:
+      content:
+        description: Base64 encoded part data
+        type: string
+      key:
+        description: Storage key from initiate
+        type: string
+      partNumber:
+        type: integer
+      uploadId:
+        type: string
+    required:
+    - content
+    - key
+    - partNumber
+    - uploadId
     type: object
   meta-file-system_controller_respond.ChunkedUploadTaskResponse:
     properties:
@@ -321,6 +400,18 @@ definitions:
         description: Status string
         type: string
     type: object
+  meta-file-system_service_upload_service.CompleteMultipartUploadResponse:
+    properties:
+      fileSize:
+        description: Total file size
+        type: integer
+      key:
+        description: Storage key
+        type: string
+      uploadId:
+        description: Upload ID
+        type: string
+    type: object
   meta-file-system_service_upload_service.EstimateChunkedUploadResponse:
     properties:
       chunkFees:
@@ -351,6 +442,42 @@ definitions:
         type: integer
       totalFee:
         description: Total fee (ChunkPreTxFee + IndexPreTxFee)
+        type: integer
+    type: object
+  meta-file-system_service_upload_service.InitiateMultipartUploadResponse:
+    properties:
+      key:
+        description: Storage key
+        type: string
+      uploadId:
+        description: Upload ID for subsequent operations
+        type: string
+    type: object
+  meta-file-system_service_upload_service.ListPartsResponse:
+    properties:
+      parts:
+        items:
+          $ref: '#/definitions/storage.PartInfo'
+        type: array
+      uploadId:
+        type: string
+    type: object
+  meta-file-system_service_upload_service.UploadPartResponse:
+    properties:
+      etag:
+        description: ETag for this part
+        type: string
+      partNumber:
+        description: Part number
+        type: integer
+    type: object
+  storage.PartInfo:
+    properties:
+      etag:
+        type: string
+      partNumber:
+        type: integer
+      size:
         type: integer
     type: object
 host: localhost:7282
@@ -611,6 +738,179 @@ paths:
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
       summary: Estimate chunked upload fee
+      tags:
+      - File Upload
+  /files/multipart/abort:
+    post:
+      consumes:
+      - application/json
+      description: Abort a multipart upload session and clean up resources
+      parameters:
+      - description: Abort multipart upload request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.AbortMultipartUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Abort successful
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Abort multipart upload
+      tags:
+      - File Upload
+  /files/multipart/complete:
+    post:
+      consumes:
+      - application/json
+      description: Complete a multipart upload session and merge all parts into a
+        single file
+      parameters:
+      - description: Complete multipart upload request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.CompleteMultipartUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_service_upload_service.CompleteMultipartUploadResponse'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Complete multipart upload
+      tags:
+      - File Upload
+  /files/multipart/initiate:
+    post:
+      consumes:
+      - application/json
+      description: Start a multipart upload session for large file uploads with resume
+        support
+      parameters:
+      - description: Initiate multipart upload request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.InitiateMultipartUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_service_upload_service.InitiateMultipartUploadResponse'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Initiate multipart upload
+      tags:
+      - File Upload
+  /files/multipart/list-parts:
+    post:
+      consumes:
+      - application/json
+      description: List all uploaded parts in a multipart upload session for resume
+        support
+      parameters:
+      - description: List parts request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.ListPartsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_service_upload_service.ListPartsResponse'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: List uploaded parts
+      tags:
+      - File Upload
+  /files/multipart/upload-part:
+    post:
+      consumes:
+      - application/json
+      description: Upload a single part of the file in a multipart upload session
+      parameters:
+      - description: Upload part request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller_handler.UploadPartRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_service_upload_service.UploadPartResponse'
+              type: object
+        "400":
+          description: Parameter error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Upload part
       tags:
       - File Upload
   /files/pre-upload:

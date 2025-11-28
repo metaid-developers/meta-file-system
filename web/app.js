@@ -1,6 +1,181 @@
 // API base URL - Get the current path to support reverse proxy with subpath
 const API_BASE = window.location.origin + window.location.pathname.replace(/\/$/, '');
 
+// Language support
+const i18n = {
+    en: {
+        title: 'MetaID File Upload to Chain',
+        subtitle: 'Decentralized File Storage Based on MetaID Protocol',
+        walletStatus: 'Wallet Status:',
+        notConnected: 'Not Connected',
+        connected: 'Connected',
+        connectWallet: 'Connect Metalet Wallet',
+        disconnect: 'Disconnect',
+        address: 'Address:',
+        metaid: 'MetaID:',
+        walletBalance: '💰 Wallet Balance',
+        refreshBalance: '🔄 Refresh',
+        totalBalance: 'Total Balance',
+        confirmed: 'Confirmed',
+        unconfirmed: 'Unconfirmed',
+        fileSizeLimit: 'Current File Size Limit:',
+        dragDropFile: 'Drag and drop file here or click to select file',
+        allFileTypes: 'All file types supported',
+        fileName: 'File Name:',
+        fileSize: 'File Size:',
+        fileType: 'File Type:',
+        detectedExtension: 'Detected Extension:',
+        contentType: 'ContentType:',
+        metaidPath: 'MetaID Path',
+        operationType: 'Operation Type',
+        host: 'Host (Optional)',
+        feeRate: 'Fee Rate (satoshis/byte)',
+        startUpload: '🚀 Start Upload to Chain',
+        startAsyncChunkUpload: '📦 Start Async Chunk Upload Task',
+        asyncUploadHint: 'Large files (>10MB) can be uploaded asynchronously as background tasks.',
+        sendBuzz: '📝 Send Buzz',
+        content: 'Content',
+        chunkedUploadTasks: '📦 Chunked Upload Tasks',
+        monitorTasks: 'Monitor asynchronous chunked uploads and check their progress.',
+        refresh: 'Refresh',
+        loadMore: 'Load More',
+        autoRefresh: 'Auto Refresh',
+        noTasks: 'No chunked upload tasks found for this address.',
+        operationLog: 'Operation Log',
+        goToIndexer: 'Go to Indexer',
+        apiDocs: 'API Docs',
+        uploadGuide: 'Upload Guide',
+        chunkedUploadGuide: 'Chunked Upload Guide',
+        github: 'GitHub',
+        pleaseConnectWallet: 'Please connect wallet first',
+        pleaseSelectFile: 'Please select file first',
+        pleaseConnectWalletAndSelectFile: 'Please connect wallet first and select file',
+        walletNotDetected: '⚠️ Please install and connect Metalet wallet extension first',
+        uploading: 'Uploading...',
+        uploadingToChain: 'Uploading to chain...',
+        preparing: 'Preparing...',
+        taskCreated: 'Task Created!',
+        uploadSuccessful: 'Upload Successful!',
+        uploadFailed: 'Upload Failed',
+        close: 'Close',
+        fileUploadedSuccessfully: 'File uploaded successfully!',
+        viewDetails: 'View details',
+        transactionId: 'Transaction ID:',
+        pinId: 'PinID:',
+        viewTransaction: 'View Transaction 🔗',
+        viewPin: 'View Pin 🔗',
+        buzzSentSuccessfully: 'Buzz sent successfully!',
+        buzzTransactionId: '📝 Buzz Transaction ID:',
+        showBuzz: '📱 Show Buzz:',
+        buzzPinId: '🔧 Buzz PinID:',
+        viewBuzz: 'View Buzz 📱',
+        viewBuzzPin: 'View Buzz Pin 🔧',
+        taskId: 'Task ID:',
+        created: 'Created:',
+        file: 'File:',
+        chunks: 'Chunks:',
+        step: 'Step:',
+        indexTxId: 'Index TxID:',
+        message: 'Message:',
+        pending: 'Pending',
+        processing: 'Processing',
+        success: 'Success',
+        confirmUpload: 'Confirm Upload',
+        confirmUploadMessage: 'Are you sure you want to upload this file to the blockchain? This action cannot be undone.',
+        confirm: 'Confirm',
+        cancel: 'Cancel',
+        failed: 'Failed',
+        noMoreTasks: 'No more tasks to load'
+    },
+    zh: {
+        title: 'MetaID 文件上链',
+        subtitle: '基于 MetaID 协议的去中心化文件存储',
+        walletStatus: '钱包状态:',
+        notConnected: '未连接',
+        connected: '已连接',
+        connectWallet: '连接 Metalet 钱包',
+        disconnect: '断开连接',
+        address: '地址:',
+        metaid: 'MetaID:',
+        walletBalance: '💰 钱包余额',
+        refreshBalance: '🔄 刷新',
+        totalBalance: '总余额',
+        confirmed: '已确认',
+        unconfirmed: '未确认',
+        fileSizeLimit: '当前文件大小限制:',
+        dragDropFile: '拖放文件到此处或点击选择文件',
+        allFileTypes: '支持所有文件类型',
+        fileName: '文件名:',
+        fileSize: '文件大小:',
+        fileType: '文件类型:',
+        detectedExtension: '检测到的扩展名:',
+        contentType: '内容类型:',
+        metaidPath: 'MetaID 路径',
+        operationType: '操作类型',
+        host: '主机 (可选)',
+        feeRate: '费率 (聪/字节)',
+        startUpload: '🚀 开始上链',
+        startAsyncChunkUpload: '📦 开始异步分块上传任务',
+        asyncUploadHint: '大文件 (>10MB) 可以作为后台任务异步上传。',
+        sendBuzz: '📝 发送 Buzz',
+        content: '内容',
+        chunkedUploadTasks: '📦 分块上传任务',
+        monitorTasks: '监控异步分块上传并查看其进度。',
+        refresh: '刷新',
+        loadMore: '加载更多',
+        autoRefresh: '自动刷新',
+        noTasks: '未找到此地址的分块上传任务。',
+        operationLog: '操作日志',
+        goToIndexer: '前往索引器',
+        apiDocs: 'API 文档',
+        uploadGuide: '上传指南',
+        chunkedUploadGuide: '分块上传指南',
+        github: 'GitHub',
+        pleaseConnectWallet: '请先连接钱包',
+        pleaseSelectFile: '请先选择文件',
+        pleaseConnectWalletAndSelectFile: '请先连接钱包并选择文件',
+        walletNotDetected: '⚠️ 请先安装并连接 Metalet 钱包扩展',
+        uploading: '上传中...',
+        uploadingToChain: '正在上链...',
+        preparing: '准备中...',
+        taskCreated: '任务已创建!',
+        uploadSuccessful: '上传成功!',
+        uploadFailed: '上传失败',
+        close: '关闭',
+        fileUploadedSuccessfully: '文件上传成功!',
+        viewDetails: '查看详情',
+        transactionId: '交易 ID:',
+        pinId: 'PinID:',
+        viewTransaction: '查看交易 🔗',
+        viewPin: '查看 Pin 🔗',
+        buzzSentSuccessfully: 'Buzz 发送成功!',
+        buzzTransactionId: '📝 Buzz 交易 ID:',
+        showBuzz: '📱 Show Buzz:',
+        buzzPinId: '🔧 Buzz PinID:',
+        viewBuzz: '查看 Buzz 📱',
+        viewBuzzPin: '查看 Buzz Pin 🔧',
+        taskId: '任务 ID:',
+        created: '创建时间:',
+        file: '文件:',
+        chunks: '分块:',
+        step: '步骤:',
+        indexTxId: '索引交易 ID:',
+        message: '消息:',
+        pending: '待处理',
+        processing: '处理中',
+        success: '成功',
+        failed: '失败',
+        confirmUpload: '确认上链',
+        confirmUploadMessage: '确定要将此文件上传到区块链吗？此操作无法撤销。',
+        confirm: '确认',
+        cancel: '取消',
+        noMoreTasks: '没有更多任务'
+    }
+};
+
+// Current language (default: detect from browser or use 'en')
+let currentLang = localStorage.getItem('preferredLanguage') || (navigator.language.startsWith('zh') ? 'zh' : 'en');
+
 // Global state
 let selectedFile = null;
 let selectedFileExtension = ''; // Store detected file extension
@@ -14,6 +189,186 @@ let taskAutoRefreshTimer = null;
 let taskList = [];
 const TASK_PAGE_SIZE = 10;
 const CHUNKED_UPLOAD_THRESHOLD = 10 * 1024 * 1024; // 10MB threshold for chunked uploads
+const MULTIPART_CHUNK_SIZE = 1 * 1024 * 1024; // 1MB per part for multipart upload
+
+// Get translated text
+function t(key) {
+    return i18n[currentLang][key] || key;
+}
+
+// Switch language
+function switchLanguage(lang) {
+    if (lang !== 'en' && lang !== 'zh') return;
+    currentLang = lang;
+    localStorage.setItem('preferredLanguage', lang);
+    updatePageLanguage();
+}
+
+// Update page language
+function updatePageLanguage() {
+    // Update title and subtitle
+    const titleEl = document.querySelector('h1');
+    if (titleEl) titleEl.textContent = t('title');
+    const subtitleEl = document.querySelector('.subtitle');
+    if (subtitleEl) subtitleEl.textContent = t('subtitle');
+    
+    // Update wallet section
+    const walletInfoDiv = document.querySelector('.wallet-info > div:first-child');
+    if (walletInfoDiv) {
+        const strongEl = walletInfoDiv.querySelector('strong');
+        if (strongEl) strongEl.textContent = t('walletStatus');
+    }
+    const walletStatusEl = document.getElementById('walletStatus');
+    if (walletStatusEl) {
+        walletStatusEl.textContent = walletConnected ? t('connected') : t('notConnected');
+    }
+    const connectBtnEl = document.getElementById('connectBtn');
+    if (connectBtnEl && !connectBtnEl.classList.contains('btn-success')) {
+        connectBtnEl.textContent = t('connectWallet');
+    }
+    const disconnectBtnEl = document.getElementById('disconnectBtn');
+    if (disconnectBtnEl) disconnectBtnEl.textContent = t('disconnect');
+    
+    // Update address labels
+    const addressLabels = document.querySelectorAll('#walletAddress strong');
+    if (addressLabels.length >= 2) {
+        addressLabels[0].textContent = t('address');
+        addressLabels[1].textContent = t('metaid');
+    }
+    
+    // Update balance section
+    const balanceInfo = document.getElementById('balanceInfo');
+    if (balanceInfo) {
+        const balanceTitle = balanceInfo.querySelector('strong');
+        if (balanceTitle) balanceTitle.textContent = t('walletBalance');
+        const refreshBalanceBtn = document.getElementById('refreshBalanceBtn');
+        if (refreshBalanceBtn) refreshBalanceBtn.textContent = t('refreshBalance');
+        
+        // Update balance labels
+        const balanceDivs = balanceInfo.querySelectorAll('div[style*="background: white"]');
+        if (balanceDivs.length >= 3) {
+            const labels = balanceDivs[0].querySelectorAll('div');
+            if (labels.length >= 2) labels[0].textContent = t('totalBalance');
+            const labels2 = balanceDivs[1].querySelectorAll('div');
+            if (labels2.length >= 2) labels2[0].textContent = t('confirmed');
+            const labels3 = balanceDivs[2].querySelectorAll('div');
+            if (labels3.length >= 2) labels3[0].textContent = t('unconfirmed');
+        }
+    }
+    
+    // Update file size limit
+    const fileSizeLimit = document.getElementById('fileSizeLimit');
+    if (fileSizeLimit) {
+        const strongEl = fileSizeLimit.querySelector('strong');
+        if (strongEl) strongEl.textContent = t('fileSizeLimit');
+    }
+    
+    // Update drop zone
+    const dropZoneText = document.querySelector('.drop-zone-text');
+    if (dropZoneText) dropZoneText.textContent = t('dragDropFile');
+    const dropZoneDivs = document.querySelectorAll('.drop-zone > div');
+    if (dropZoneDivs.length >= 3) {
+        dropZoneDivs[2].textContent = t('allFileTypes');
+    }
+    
+    // Update file info labels
+    const fileInfoItems = document.querySelectorAll('.file-info-item strong');
+    if (fileInfoItems.length >= 1) {
+        fileInfoItems.forEach((item, index) => {
+            const text = item.textContent.trim();
+            if (text.includes('File Name') || text.includes('文件名')) item.textContent = t('fileName') + ':';
+            else if (text.includes('File Size') || text.includes('文件大小')) item.textContent = t('fileSize') + ':';
+            else if (text.includes('File Type') || text.includes('文件类型')) item.textContent = t('fileType') + ':';
+            else if (text.includes('Detected Extension') || text.includes('检测到的扩展名')) item.textContent = t('detectedExtension') + ':';
+            else if (text.includes('ContentType') || text.includes('内容类型')) item.textContent = t('contentType') + ':';
+        });
+    }
+    
+    // Update form labels
+    const formLabels = document.querySelectorAll('.form-label');
+    formLabels.forEach(label => {
+        const nextInput = label.nextElementSibling;
+        if (nextInput) {
+            if (nextInput.id === 'pathInput') label.textContent = t('metaidPath');
+            else if (nextInput.id === 'operationSelect') label.textContent = t('operationType');
+            else if (nextInput.id === 'fileHostInput') label.textContent = t('host');
+            else if (nextInput.id === 'feeRateInput') label.textContent = t('feeRate');
+            else if (nextInput.id === 'buzzContent') label.textContent = t('content');
+            else if (nextInput.id === 'buzzHost') label.textContent = t('host');
+        }
+    });
+    
+    // Update buttons
+    updateUploadButton();
+    updateBuzzButton();
+    
+    // Update buzz section
+    const buzzTitle = document.querySelector('#buzzSection h3');
+    if (buzzTitle) buzzTitle.textContent = t('sendBuzz');
+    
+    // Update task section
+    const taskTitle = document.querySelector('#chunkTaskSection h3');
+    if (taskTitle) taskTitle.textContent = t('chunkedUploadTasks');
+    const taskDesc = document.querySelector('#chunkTaskSection p');
+    if (taskDesc) taskDesc.textContent = t('monitorTasks');
+    const refreshTasksBtnEl = document.getElementById('refreshTasksBtn');
+    if (refreshTasksBtnEl) refreshTasksBtnEl.textContent = t('refresh');
+    const loadMoreTasksBtnEl = document.getElementById('loadMoreTasksBtn');
+    if (loadMoreTasksBtnEl) loadMoreTasksBtnEl.textContent = t('loadMore');
+    const autoRefreshLabel = document.querySelector('.task-auto-refresh');
+    if (autoRefreshLabel) {
+        const labelText = autoRefreshLabel.childNodes[autoRefreshLabel.childNodes.length - 1];
+        if (labelText && labelText.nodeType === 3) {
+            labelText.textContent = ' ' + t('autoRefresh');
+        } else {
+            const span = document.createElement('span');
+            span.textContent = t('autoRefresh');
+            autoRefreshLabel.appendChild(span);
+        }
+    }
+    const taskListEmptyEl = document.getElementById('taskListEmpty');
+    if (taskListEmptyEl) taskListEmptyEl.textContent = t('noTasks');
+    
+    // Update log section
+    const logTitle = document.querySelector('.log-section strong');
+    if (logTitle) logTitle.textContent = t('operationLog');
+    
+    // Update wallet alert
+    const walletAlertEl = document.getElementById('walletAlert');
+    if (walletAlertEl) walletAlertEl.textContent = t('walletNotDetected');
+    
+    // Update language button
+    const langBtn = document.getElementById('langSwitchBtn');
+    if (langBtn) {
+        const icon = langBtn.querySelector('.header-link-icon');
+        const text = langBtn.querySelector('span:last-child');
+        if (text) {
+            text.textContent = currentLang === 'en' ? '中文' : 'English';
+        } else if (langBtn.childNodes.length > 1) {
+            langBtn.childNodes[langBtn.childNodes.length - 1].textContent = currentLang === 'en' ? '中文' : 'English';
+        }
+    }
+    
+    // Update header links text (if needed)
+    const headerLinks = document.querySelectorAll('.header-link span:last-child');
+    headerLinks.forEach((link, index) => {
+        const parent = link.closest('.header-link');
+        if (parent && parent.href) {
+            const href = parent.href;
+            if (href.includes('metafile-indexer')) {
+                link.textContent = t('goToIndexer');
+            } else if (href.includes('swagger') || href.includes('docs')) {
+                link.textContent = t('apiDocs');
+            } else if (href.includes('UPLOAD_FLOW_DIRECT')) {
+                link.textContent = t('uploadGuide');
+            } else if (href.includes('UPLOAD_FLOW_CHUNKED')) {
+                link.textContent = t('chunkedUploadGuide');
+            } else if (href.includes('github.com')) {
+                link.textContent = t('github');
+            }
+        }
+    });
+}
 
 // Helper function to get wallet object
 function getWallet() {
@@ -46,8 +401,6 @@ const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const fileInfo = document.getElementById('fileInfo');
 const uploadBtn = document.getElementById('uploadBtn');
-const asyncChunkUploadBtn = document.getElementById('asyncChunkUploadBtn');
-const asyncUploadHint = document.getElementById('asyncUploadHint');
 const walletStatus = document.getElementById('walletStatus');
 const walletAddress = document.getElementById('walletAddress');
 const addressText = document.getElementById('addressText');
@@ -79,6 +432,19 @@ window.addEventListener('load', () => {
         href: window.location.href,
         API_BASE: API_BASE
     });
+    
+    // Initialize language
+    updatePageLanguage();
+    
+    // Initialize language switch button
+    const langBtn = document.getElementById('langSwitchBtn');
+    if (langBtn) {
+        langBtn.addEventListener('click', () => {
+            const newLang = currentLang === 'en' ? 'zh' : 'en';
+            switchLanguage(newLang);
+        });
+    }
+    
     loadConfig(); // Load config
     initWalletCheck();
     initDragDrop();
@@ -407,14 +773,9 @@ function initEventListeners() {
     
     // Upload button
     if (uploadBtn) {
-        // uploadBtn.addEventListener('click', startUpload);
-        uploadBtn.addEventListener('click', startUpload3);
+        uploadBtn.addEventListener('click', startUpload4);
     } else {
         console.error('❌ uploadBtn element not found!');
-    }
-
-    if (asyncChunkUploadBtn) {
-        asyncChunkUploadBtn.addEventListener('click', startUpload4);
     }
     
     // Refresh balance button
@@ -594,7 +955,7 @@ async function connectWallet() {
             currentAddress = address;
             walletConnected = true;
             
-            walletStatus.textContent = 'Connected';
+            walletStatus.textContent = t('connected');
             walletStatus.style.color = '#28a745';
             
             // Display address
@@ -670,7 +1031,7 @@ function disconnectWallet() {
     currentAddress = null;
     
     // update UI
-    walletStatus.textContent = 'Not Connected';
+    walletStatus.textContent = t('notConnected');
     walletStatus.style.color = '#999';
     walletAddress.classList.add('hidden');
     
@@ -704,13 +1065,13 @@ function updateUploadButton() {
     
     // update button text hint
     if (!walletConnected && !selectedFile) {
-        uploadBtn.textContent = '🚀 Please connect wallet firstand select file';
+        uploadBtn.textContent = '📦 ' + t('pleaseConnectWalletAndSelectFile');
     } else if (!walletConnected) {
-        uploadBtn.textContent = '🚀 Please connect wallet first';
+        uploadBtn.textContent = '📦 ' + t('pleaseConnectWallet');
     } else if (!selectedFile) {
-        uploadBtn.textContent = '🚀 Please select file first';
+        uploadBtn.textContent = '📦 ' + t('pleaseSelectFile');
     } else {
-        uploadBtn.textContent = '🚀 Start Upload to Chain';
+        uploadBtn.textContent = t('startAsyncChunkUpload');
     }
     
     console.log('🔄 update upload button status:', {
@@ -718,41 +1079,6 @@ function updateUploadButton() {
         selectedFile: !!selectedFile,
         canUpload
     });
-
-    updateAsyncUploadButton();
-}
-
-function updateAsyncUploadButton() {
-    if (!asyncChunkUploadBtn) {
-        return;
-    }
-
-    const requiresChunk = selectedFile && selectedFile.size > CHUNKED_UPLOAD_THRESHOLD;
-
-    if (!requiresChunk) {
-        asyncChunkUploadBtn.classList.add('hidden');
-        asyncChunkUploadBtn.disabled = true;
-        if (asyncUploadHint) {
-            asyncUploadHint.classList.add('hidden');
-        }
-        return;
-    }
-
-    asyncChunkUploadBtn.classList.remove('hidden');
-    if (asyncUploadHint) {
-        asyncUploadHint.classList.remove('hidden');
-    }
-
-    if (!walletConnected) {
-        asyncChunkUploadBtn.disabled = true;
-        asyncChunkUploadBtn.textContent = '📦 Please connect wallet first';
-    } else if (!selectedFile) {
-        asyncChunkUploadBtn.disabled = true;
-        asyncChunkUploadBtn.textContent = '📦 Please select file first';
-    } else {
-        asyncChunkUploadBtn.disabled = false;
-        asyncChunkUploadBtn.textContent = '📦 Start Async Chunk Upload Task';
-    }
 }
 
 // fetch and display balance
@@ -957,14 +1283,112 @@ async function startChunkedUpload() {
 
 // Start async chunked upload task flow (ChunkedUploadForTask)
 async function startUpload4() {
+    // Show confirmation dialog before starting upload
+    const confirmed = await showUploadConfirmation();
+    if (!confirmed) {
+        addLog('⚠️ Upload cancelled by user', 'warning');
+        return;
+    }
+    
     return runChunkedUploadFlow({ asynchronous: true });
 }
 
-async function runChunkedUploadFlow({ asynchronous = false } = {}) {
-    const triggerButton = asynchronous ? (asyncChunkUploadBtn || uploadBtn) : uploadBtn;
-    const defaultButtonText = asynchronous ? '📦 Start Async Chunk Upload Task' : '🚀 Start Upload to Chain';
-    const preparingText = asynchronous ? 'Preparing async chunk upload...' : 'Preparing...';
-    const flowLabel = asynchronous ? 'Async Chunked Upload Task' : 'Chunked Upload';
+// Show upload confirmation dialog
+function showUploadConfirmation() {
+    return new Promise((resolve) => {
+        // Create modal dialog
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10001;
+        `;
+        
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        `;
+        
+        const fileName = selectedFile ? selectedFile.name : 'N/A';
+        const fileSize = selectedFile ? formatFileSize(selectedFile.size) : 'N/A';
+        
+        dialog.innerHTML = `
+            <h2 style="margin-top: 0; color: #333; margin-bottom: 20px;">${t('confirmUpload')}</h2>
+            <div style="margin: 20px 0;">
+                <div style="margin: 10px 0;">
+                    <strong>${t('file')}:</strong> ${fileName}
+                </div>
+                <div style="margin: 10px 0;">
+                    <strong>${t('fileSize')}:</strong> ${fileSize}
+                </div>
+                <div style="margin: 15px 0; padding: 15px; background: #f0f0f0; border-radius: 6px; font-size: 14px; color: #666;">
+                    ${t('confirmUploadMessage')}
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button id="cancelUploadBtn" style="
+                    padding: 10px 20px;
+                    background: #ccc;
+                    color: #333;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                ">${t('cancel')}</button>
+                <button id="confirmUploadBtn" style="
+                    padding: 10px 20px;
+                    background: #28a745;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: bold;
+                ">${t('confirm')}</button>
+            </div>
+        `;
+        
+        modal.appendChild(dialog);
+        document.body.appendChild(modal);
+        
+        // Handle button clicks
+        document.getElementById('confirmUploadBtn').addEventListener('click', () => {
+            document.body.removeChild(modal);
+            resolve(true);
+        });
+        
+        document.getElementById('cancelUploadBtn').addEventListener('click', () => {
+            document.body.removeChild(modal);
+            resolve(false);
+        });
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+                resolve(false);
+            }
+        });
+    });
+}
+
+async function runChunkedUploadFlow({ asynchronous = true } = {}) {
+    const triggerButton = uploadBtn;
+    const defaultButtonText = '📦 Start Async Chunk Upload Task';
+    const preparingText = 'Preparing async chunk upload...';
+    const flowLabel = 'Async Chunked Upload Task';
 
     try {
         if (triggerButton) {
@@ -979,22 +1403,23 @@ async function runChunkedUploadFlow({ asynchronous = false } = {}) {
 
         showNotification(`Starting ${flowLabel}...`, 'info');
 
-        // Step 1: Read file and convert to base64
-        updateProgress(5, 'Step 1/7: Reading file...');
-        updateUploadModalProgress(5, 'Reading file...');
-        const fileContent = await readFileAsBase64(selectedFile);
-        addLog(`✅ File read successfully (${formatFileSize(selectedFile.size)})`, 'success');
+        // Step 1: Upload file to OSS using multipart upload
+        updateProgress(5, 'Step 1/8: Uploading file to OSS...');
+        updateUploadModalProgress(5, 'Uploading file to OSS...');
+        addLog('📤 Starting multipart upload to OSS...', 'info');
+        const storageKey = await uploadFileToOSS(selectedFile);
+        addLog(`✅ File uploaded to OSS successfully! Storage Key: ${storageKey}`, 'success');
 
-        // Step 2: Estimate chunked upload fee
-        updateProgress(10, 'Step 2/7: Estimating chunked upload fee...');
+        // Step 2: Estimate chunked upload fee (using storageKey)
+        updateProgress(10, 'Step 2/8: Estimating chunked upload fee...');
         updateUploadModalProgress(10, 'Estimating fees...');
-        const estimateResult = await estimateChunkedUploadFee(fileContent);
+        const estimateResult = await estimateChunkedUploadFee(null, storageKey);
         chunkedUploadChunkNumber = estimateResult.chunkNumber; // Store for progress calculation
         addLog(`✅ Fee estimation completed`, 'success');
         addLog(`📊 Chunks: ${estimateResult.chunkNumber}, Total fee: ${formatSatoshis(estimateResult.totalFee)}`, 'info');
 
         // Step 3: Show confirmation dialog with chunk details
-        updateProgress(15, 'Step 3/7: Showing confirmation...');
+        updateProgress(15, 'Step 3/8: Showing confirmation...');
         updateUploadModalProgress(15, 'Waiting for confirmation...');
         const confirmed = await showChunkedUploadConfirmation(estimateResult);
         if (!confirmed) {
@@ -1009,7 +1434,7 @@ async function runChunkedUploadFlow({ asynchronous = false } = {}) {
         }
 
         // Step 4: Get UTXOs for merge transaction
-        updateProgress(20, 'Step 4/7: Getting UTXOs...');
+        updateProgress(20, 'Step 4/8: Getting UTXOs...');
         updateUploadModalProgress(20, 'Getting UTXOs...');
 
         // Calculate fees for building PreTx transactions
@@ -1048,7 +1473,7 @@ async function runChunkedUploadFlow({ asynchronous = false } = {}) {
         addLog(`💰 Merge tx fee: ${formatSatoshis(mergeTxFee)}`, 'info');
 
         // Step 5: Build merge transaction with two outputs
-        updateProgress(30, 'Step 5/7: Building merge transaction...');
+        updateProgress(30, 'Step 5/8: Building merge transaction...');
         updateUploadModalProgress(30, 'Building merge transaction, please confirm in wallet...');
         showNotification('Please confirm merge transaction in wallet...', 'info');
 
@@ -1064,7 +1489,7 @@ async function runChunkedUploadFlow({ asynchronous = false } = {}) {
         addLog(`📦 Index PreTx UTXO: output ${mergeResult.indexPreTxOutputIndex}, ${formatSatoshis(indexPreTxOutputAmount)}`, 'success');
 
         // Step 6: Build and sign pre-transactions using merge tx outputs
-        updateProgress(40, 'Step 6/7: Building and signing pre-transactions...');
+        updateProgress(40, 'Step 6/8: Building and signing pre-transactions...');
         updateUploadModalProgress(40, 'Building pre-transactions, please confirm in wallet...');
         showNotification('Please confirm pre-transactions in wallet...', 'info');
 
@@ -1095,10 +1520,10 @@ async function runChunkedUploadFlow({ asynchronous = false } = {}) {
         addLog(`✅ Index pre-tx signed`, 'success');
 
         if (asynchronous) {
-            updateProgress(50, 'Step 7/7: Creating async chunk upload task...');
+            updateProgress(50, 'Step 7/8: Creating async chunk upload task...');
             updateUploadModalProgress(50, 'Submitting async task...');
 
-            const taskResult = await createChunkedUploadTask(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
+            const taskResult = await createChunkedUploadTask(null, storageKey, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
 
             updateProgress(100, 'Task created successfully!');
             updateUploadModalProgress(100, 'Task created successfully!');
@@ -1120,7 +1545,7 @@ async function runChunkedUploadFlow({ asynchronous = false } = {}) {
             const estimatedTotalSeconds = totalTransactions * 3; // 3 seconds per transaction
             const progressPerSecond = uploadProgressRange / estimatedTotalSeconds; // Progress increment per second
 
-            updateProgress(50, 'Step 7/7: Uploading chunks to chain...');
+            updateProgress(50, 'Step 7/8: Uploading chunks to chain...');
             updateUploadModalProgress(50, `Uploading chunks to chain (0/${totalTransactions})...`);
 
             // Start progress simulation timer (only used if API takes time)
@@ -1162,7 +1587,7 @@ async function runChunkedUploadFlow({ asynchronous = false } = {}) {
             // Call the actual upload API (this is synchronous/blocking)
             let uploadResult;
             try {
-                uploadResult = await chunkedUpload(fileContent, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
+                uploadResult = await chunkedUpload(null, storageKey, chunkPreTxHex, indexPreTxHex, mergeResult.mergeTxHex);
 
                 // API has returned, stop the progress simulation immediately
                 isApiReturned = true;
@@ -1255,8 +1680,278 @@ function readFileAsBase64(file) {
     });
 }
 
+// Generate upload session key for localStorage
+function getUploadSessionKey(file, metaId, address) {
+    // Create a unique key based on file name, size, metaId, and address
+    return `multipart_upload_${file.name}_${file.size}_${metaId}_${address}`;
+}
+
+// Save upload session to localStorage
+function saveUploadSession(file, metaId, address, uploadId, key) {
+    const sessionKey = getUploadSessionKey(file, metaId, address);
+    const sessionData = {
+        uploadId: uploadId,
+        key: key,
+        fileName: file.name,
+        fileSize: file.size,
+        metaId: metaId,
+        address: address,
+        timestamp: Date.now()
+    };
+    localStorage.setItem(sessionKey, JSON.stringify(sessionData));
+}
+
+// Get upload session from localStorage
+function getUploadSession(file, metaId, address) {
+    const sessionKey = getUploadSessionKey(file, metaId, address);
+    const sessionData = localStorage.getItem(sessionKey);
+    if (!sessionData) return null;
+    
+    try {
+        const session = JSON.parse(sessionData);
+        // Check if session is still valid (within 7 days)
+        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+        if (Date.now() - session.timestamp > maxAge) {
+            localStorage.removeItem(sessionKey);
+            return null;
+        }
+        return session;
+    } catch (e) {
+        localStorage.removeItem(sessionKey);
+        return null;
+    }
+}
+
+// Clear upload session from localStorage
+function clearUploadSession(file, metaId, address) {
+    const sessionKey = getUploadSessionKey(file, metaId, address);
+    localStorage.removeItem(sessionKey);
+}
+
+// Upload file to OSS using multipart upload with resume support
+async function uploadFileToOSS(file) {
+    try {
+        const metaId = await calculateMetaID(currentAddress);
+        
+        // Show OSS upload progress UI
+        showOSSUploadProgress();
+        
+        // Check for existing upload session (resume support)
+        let existingSession = getUploadSession(file, metaId, currentAddress);
+        let uploadId, key;
+        let existingParts = [];
+        
+        if (existingSession) {
+            // Try to resume existing upload
+            addLog('🔄 Found existing upload session, attempting to resume...', 'info');
+            uploadId = existingSession.uploadId;
+            key = existingSession.key;
+            
+            // List existing parts
+            try {
+                const listPartsResponse = await fetch(`${API_BASE}/api/v1/files/multipart/list-parts`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        uploadId: uploadId,
+                        key: key
+                    })
+                });
+                
+                if (listPartsResponse.ok) {
+                    const listPartsResult = await listPartsResponse.json();
+                    if (listPartsResult.code === 0 && listPartsResult.data && listPartsResult.data.parts) {
+                        existingParts = listPartsResult.data.parts;
+                        addLog(`✅ Found ${existingParts.length} existing part(s), resuming upload...`, 'success');
+                    }
+                }
+            } catch (e) {
+                addLog('⚠️ Failed to list existing parts, starting new upload...', 'warning');
+                existingSession = null;
+            }
+        }
+        
+        // If no existing session or resume failed, initiate new upload
+        if (!existingSession || existingParts.length === 0) {
+            addLog('📤 Initiating new multipart upload...', 'info');
+            const initiateResponse = await fetch(`${API_BASE}/api/v1/files/multipart/initiate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    fileName: file.name,
+                    fileSize: file.size,
+                    metaId: metaId,
+                    address: currentAddress
+                })
+            });
+            
+            if (!initiateResponse.ok) {
+                throw new Error(`Failed to initiate multipart upload: HTTP ${initiateResponse.status}`);
+            }
+            
+            const initiateResult = await initiateResponse.json();
+            if (initiateResult.code !== 0) {
+                throw new Error(initiateResult.message || 'Failed to initiate multipart upload');
+            }
+            
+            uploadId = initiateResult.data.uploadId;
+            key = initiateResult.data.key;
+            existingParts = [];
+            addLog(`✅ Multipart upload initiated: uploadId=${uploadId}`, 'success');
+            
+            // Save session to localStorage
+            saveUploadSession(file, metaId, currentAddress, uploadId, key);
+        }
+        
+        // Step 2: Upload parts (skip already uploaded parts)
+        const totalParts = Math.ceil(file.size / MULTIPART_CHUNK_SIZE);
+        addLog(`📦 Uploading ${totalParts} part(s) to OSS...`, 'info');
+        
+        // Create a map of existing parts by part number
+        const existingPartsMap = new Map();
+        existingParts.forEach(part => {
+            existingPartsMap.set(part.partNumber, part);
+        });
+        
+        const parts = [];
+        let uploadedBytes = 0;
+        
+        for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+            const start = (partNumber - 1) * MULTIPART_CHUNK_SIZE;
+            const end = Math.min(start + MULTIPART_CHUNK_SIZE, file.size);
+            const partSize = end - start;
+            
+            // Check if this part was already uploaded
+            if (existingPartsMap.has(partNumber)) {
+                const existingPart = existingPartsMap.get(partNumber);
+                parts.push({
+                    partNumber: partNumber,
+                    etag: existingPart.etag,
+                    size: partSize
+                });
+                uploadedBytes += partSize;
+                
+                // Update OSS upload progress
+                updateOSSUploadProgress(partNumber, totalParts, uploadedBytes, file.size);
+                
+                const partProgress = 5 + (partNumber / totalParts) * 5; // 5% to 10%
+                updateUploadModalProgress(partProgress, `Resuming: part ${partNumber}/${totalParts} already uploaded`);
+                addLog(`⏭️ Part ${partNumber}/${totalParts} already uploaded, skipping...`, 'info');
+                continue;
+            }
+            
+            // Upload this part
+            const chunk = file.slice(start, end);
+            
+            // Update progress
+            const partProgress = 5 + (partNumber / totalParts) * 5; // 5% to 10%
+            updateUploadModalProgress(partProgress, `Uploading part ${partNumber}/${totalParts} to OSS...`);
+            
+            // Read chunk as base64
+            const chunkBase64 = await new Promise((resolve, reject) => {
+                const fileReader = new FileReader();
+                fileReader.onload = () => {
+                    const base64 = fileReader.result.split(',')[1] || fileReader.result;
+                    resolve(base64);
+                };
+                fileReader.onerror = reject;
+                fileReader.readAsDataURL(chunk);
+            });
+            
+            // Upload part
+            const uploadPartResponse = await fetch(`${API_BASE}/api/v1/files/multipart/upload-part`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    uploadId: uploadId,
+                    key: key,
+                    partNumber: partNumber,
+                    content: chunkBase64
+                })
+            });
+            
+            if (!uploadPartResponse.ok) {
+                throw new Error(`Failed to upload part ${partNumber}: HTTP ${uploadPartResponse.status}`);
+            }
+            
+            const uploadPartResult = await uploadPartResponse.json();
+            if (uploadPartResult.code !== 0) {
+                throw new Error(uploadPartResult.message || `Failed to upload part ${partNumber}`);
+            }
+            
+            parts.push({
+                partNumber: partNumber,
+                etag: uploadPartResult.data.etag,
+                size: partSize
+            });
+            
+            uploadedBytes += partSize;
+            
+            // Update OSS upload progress
+            updateOSSUploadProgress(partNumber, totalParts, uploadedBytes, file.size);
+            
+            addLog(`✅ Part ${partNumber}/${totalParts} uploaded (${formatFileSize(partSize)})`, 'success');
+        }
+        
+        // Sort parts by part number (required for completion)
+        parts.sort((a, b) => a.partNumber - b.partNumber);
+        
+        // Step 3: Complete multipart upload
+        addLog('📤 Completing multipart upload...', 'info');
+        updateUploadModalProgress(10, 'Completing multipart upload...');
+        updateOSSUploadProgress(totalParts, totalParts, file.size, file.size);
+        if (ossUploadStatus) {
+            ossUploadStatus.textContent = 'Completing...';
+        }
+        
+        const completeResponse = await fetch(`${API_BASE}/api/v1/files/multipart/complete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                uploadId: uploadId,
+                key: key,
+                parts: parts
+            })
+        });
+        
+        if (!completeResponse.ok) {
+            throw new Error(`Failed to complete multipart upload: HTTP ${completeResponse.status}`);
+        }
+        
+        const completeResult = await completeResponse.json();
+        if (completeResult.code !== 0) {
+            throw new Error(completeResult.message || 'Failed to complete multipart upload');
+        }
+        
+        const storageKey = completeResult.data.key;
+        addLog(`✅ Multipart upload completed! Storage Key: ${storageKey}`, 'success');
+        
+        // Hide OSS upload progress after completion
+        hideOSSUploadProgress();
+        
+        // Clear upload session from localStorage after successful completion
+        clearUploadSession(file, metaId, currentAddress);
+        
+        return storageKey;
+    } catch (error) {
+        console.error('❌ Failed to upload file to OSS:', error);
+        // Hide OSS upload progress on error
+        hideOSSUploadProgress();
+        // Don't clear session on error, so user can retry
+        throw new Error(`Failed to upload file to OSS: ${error.message}`);
+    }
+}
+
 // Estimate chunked upload fee
-async function estimateChunkedUploadFee(fileContentBase64) {
+async function estimateChunkedUploadFee(fileContentBase64, storageKey) {
     try {
         console.log('[EstimateChunkedUpload] Estimating chunked upload fee...', 'info');
         addLog('Calling EstimateChunkedUpload API...', 'info');
@@ -1266,11 +1961,21 @@ async function estimateChunkedUploadFee(fileContentBase64) {
         
         const requestBody = {
             fileName: selectedFile.name,
-            content: fileContentBase64,
             path: path,
             contentType: contentType,
             feeRate: Number(document.getElementById('feeRateInput').value) || 1
         };
+        
+        // Use storageKey if provided, otherwise use content
+        if (storageKey) {
+            requestBody.storageKey = storageKey;
+            addLog('📦 Using storageKey for file content', 'info');
+        } else if (fileContentBase64) {
+            requestBody.content = fileContentBase64;
+            addLog('📦 Using base64 content for file', 'info');
+        } else {
+            throw new Error('Either storageKey or content must be provided');
+        }
         
         console.log('[EstimateChunkedUpload] Preparing request body...', 'info');
         const requestOptions = await prepareJsonRequestBody(requestBody);
@@ -1710,7 +2415,7 @@ async function buildIndexPreTx(utxoData, indexFee) {
 }
 
 // Chunked upload
-async function chunkedUpload(fileContentBase64, chunkPreTxHex, indexPreTxHex, mergeTxHex) {
+async function chunkedUpload(fileContentBase64, storageKey, chunkPreTxHex, indexPreTxHex, mergeTxHex) {
     try {
         addLog('Calling ChunkedUpload API...', 'info');
         
@@ -1722,7 +2427,6 @@ async function chunkedUpload(fileContentBase64, chunkPreTxHex, indexPreTxHex, me
             metaId: metaId,
             address: currentAddress,
             fileName: selectedFile.name,
-            content: fileContentBase64,
             path: path,
             operation: document.getElementById('operationSelect').value || 'create',
             contentType: contentType,
@@ -1732,6 +2436,17 @@ async function chunkedUpload(fileContentBase64, chunkPreTxHex, indexPreTxHex, me
             feeRate: Number(document.getElementById('feeRateInput').value) || 1,
             isBroadcast: true // Auto broadcast
         };
+        
+        // Use storageKey if provided, otherwise use content
+        if (storageKey) {
+            requestBody.storageKey = storageKey;
+            addLog('📦 Using storageKey for file content', 'info');
+        } else if (fileContentBase64) {
+            requestBody.content = fileContentBase64;
+            addLog('📦 Using base64 content for file', 'info');
+        } else {
+            throw new Error('Either storageKey or content must be provided');
+        }
         
         const requestOptions = await prepareJsonRequestBody(requestBody);
         
@@ -1763,7 +2478,7 @@ async function chunkedUpload(fileContentBase64, chunkPreTxHex, indexPreTxHex, me
 }
 
 // Create async chunked upload task
-async function createChunkedUploadTask(fileContentBase64, chunkPreTxHex, indexPreTxHex, mergeTxHex) {
+async function createChunkedUploadTask(fileContentBase64, storageKey, chunkPreTxHex, indexPreTxHex, mergeTxHex) {
     try {
         addLog('Submitting async chunked upload task...', 'info');
         const path = document.getElementById('pathInput').value;
@@ -1774,7 +2489,6 @@ async function createChunkedUploadTask(fileContentBase64, chunkPreTxHex, indexPr
             metaId: metaId,
             address: currentAddress,
             fileName: selectedFile.name,
-            content: fileContentBase64,
             path: path,
             operation: document.getElementById('operationSelect').value || 'create',
             contentType: contentType,
@@ -1783,6 +2497,17 @@ async function createChunkedUploadTask(fileContentBase64, chunkPreTxHex, indexPr
             mergeTxHex: mergeTxHex,
             feeRate: Number(document.getElementById('feeRateInput').value) || 1
         };
+
+        // Use storageKey if provided, otherwise use content
+        if (storageKey) {
+            requestBody.storageKey = storageKey;
+            addLog('📦 Using storageKey for file content', 'info');
+        } else if (fileContentBase64) {
+            requestBody.content = fileContentBase64;
+            addLog('📦 Using base64 content for file', 'info');
+        } else {
+            throw new Error('Either storageKey or content must be provided');
+        }
 
         const requestOptions = await prepareJsonRequestBody(requestBody);
         const response = await fetch(`${API_BASE}/api/v1/files/chunked-upload-task`, {
@@ -2630,6 +3355,17 @@ let uploadModalError = null;
 let uploadModalCloseBtn = null;
 let chunkedUploadChunkNumber = 0; // Store chunk number for progress calculation
 
+// OSS Upload Progress Elements
+let ossUploadProgress = null;
+let ossUploadProgressFill = null;
+let ossUploadStatus = null;
+let ossUploadParts = null;
+let ossUploadSize = null;
+let ossUploadSpeed = null;
+let ossUploadStartTime = null;
+let ossUploadLastUpdateTime = null;
+let ossUploadLastBytes = 0;
+
 // Build JSON request body with optional gzip compression (browser support dependent)
 async function prepareJsonRequestBody(data) {
     try {
@@ -2734,6 +3470,14 @@ function initUploadModal() {
     uploadModalSuccess = document.getElementById('uploadModalSuccess');
     uploadModalError = document.getElementById('uploadModalError');
     uploadModalCloseBtn = document.getElementById('uploadModalCloseBtn');
+    
+    // Initialize OSS upload progress elements
+    ossUploadProgress = document.getElementById('ossUploadProgress');
+    ossUploadProgressFill = document.getElementById('ossUploadProgressFill');
+    ossUploadStatus = document.getElementById('ossUploadStatus');
+    ossUploadParts = document.getElementById('ossUploadParts');
+    ossUploadSize = document.getElementById('ossUploadSize');
+    ossUploadSpeed = document.getElementById('ossUploadSpeed');
 }
 
 // Show upload modal
@@ -2750,6 +3494,11 @@ function showUploadModal() {
     uploadModalProgressText.textContent = '0%';
     uploadModalStatusText.textContent = 'Preparing...';
     
+    // Hide OSS upload progress by default
+    if (ossUploadProgress) {
+        ossUploadProgress.classList.add('hidden');
+    }
+    
     // Show progress, hide success/error
     uploadModalProgress.classList.remove('hidden');
     uploadModalWarning.classList.remove('hidden');
@@ -2759,6 +3508,76 @@ function showUploadModal() {
     
     // Show modal
     uploadModal.classList.add('show');
+}
+
+// Show OSS upload progress
+function showOSSUploadProgress() {
+    if (!ossUploadProgress) {
+        initUploadModal();
+    }
+    if (ossUploadProgress) {
+        ossUploadProgress.classList.remove('hidden');
+        ossUploadProgressFill.style.width = '0%';
+        if (ossUploadStatus) ossUploadStatus.textContent = 'Initializing...';
+        if (ossUploadParts) ossUploadParts.textContent = '0 / 0';
+        if (ossUploadSize) ossUploadSize.textContent = '0 / 0';
+        if (ossUploadSpeed) ossUploadSpeed.textContent = '-';
+        ossUploadStartTime = Date.now();
+        ossUploadLastUpdateTime = Date.now();
+        ossUploadLastBytes = 0;
+    }
+}
+
+// Hide OSS upload progress
+function hideOSSUploadProgress() {
+    if (ossUploadProgress) {
+        ossUploadProgress.classList.add('hidden');
+    }
+}
+
+// Update OSS upload progress
+function updateOSSUploadProgress(currentPart, totalParts, uploadedBytes, totalBytes) {
+    if (!ossUploadProgress || ossUploadProgress.classList.contains('hidden')) {
+        return;
+    }
+    
+    // Calculate progress percentage
+    const progressPercent = totalParts > 0 ? (currentPart / totalParts) * 100 : 0;
+    if (ossUploadProgressFill) {
+        ossUploadProgressFill.style.width = progressPercent + '%';
+    }
+    
+    // Update parts
+    if (ossUploadParts) {
+        ossUploadParts.textContent = `${currentPart} / ${totalParts}`;
+    }
+    
+    // Update size
+    if (ossUploadSize) {
+        ossUploadSize.textContent = `${formatFileSize(uploadedBytes)} / ${formatFileSize(totalBytes)}`;
+    }
+    
+    // Calculate and update speed
+    if (ossUploadSpeed && ossUploadStartTime) {
+        const now = Date.now();
+        const elapsed = (now - ossUploadStartTime) / 1000; // seconds
+        if (elapsed > 0) {
+            const speed = uploadedBytes / elapsed; // bytes per second
+            const speedFormatted = formatFileSize(speed) + '/s';
+            ossUploadSpeed.textContent = speedFormatted;
+        }
+        
+        // Update status
+        if (ossUploadStatus) {
+            if (currentPart === totalParts && uploadedBytes >= totalBytes) {
+                ossUploadStatus.textContent = 'Completing...';
+            } else if (currentPart > 0) {
+                ossUploadStatus.textContent = `Uploading part ${currentPart}/${totalParts}...`;
+            } else {
+                ossUploadStatus.textContent = 'Initializing...';
+            }
+        }
+    }
 }
 
 // Update upload modal progress
@@ -2779,6 +3598,9 @@ function showUploadModalSuccess(message, details) {
     // Hide progress and warning
     uploadModalProgress.classList.add('hidden');
     uploadModalWarning.classList.add('hidden');
+    
+    // Hide OSS upload progress
+    hideOSSUploadProgress();
     
     // Show success
     uploadModalSuccess.classList.remove('hidden');
@@ -2802,6 +3624,9 @@ function showUploadModalError(message, details) {
     // Hide progress and warning
     uploadModalProgress.classList.add('hidden');
     uploadModalWarning.classList.add('hidden');
+    
+    // Hide OSS upload progress
+    hideOSSUploadProgress();
     
     // Show error
     uploadModalError.classList.remove('hidden');
@@ -2925,9 +3750,9 @@ function updateBuzzButton() {
     sendBuzzBtn.disabled = !canSendBuzz;
     
     if (!walletConnected) {
-        sendBuzzBtn.textContent = '📝 Please connect wallet first';
+        sendBuzzBtn.textContent = '📝 ' + t('pleaseConnectWallet');
     } else {
-        sendBuzzBtn.textContent = '📝 Send Buzz';
+        sendBuzzBtn.textContent = t('sendBuzz');
     }
 }
 
@@ -2976,7 +3801,7 @@ async function loadChunkTasks(options = {}) {
     if (!taskListContainer) return;
 
     if (append && !taskHasMore) {
-        showNotification('No more tasks to load', 'info');
+        showNotification(t('noMoreTasks'), 'info');
         return;
     }
 
@@ -3045,7 +3870,7 @@ function renderTaskList(tasks) {
         taskListEmpty.classList.add('hidden');
     }
 
-    taskListContainer.innerHTML = '';
+        taskListContainer.innerHTML = '';
     tasks.forEach(task => {
         const card = document.createElement('div');
         card.className = 'task-card';
@@ -3064,18 +3889,39 @@ function renderTaskList(tasks) {
                    onmouseout="this.style.textDecoration='none'">
                     ${task.indexTxId}
                 </a>
-                <button onclick="window.open('${txUrl}', '_blank')" 
+                <button class="task-tx-link-btn" data-url="${txUrl}" 
                         style="margin-left: 8px; padding: 2px 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">
                     🔗
                 </button>
             `;
         }
 
+        // Build action buttons for completed tasks
+        let actionButtonsHtml = '';
+        const isCompleted = (task.status || '').toLowerCase() === 'success' && task.indexTxId;
+        if (isCompleted) {
+            const pinId = task.indexTxId + 'i0';
+            const metaidManagerUrl = `https://man.metaid.io/pin/${pinId}`;
+            
+            actionButtonsHtml = `
+                <div class="task-actions" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="task-action-btn" data-action="view-metaid" data-url="${metaidManagerUrl}" 
+                            style="flex: 1; min-width: 120px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        🔧 View on MetaID Manager
+                    </button>
+                    <button class="task-action-btn" data-action="send-buzz" data-pinid="${pinId}" data-filename="${task.fileName || ''}" 
+                            style="flex: 1; min-width: 120px; padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        📝 Send Buzz
+                    </button>
+                </div>
+            `;
+        }
+
         card.innerHTML = `
             <div class="task-card-header">
                 <div>
-                    <div style="font-weight: 600; color: #333;">Task ID: ${task.taskId}</div>
-                    <div style="font-size: 12px; color: #777;">Created: ${formatDateTime(task.createdAt)}</div>
+                    <div style="font-weight: 600; color: #333;">${t('taskId')} ${task.taskId}</div>
+                    <div style="font-size: 12px; color: #777;">${t('created')} ${formatDateTime(task.createdAt)}</div>
                 </div>
                 <div class="task-status ${statusClass}">
                     <span>${formatStatusText(task.status)}</span>
@@ -3086,15 +3932,47 @@ function renderTaskList(tasks) {
                 <div class="task-progress-fill" style="width: ${progress}%;"></div>
             </div>
             <div class="task-meta">
-                <div><strong>File:</strong> ${task.fileName || 'N/A'}</div>
-                <div><strong>Chunks:</strong> ${processedInfo}</div>
-                <div><strong>Step:</strong> ${task.currentStep || 'Pending'}</div>
-                <div><strong>Index TxID:</strong> ${indexTxIdHtml}</div>
-                <div><strong>Message:</strong> ${(task.errorMessage || task.status || '-')}</div>
+                <div><strong>${t('file')}</strong> ${task.fileName || 'N/A'}</div>
+                <div><strong>${t('chunks')}</strong> ${processedInfo}</div>
+                <div><strong>${t('step')}</strong> ${task.currentStep || t('pending')}</div>
+                <div><strong>${t('indexTxId')}</strong> ${indexTxIdHtml}</div>
+                <div><strong>${t('message')}</strong> ${(task.errorMessage || task.status || '-')}</div>
             </div>
+            ${actionButtonsHtml}
         `;
 
         taskListContainer.appendChild(card);
+    });
+    
+    // Add event listeners for task action buttons
+    const actionButtons = taskListContainer.querySelectorAll('.task-action-btn');
+    actionButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const action = btn.getAttribute('data-action');
+            if (action === 'view-metaid') {
+                const url = btn.getAttribute('data-url');
+                if (url) {
+                    window.open(url, '_blank');
+                }
+            } else if (action === 'send-buzz') {
+                const pinId = btn.getAttribute('data-pinid');
+                const fileName = btn.getAttribute('data-filename') || '';
+                if (pinId) {
+                    handleTaskBuzz(pinId, fileName);
+                }
+            }
+        });
+    });
+    
+    // Add event listeners for transaction link buttons
+    const txLinkButtons = taskListContainer.querySelectorAll('.task-tx-link-btn');
+    txLinkButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const url = btn.getAttribute('data-url');
+            if (url) {
+                window.open(url, '_blank');
+            }
+        });
     });
 }
 
@@ -3107,8 +3985,15 @@ function getStatusClass(status = '') {
 }
 
 function formatStatusText(status = '') {
-    if (!status) return 'Pending';
-    return status.charAt(0).toUpperCase() + status.slice(1);
+    if (!status) return t('pending');
+    const statusMap = {
+        'pending': t('pending'),
+        'processing': t('processing'),
+        'success': t('success'),
+        'failed': t('failed')
+    };
+    const normalized = status.toLowerCase();
+    return statusMap[normalized] || status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function formatDateTime(value) {
@@ -3131,11 +4016,235 @@ function setTaskAutoRefresh(enabled) {
     if (enabled) {
         taskAutoRefreshTimer = setInterval(() => {
             loadChunkTasks({ append: false, silent: true });
-        }, 15000);
+        }, 5000);
         loadChunkTasks({ append: false, silent: true });
         addLog('Auto refresh for tasks enabled (15s interval)', 'info');
     } else {
         addLog('Auto refresh for tasks disabled', 'info');
+    }
+}
+
+// Handle buzz button click from task list
+function handleTaskBuzz(pinId, fileName) {
+    console.log('📝 Handling buzz for task pinId:', pinId, 'fileName:', fileName);
+    
+    // Extract file extension from fileName
+    let fileExtension = '';
+    if (fileName && fileName !== 'N/A') {
+        fileExtension = getFileExtensionFromName(fileName);
+    }
+    
+    // Show buzz modal dialog
+    showTaskBuzzModal(pinId, fileExtension);
+}
+
+// Get file extension from file name
+function getFileExtensionFromName(fileName) {
+    if (!fileName) return '';
+    const parts = fileName.split('.');
+    if (parts.length >= 2) {
+        return '.' + parts[parts.length - 1].toLowerCase();
+    }
+    return '';
+}
+
+// Show buzz modal dialog for task
+function showTaskBuzzModal(pinId, fileExtension) {
+    return new Promise((resolve) => {
+        // Create modal overlay
+        const modal = document.createElement('div');
+        modal.id = 'taskBuzzModal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10002;
+        `;
+        
+        // Create modal dialog
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        `;
+        
+        dialog.innerHTML = `
+            <h2 style="margin-top: 0; color: #333; margin-bottom: 20px;">📝 Send Buzz</h2>
+            <div style="margin-bottom: 15px; padding: 10px; background: #f0f0f0; border-radius: 6px; font-size: 13px; color: #666;">
+                <strong>File Attachment:</strong> <span style="font-family: monospace; color: #333;">${pinId}${fileExtension}</span>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">${t('content')}</label>
+                <textarea id="taskBuzzContent" 
+                          placeholder="Enter your buzz content..." 
+                          rows="5" 
+                          style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; resize: vertical; font-family: inherit;"
+                          autofocus></textarea>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">${t('host')} (Optional)</label>
+                <div style="position: relative;">
+                    <input type="text" 
+                           id="taskBuzzHost" 
+                           placeholder="Enter host information (optional)"
+                           style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; font-family: inherit;">
+                    <button type="button" 
+                            id="taskBuzzShowNowBtn" 
+                            style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: #28a745; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;">
+                        ShowNow
+                    </button>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button id="taskBuzzCancelBtn" style="
+                    padding: 10px 20px;
+                    background: #ccc;
+                    color: #333;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                ">Cancel</button>
+                <button id="taskBuzzSendBtn" style="
+                    padding: 10px 20px;
+                    background: #28a745;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: bold;
+                ">📝 Send Buzz</button>
+            </div>
+        `;
+        
+        modal.appendChild(dialog);
+        document.body.appendChild(modal);
+        
+        // Get elements
+        const contentInput = document.getElementById('taskBuzzContent');
+        const hostInput = document.getElementById('taskBuzzHost');
+        const sendBtn = document.getElementById('taskBuzzSendBtn');
+        const cancelBtn = document.getElementById('taskBuzzCancelBtn');
+        const showNowBtn = document.getElementById('taskBuzzShowNowBtn');
+        
+        // Handle ShowNow button
+        if (showNowBtn) {
+            showNowBtn.addEventListener('click', () => {
+                const showNowAddress = 'bc1p20k3x2c4mglfxr5wa5sgtgechwstpld80kru2cg4gmm4urvuaqqsvapxu0';
+                hostInput.value = showNowAddress;
+                addLog(`📱 ShowNow address filled: ${showNowAddress}`, 'info');
+            });
+        }
+        
+        // Handle send button
+        sendBtn.addEventListener('click', async () => {
+            const content = contentInput.value.trim();
+            if (!content) {
+                showNotification('⚠️ Please enter buzz content', 'warning');
+                return;
+            }
+            
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+            
+            try {
+                await sendTaskBuzz(pinId, fileExtension, content, hostInput.value.trim());
+                document.body.removeChild(modal);
+                resolve(true);
+            } catch (error) {
+                console.error('❌ Failed to send task buzz:', error);
+                sendBtn.disabled = false;
+                sendBtn.textContent = '📝 Send Buzz';
+                // Don't close modal on error, let user retry
+            }
+        });
+        
+        // Handle cancel button
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(modal);
+            resolve(false);
+        });
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+                resolve(false);
+            }
+        });
+        
+        // Focus on content input
+        if (contentInput) {
+            contentInput.focus();
+        }
+    });
+}
+
+// Send buzz from task list
+async function sendTaskBuzz(pinId, fileExtension, content, host) {
+    console.log('📝 Starting to send task buzz...', { pinId, fileExtension, content, host });
+    
+    // Validate wallet connection
+    if (!walletConnected) {
+        showNotification('⚠️ Please connect wallet first', 'warning');
+        addLog('❌ Wallet not connected', 'error');
+        throw new Error('Wallet not connected');
+    }
+    
+    addLog('Starting to send Buzz from task...', 'info');
+    
+    try {
+        showNotification('Starting to send Buzz...', 'info');
+        
+        // Build buzz body
+        const buzzBody = {
+            content: content,
+            contentType: "application/json;utf-8"
+        };
+        
+        // Add file attachment using pinId
+        if (pinId) {
+            const attachmentUri = `metafile://${pinId}${fileExtension || ''}`;
+            buzzBody.attachments = [attachmentUri];
+            addLog(`📎 Adding file attachment: ${attachmentUri}`, 'info');
+            console.log('📎 Attachment URI:', attachmentUri);
+        }
+        
+        console.log('📝 Buzz body:', buzzBody);
+        addLog(`📝 Buzz content: ${content}`, 'info');
+        
+        // Create buzz using MetaID SDK
+        const buzzResult = await createBuzz(buzzBody, host);
+        
+        addLog(`✅ Buzz sent successfully! TxID: ${buzzResult.txid}`, 'success');
+        showNotification(`🎉 Buzz sent successfully!`, 'success');
+        
+        // Show buzz success links
+        showBuzzSuccessLinks(buzzResult.txid, buzzResult.pinId);
+        
+    } catch (error) {
+        console.error('❌ Failed to send task Buzz:', error);
+        addLog(`❌ Failed to send Buzz: ${error.message}`, 'error');
+        
+        if (error.message && error.message.includes('user cancelled')) {
+            showNotification('Buzz sending operation cancelled', 'warning');
+        } else {
+            showNotification('Failed to send Buzz: ' + error.message, 'error');
+        }
+        throw error;
     }
 }
 
@@ -3593,7 +4702,7 @@ if (wallet && typeof wallet.on === 'function') {
             await fetchAndDisplayBalance();
         } else {
             walletConnected = false;
-            walletStatus.textContent = 'Not Connected';
+            walletStatus.textContent = t('notConnected');
             walletStatus.style.color = '#999';
             walletAddress.classList.add('hidden');
             

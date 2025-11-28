@@ -38,6 +38,7 @@ type UploadService struct {
 	fileChunkDAO        *dao.FileChunkDAO
 	fileAssistentDAO    *dao.FileAssistentDAO
 	fileUploaderTaskDAO *dao.FileUploaderTaskDAO
+	multipartUploadDAO  *dao.MultipartUploadDAO
 	storage             storage.Storage
 }
 
@@ -48,6 +49,7 @@ func NewUploadService(storage storage.Storage) *UploadService {
 		fileChunkDAO:        dao.NewFileChunkDAO(),
 		fileAssistentDAO:    dao.NewFileAssistentDAO(),
 		fileUploaderTaskDAO: dao.NewFileUploaderTaskDAO(),
+		multipartUploadDAO:  dao.NewMultipartUploadDAO(),
 		storage:             storage,
 	}
 }
@@ -1606,6 +1608,30 @@ func (s *UploadService) prepareChunkedUploadForTask(req *ChunkedUploadRequest, t
 		return err
 	}
 
+	// Check if file already exists and uploaded successfully
+	if resp.Status == string(model.StatusSuccess) && resp.ChunkFundingTx == "" {
+		// File already uploaded, mark task as completed
+		task.FileId = resp.FileId
+		task.FileHash = resp.FileHash
+		task.FileMd5 = resp.FileMd5
+		task.TotalChunks = resp.ChunkNumber
+		task.IndexTxId = resp.IndexTxId
+		if len(resp.ChunkTxIds) > 0 {
+			chunkTxIdsJSON, _ := json.Marshal(resp.ChunkTxIds)
+			task.ChunkTxIds = string(chunkTxIdsJSON)
+		}
+		task.Stage = model.TaskStageCompleted
+		task.Progress = 100
+		task.CurrentStep = "File already uploaded successfully"
+		s.updateUploadTaskProgress(task, "File already uploaded successfully", 100, task.TotalChunks)
+		return nil
+	}
+
+	// Validate that ChunkFundingTx is present
+	if resp.ChunkFundingTx == "" {
+		return fmt.Errorf("chunk funding transaction is missing from ChunkedUpload response")
+	}
+
 	chunkTxHexJSON, err := json.Marshal(resp.ChunkTxs)
 	if err != nil {
 		return fmt.Errorf("failed to marshal chunk tx hex list: %w", err)
@@ -2179,4 +2205,291 @@ func buildIndexTxFromPreTx(netParam *chaincfg2.Params, baseTx *wire2.MsgTx, user
 	//add opreturn output
 	baseTx.AddTxOut(wire2.NewTxOut(0, indexScript))
 	return baseTx, nil
+}
+
+// MultipartUploadRequest multipart upload request
+type MultipartUploadRequest struct {
+	FileName string `json:"fileName"` // File name
+	FileSize int64  `json:"fileSize"` // Total file size
+	MetaId   string `json:"metaId"`   // MetaID (optional, for file organization)
+	Address  string `json:"address"`  // User address (optional)
+}
+
+// InitiateMultipartUploadResponse response for initiating multipart upload
+type InitiateMultipartUploadResponse struct {
+	UploadId string `json:"uploadId"` // Upload ID for subsequent operations
+	Key      string `json:"key"`      // Storage key
+}
+
+// UploadPartRequest upload part request
+type UploadPartRequest struct {
+	UploadId   string `json:"uploadId"`   // Upload ID from initiate
+	Key        string `json:"key"`        // Storage key from initiate
+	PartNumber int    `json:"partNumber"` // Part number (1-based)
+	Data       []byte `json:"data"`       // Part data
+}
+
+// UploadPartResponse upload part response
+type UploadPartResponse struct {
+	ETag       string `json:"etag"`       // ETag for this part
+	PartNumber int    `json:"partNumber"` // Part number
+}
+
+// CompleteMultipartUploadRequest complete multipart upload request
+type CompleteMultipartUploadRequest struct {
+	UploadId string             `json:"uploadId"` // Upload ID
+	Parts    []storage.PartInfo `json:"parts"`    // All parts info
+}
+
+// CompleteMultipartUploadResponse complete multipart upload response
+type CompleteMultipartUploadResponse struct {
+	Key      string `json:"key"`      // Storage key
+	UploadId string `json:"uploadId"` // Upload ID
+	FileSize int64  `json:"fileSize"` // Total file size
+}
+
+// ListPartsResponse list parts response
+type ListPartsResponse struct {
+	UploadId string             `json:"uploadId"`
+	Parts    []storage.PartInfo `json:"parts"`
+}
+
+// InitiateMultipartUpload initiates a multipart upload session
+func (s *UploadService) InitiateMultipartUpload(req *MultipartUploadRequest) (*InitiateMultipartUploadResponse, error) {
+	if req.FileName == "" {
+		return nil, fmt.Errorf("file name is required")
+	}
+	if req.FileSize <= 0 {
+		return nil, fmt.Errorf("file size must be greater than 0")
+	}
+
+	// Generate storage key
+	key := fmt.Sprintf("uploads/%s/%s", time.Now().Format("2006/01/02"), req.FileName)
+	if req.MetaId != "" {
+		key = fmt.Sprintf("uploads/%s/%s/%s", req.MetaId, time.Now().Format("2006/01/02"), req.FileName)
+	}
+
+	// Initiate multipart upload
+	uploadId, err := s.storage.InitiateMultipartUpload(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initiate multipart upload: %w", err)
+	}
+
+	// Calculate expiration time (default: 1 hour from now)
+	expiresAt := time.Now().Add(1 * time.Hour)
+
+	// Save upload record to database
+	uploadRecord := &model.MultipartUpload{
+		UploadId:  uploadId,
+		Key:       key,
+		FileName:  req.FileName,
+		FileSize:  req.FileSize,
+		MetaId:    req.MetaId,
+		Address:   req.Address,
+		Status:    model.MultipartUploadStatusInitiated,
+		ExpiresAt: &expiresAt,
+	}
+
+	if err := s.multipartUploadDAO.Create(uploadRecord); err != nil {
+		// If database save fails, abort the upload
+		s.storage.AbortMultipartUpload(key, uploadId)
+		return nil, fmt.Errorf("failed to save upload record: %w", err)
+	}
+
+	return &InitiateMultipartUploadResponse{
+		UploadId: uploadId,
+		Key:      key,
+	}, nil
+}
+
+// UploadPart uploads a part of the file
+func (s *UploadService) UploadPart(req *UploadPartRequest) (*UploadPartResponse, error) {
+	if req.UploadId == "" {
+		return nil, fmt.Errorf("upload ID is required")
+	}
+	if req.Key == "" {
+		return nil, fmt.Errorf("storage key is required")
+	}
+	if req.PartNumber < 1 {
+		return nil, fmt.Errorf("part number must be >= 1")
+	}
+	if len(req.Data) == 0 {
+		return nil, fmt.Errorf("part data is empty")
+	}
+
+	// Check if upload record exists
+	uploadRecord, err := s.multipartUploadDAO.GetByUploadID(req.UploadId)
+	if err != nil {
+		return nil, fmt.Errorf("upload session not found: %w", err)
+	}
+
+	// Check if upload is expired
+	if uploadRecord.ExpiresAt != nil && uploadRecord.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("upload session has expired")
+	}
+
+	// Check if upload is aborted
+	if uploadRecord.Status == model.MultipartUploadStatusAborted {
+		return nil, fmt.Errorf("upload session has been aborted")
+	}
+
+	// Update status to uploading if it's still initiated
+	if uploadRecord.Status == model.MultipartUploadStatusInitiated {
+		uploadRecord.Status = model.MultipartUploadStatusUploading
+		s.multipartUploadDAO.Update(uploadRecord)
+	}
+
+	// Upload part
+	etag, err := s.storage.UploadPart(req.Key, req.UploadId, req.PartNumber, req.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload part %d: %w", req.PartNumber, err)
+	}
+
+	return &UploadPartResponse{
+		ETag:       etag,
+		PartNumber: req.PartNumber,
+	}, nil
+}
+
+// CompleteMultipartUpload completes the multipart upload
+func (s *UploadService) CompleteMultipartUpload(key string, req *CompleteMultipartUploadRequest) (*CompleteMultipartUploadResponse, error) {
+	if req.UploadId == "" {
+		return nil, fmt.Errorf("upload ID is required")
+	}
+	if len(req.Parts) == 0 {
+		return nil, fmt.Errorf("parts list is empty")
+	}
+
+	// Check if upload record exists
+	uploadRecord, err := s.multipartUploadDAO.GetByUploadID(req.UploadId)
+	if err != nil {
+		return nil, fmt.Errorf("upload session not found: %w", err)
+	}
+
+	// Check if upload is expired
+	if uploadRecord.ExpiresAt != nil && uploadRecord.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("upload session has expired")
+	}
+
+	// Complete multipart upload
+	err = s.storage.CompleteMultipartUpload(key, req.UploadId, req.Parts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to complete multipart upload: %w", err)
+	}
+
+	// Calculate total file size
+	var totalSize int64
+	for _, part := range req.Parts {
+		totalSize += part.Size
+	}
+
+	// Update upload record status to completed
+	uploadRecord.Status = model.MultipartUploadStatusCompleted
+	uploadRecord.PartCount = len(req.Parts)
+	s.multipartUploadDAO.Update(uploadRecord)
+
+	return &CompleteMultipartUploadResponse{
+		Key:      key,
+		UploadId: req.UploadId,
+		FileSize: totalSize,
+	}, nil
+}
+
+// ListParts lists all uploaded parts for resuming upload
+func (s *UploadService) ListParts(key, uploadId string) (*ListPartsResponse, error) {
+	if uploadId == "" {
+		return nil, fmt.Errorf("upload ID is required")
+	}
+
+	// Check if upload record exists
+	uploadRecord, err := s.multipartUploadDAO.GetByUploadID(uploadId)
+	if err != nil {
+		return nil, fmt.Errorf("upload session not found: %w", err)
+	}
+
+	// Check if upload is expired
+	if uploadRecord.ExpiresAt != nil && uploadRecord.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("upload session has expired")
+	}
+
+	parts, err := s.storage.ListParts(key, uploadId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list parts: %w", err)
+	}
+
+	return &ListPartsResponse{
+		UploadId: uploadId,
+		Parts:    parts,
+	}, nil
+}
+
+// GetFileFromStorage gets file content from storage by key
+func (s *UploadService) GetFileFromStorage(key string) ([]byte, error) {
+	return s.storage.Get(key)
+}
+
+// AbortMultipartUpload aborts a multipart upload and marks it as aborted
+func (s *UploadService) AbortMultipartUpload(key, uploadId string) error {
+	// Check if upload record exists
+	uploadRecord, err := s.multipartUploadDAO.GetByUploadID(uploadId)
+	if err != nil {
+		// If record doesn't exist, still try to abort in storage
+		return s.storage.AbortMultipartUpload(key, uploadId)
+	}
+
+	// Abort in storage
+	if err := s.storage.AbortMultipartUpload(key, uploadId); err != nil {
+		return fmt.Errorf("failed to abort upload in storage: %w", err)
+	}
+
+	// Update status to aborted
+	uploadRecord.Status = model.MultipartUploadStatusAborted
+	s.multipartUploadDAO.Update(uploadRecord)
+
+	return nil
+}
+
+// CleanupExpiredUploads cleans up expired multipart uploads from storage and database
+func (s *UploadService) CleanupExpiredUploads(beforeTime time.Time, batchSize int) (int, error) {
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+
+	// Get expired uploads
+	expiredUploads, err := s.multipartUploadDAO.ListExpiredUploads(beforeTime, batchSize)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list expired uploads: %w", err)
+	}
+
+	cleanedCount := 0
+	for _, upload := range expiredUploads {
+		// Skip if already aborted or expired
+		if upload.Status == model.MultipartUploadStatusAborted || upload.Status == model.MultipartUploadStatusExpired {
+			continue
+		}
+
+		// Try to abort in storage (in case it's not completed)
+		if upload.Status != model.MultipartUploadStatusCompleted {
+			s.storage.AbortMultipartUpload(upload.Key, upload.UploadId)
+		} else {
+			// If completed, delete the file from storage
+			s.storage.Delete(upload.Key)
+		}
+
+		// Mark as expired in database
+		upload.Status = model.MultipartUploadStatusExpired
+		if err := s.multipartUploadDAO.Update(upload); err != nil {
+			log.Printf("Failed to update upload status to expired (uploadId=%s): %v", upload.UploadId, err)
+			continue
+		}
+
+		cleanedCount++
+	}
+
+	return cleanedCount, nil
+}
+
+// DeleteExpiredUploadRecords deletes expired upload records from database (after cleanup)
+func (s *UploadService) DeleteExpiredUploadRecords(beforeTime time.Time) (int64, error) {
+	return s.multipartUploadDAO.DeleteExpiredUploads(beforeTime)
 }
