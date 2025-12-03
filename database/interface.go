@@ -14,6 +14,9 @@ type Database interface {
 	GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
 	GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
 	GetIndexerFilesCount() (int64, error)
+	GetLatestFileInfoByFirstPinID(firstPinID string) (*model.IndexerFile, error)
+	AddFileInfoHistory(history *model.FileInfoHistory, firstPinID string) error
+	GetFileInfoHistory(firstPinID string) ([]model.FileInfoHistory, error)
 
 	// IndexerUserAvatar operations
 	CreateIndexerUserAvatar(avatar *model.IndexerUserAvatar) error
@@ -34,6 +37,36 @@ type Database interface {
 	GetIndexerSyncStatusByChainName(chainName string) (*model.IndexerSyncStatus, error)
 	UpdateIndexerSyncStatusHeight(chainName string, height int64) error
 	GetAllIndexerSyncStatus() ([]*model.IndexerSyncStatus, error)
+
+	// UserInfo operations
+	// User Name
+	CreateOrUpdateLatestUserNameInfo(info *model.UserNameInfo, metaID string) error
+	GetLatestUserNameInfo(key string) (*model.UserNameInfo, error)
+	AddUserNameInfoHistory(info *model.UserNameInfo, metaID string) error
+	GetUserNameInfoHistory(key string) ([]model.UserNameInfo, error)
+	// User Avatar
+	CreateOrUpdateLatestUserAvatarInfo(info *model.UserAvatarInfo, metaID string) error
+	GetLatestUserAvatarInfo(key string) (*model.UserAvatarInfo, error)
+	AddUserAvatarInfoHistory(info *model.UserAvatarInfo, metaID string) error
+	GetUserAvatarInfoHistory(key string) ([]model.UserAvatarInfo, error)
+	// User Chat Public Key
+	CreateOrUpdateLatestUserChatPublicKeyInfo(info *model.UserChatPublicKeyInfo, metaID string) error
+	GetLatestUserChatPublicKeyInfo(key string) (*model.UserChatPublicKeyInfo, error)
+	AddUserChatPublicKeyHistory(info *model.UserChatPublicKeyInfo, metaID string) error
+	GetUserChatPublicKeyHistory(key string) ([]model.UserChatPublicKeyInfo, error)
+
+	// PinInfo operations
+	CreateOrUpdatePinInfo(pinInfo *model.IndexerPinInfo) error
+	GetPinInfoByPinID(pinID string) (*model.IndexerPinInfo, error)
+
+	// MetaIdAddress operations
+	SaveMetaIdAddress(metaID, address string) error
+	GetAddressByMetaID(metaID string) (string, error)
+	GetMetaIDByAddress(address string) (string, error)
+
+	// MetaIdTimestamp operations
+	SaveMetaIdTimestamp(metaID string, timestamp int64) error
+	ListMetaIdsByTimestamp(cursor int64, size int) ([]model.MetaIdTimestamp, int64, bool, error)
 
 	// General operations
 	Close() error

@@ -253,6 +253,99 @@ func (m *MySQLDatabase) GetAllIndexerSyncStatus() ([]*model.IndexerSyncStatus, e
 	return statuses, err
 }
 
+// File history operations - not implemented for MySQL yet
+func (m *MySQLDatabase) GetLatestFileInfoByFirstPinID(firstPinID string) (*model.IndexerFile, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddFileInfoHistory(history *model.FileInfoHistory, firstPinID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetFileInfoHistory(firstPinID string) ([]model.FileInfoHistory, error) {
+	return nil, ErrNotImplemented
+}
+
+// UserInfo operations - not implemented for MySQL yet
+func (m *MySQLDatabase) CreateOrUpdateLatestUserNameInfo(info *model.UserNameInfo, metaID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetLatestUserNameInfo(key string) (*model.UserNameInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddUserNameInfoHistory(info *model.UserNameInfo, metaID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetUserNameInfoHistory(key string) ([]model.UserNameInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) CreateOrUpdateLatestUserAvatarInfo(info *model.UserAvatarInfo, metaID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetLatestUserAvatarInfo(key string) (*model.UserAvatarInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddUserAvatarInfoHistory(info *model.UserAvatarInfo, metaID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetUserAvatarInfoHistory(key string) ([]model.UserAvatarInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) CreateOrUpdateLatestUserChatPublicKeyInfo(info *model.UserChatPublicKeyInfo, metaID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetLatestUserChatPublicKeyInfo(key string) (*model.UserChatPublicKeyInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddUserChatPublicKeyHistory(info *model.UserChatPublicKeyInfo, metaID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetUserChatPublicKeyHistory(key string) ([]model.UserChatPublicKeyInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+// PinInfo operations - not implemented for MySQL yet
+func (m *MySQLDatabase) CreateOrUpdatePinInfo(pinInfo *model.IndexerPinInfo) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetPinInfoByPinID(pinID string) (*model.IndexerPinInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+// MetaIdAddress operations - not implemented for MySQL yet
+func (m *MySQLDatabase) SaveMetaIdAddress(metaID, address string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetAddressByMetaID(metaID string) (string, error) {
+	return "", ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetMetaIDByAddress(address string) (string, error) {
+	return "", ErrNotImplemented
+}
+
+// MetaIdTimestamp operations - not implemented for MySQL yet
+func (m *MySQLDatabase) SaveMetaIdTimestamp(metaID string, timestamp int64) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) ListMetaIdsByTimestamp(cursor int64, size int) ([]model.MetaIdTimestamp, int64, bool, error) {
+	return nil, 0, false, ErrNotImplemented
+}
+
 // Close close database connection
 func (m *MySQLDatabase) Close() error {
 	sqlDB, err := m.db.DB()

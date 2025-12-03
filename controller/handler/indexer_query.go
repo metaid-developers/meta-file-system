@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"strconv"
 
 	"meta-file-system/controller/respond"
@@ -225,18 +226,188 @@ func (h *IndexerQueryHandler) GetStats(c *gin.Context) {
 	respond.Success(c, respond.ToIndexerStatsResponse(filesCount))
 }
 
-// ListAvatars get avatar list with cursor pagination
-// @Summary      Query avatar list
-// @Description  Query avatar list with cursor pagination
-// @Tags         Indexer Avatar Query
+// ============================================================
+// Old Avatar methods - DEPRECATED (commented out)
+// ============================================================
+
+// // ListAvatars get avatar list with cursor pagination
+// // @Summary      Query avatar list
+// // @Description  Query avatar list with cursor pagination
+// // @Tags         Indexer Avatar Query
+// // @Accept       json
+// // @Produce      json
+// // @Param        cursor  query  int  false  "Cursor (last avatar ID)" default(0)
+// // @Param        size    query  int  false  "Page size"               default(20)
+// // @Success      200     {object}  respond.Response{data=respond.IndexerAvatarListResponse}
+// // @Failure      500     {object}  respond.Response
+// // @Router       /avatars [get]
+// func (h *IndexerQueryHandler) ListAvatars(c *gin.Context) {
+// 	// Get cursor and size parameters
+// 	cursorStr := c.DefaultQuery("cursor", "0")
+// 	sizeStr := c.DefaultQuery("size", "20")
+//
+// 	cursor, _ := strconv.ParseInt(cursorStr, 10, 64)
+// 	size, _ := strconv.Atoi(sizeStr)
+//
+// 	// Query avatar list
+// 	avatars, nextCursor, hasMore, err := h.indexerFileService.ListAvatars(cursor, size)
+// 	if err != nil {
+// 		respond.ServerError(c, err.Error())
+// 		return
+// 	}
+//
+// 	respond.Success(c, respond.ToIndexerAvatarListResponse(avatars, nextCursor, hasMore))
+// }
+
+// // GetLatestAvatarByMetaID get latest avatar by MetaID
+// // @Summary      Get latest avatar by MetaID
+// // @Description  Query the latest avatar information by MetaID
+// // @Tags         Indexer Avatar Query
+// // @Accept       json
+// // @Produce      json
+// // @Param        metaId  path  string  true  "MetaID"
+// // @Success      200     {object}  respond.Response{data=respond.IndexerAvatarResponse}
+// // @Failure      404     {object}  respond.Response
+// // @Router       /avatars/metaid/{metaId} [get]
+// func (h *IndexerQueryHandler) GetLatestAvatarByMetaID(c *gin.Context) {
+// 	metaID := c.Param("metaId")
+// 	if metaID == "" {
+// 		respond.InvalidParam(c, "metaId is required")
+// 		return
+// 	}
+//
+// 	avatar, err := h.indexerFileService.GetLatestAvatarByMetaID(metaID)
+// 	if err != nil {
+// 		respond.NotFound(c, err.Error())
+// 		return
+// 	}
+//
+// 	respond.Success(c, respond.ToIndexerAvatarResponse(avatar))
+// }
+
+// // GetLatestAvatarByAddress get latest avatar by address
+// // @Summary      Get latest avatar by address
+// // @Description  Query the latest avatar information by address
+// // @Tags         Indexer Avatar Query
+// // @Accept       json
+// // @Produce      json
+// // @Param        address  path  string  true  "Address"
+// // @Success      200      {object}  respond.Response{data=respond.IndexerAvatarResponse}
+// // @Failure      404      {object}  respond.Response
+// // @Router       /avatars/address/{address} [get]
+// func (h *IndexerQueryHandler) GetLatestAvatarByAddress(c *gin.Context) {
+// 	address := c.Param("address")
+// 	if address == "" {
+// 		respond.InvalidParam(c, "address is required")
+// 		return
+// 	}
+//
+// 	avatar, err := h.indexerFileService.GetLatestAvatarByAddress(address)
+// 	if err != nil {
+// 		respond.NotFound(c, err.Error())
+// 		return
+// 	}
+//
+// 	respond.Success(c, respond.ToIndexerAvatarResponse(avatar))
+// }
+
+// // GetAvatarContent get avatar content by PIN ID
+// // @Summary      Get avatar content
+// // @Description  Get avatar content by PIN ID
+// // @Tags         Indexer Avatar Query
+// // @Accept       json
+// // @Produce      octet-stream
+// // @Param        pinId  path      string  true  "PIN ID"
+// // @Success      200    {file}    binary
+// // @Failure      404    {object}  respond.Response
+// // @Router       /avatars/content/{pinId} [get]
+// func (h *IndexerQueryHandler) GetAvatarContent(c *gin.Context) {
+// 	pinID := c.Param("pinId")
+// 	if pinID == "" {
+// 		respond.InvalidParam(c, "pinId is required")
+// 		return
+// 	}
+//
+// 	content, contentType, fileName, err := h.indexerFileService.GetAvatarContent(pinID)
+// 	if err != nil {
+// 		respond.NotFound(c, err.Error())
+// 		return
+// 	}
+//
+// 	// Set response headers
+// 	c.Header("Content-Type", contentType)
+// 	c.Header("Content-Disposition", "inline; filename=\""+fileName+"\"")
+// 	c.Data(200, contentType, content)
+// }
+
+// ============================================================
+// New UserInfo methods
+// ============================================================
+
+// GetUserInfoByMetaID get user information by MetaID
+// @Summary      Get user info by MetaID
+// @Description  Query user information (name, avatar, chat public key) by MetaID
+// @Tags         Indexer User Info
 // @Accept       json
 // @Produce      json
-// @Param        cursor  query  int  false  "Cursor (last avatar ID)" default(0)
-// @Param        size    query  int  false  "Page size"               default(20)
-// @Success      200     {object}  respond.Response{data=respond.IndexerAvatarListResponse}
+// @Param        metaId  path  string  true  "MetaID"
+// @Success      200     {object}  respond.Response{data=model.IndexerUserInfo}
+// @Failure      404     {object}  respond.Response
+// @Router       /users/metaid/{metaId} [get]
+func (h *IndexerQueryHandler) GetUserInfoByMetaID(c *gin.Context) {
+	metaID := c.Param("metaId")
+	if metaID == "" {
+		respond.InvalidParam(c, "metaId is required")
+		return
+	}
+
+	userInfo, err := h.indexerFileService.GetUserInfoByMetaID(metaID)
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	respond.Success(c, userInfo)
+}
+
+// GetUserInfoByAddress get user information by address
+// @Summary      Get user info by address
+// @Description  Query user information (name, avatar, chat public key) by address
+// @Tags         Indexer User Info
+// @Accept       json
+// @Produce      json
+// @Param        address  path  string  true  "Address"
+// @Success      200      {object}  respond.Response{data=model.IndexerUserInfo}
+// @Failure      404      {object}  respond.Response
+// @Router       /users/address/{address} [get]
+func (h *IndexerQueryHandler) GetUserInfoByAddress(c *gin.Context) {
+	address := c.Param("address")
+	if address == "" {
+		respond.InvalidParam(c, "address is required")
+		return
+	}
+
+	userInfo, err := h.indexerFileService.GetUserInfoByAddress(address)
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	respond.Success(c, userInfo)
+}
+
+// ListUserInfo get user info list with pagination
+// @Summary      Query user info list
+// @Description  Query user info list with cursor pagination
+// @Tags         Indexer User Info
+// @Accept       json
+// @Produce      json
+// @Param        cursor  query  int  false  "Cursor" default(0)
+// @Param        size    query  int  false  "Page size" default(20)
+// @Success      200     {object}  respond.Response{data=respond.UserInfoListResponse}
 // @Failure      500     {object}  respond.Response
-// @Router       /avatars [get]
-func (h *IndexerQueryHandler) ListAvatars(c *gin.Context) {
+// @Router       /users [get]
+func (h *IndexerQueryHandler) ListUserInfo(c *gin.Context) {
 	// Get cursor and size parameters
 	cursorStr := c.DefaultQuery("cursor", "0")
 	sizeStr := c.DefaultQuery("size", "20")
@@ -244,86 +415,49 @@ func (h *IndexerQueryHandler) ListAvatars(c *gin.Context) {
 	cursor, _ := strconv.ParseInt(cursorStr, 10, 64)
 	size, _ := strconv.Atoi(sizeStr)
 
-	// Query avatar list
-	avatars, nextCursor, hasMore, err := h.indexerFileService.ListAvatars(cursor, size)
+	// Query user info list
+	users, nextCursor, hasMore, err := h.indexerFileService.GetUserInfoList(cursor, size)
 	if err != nil {
 		respond.ServerError(c, err.Error())
 		return
 	}
 
-	respond.Success(c, respond.ToIndexerAvatarListResponse(avatars, nextCursor, hasMore))
+	respond.Success(c, respond.ToUserInfoListResponse(users, nextCursor, hasMore))
 }
 
-// GetLatestAvatarByMetaID get latest avatar by MetaID
-// @Summary      Get latest avatar by MetaID
-// @Description  Query the latest avatar information by MetaID
-// @Tags         Indexer Avatar Query
-// @Accept       json
-// @Produce      json
-// @Param        metaId  path  string  true  "MetaID"
-// @Success      200     {object}  respond.Response{data=respond.IndexerAvatarResponse}
-// @Failure      404     {object}  respond.Response
-// @Router       /avatars/metaid/{metaId} [get]
-func (h *IndexerQueryHandler) GetLatestAvatarByMetaID(c *gin.Context) {
-	metaID := c.Param("metaId")
-	if metaID == "" {
-		respond.InvalidParam(c, "metaId is required")
-		return
-	}
-
-	avatar, err := h.indexerFileService.GetLatestAvatarByMetaID(metaID)
-	if err != nil {
-		respond.NotFound(c, err.Error())
-		return
-	}
-
-	respond.Success(c, respond.ToIndexerAvatarResponse(avatar))
-}
-
-// GetLatestAvatarByAddress get latest avatar by address
-// @Summary      Get latest avatar by address
-// @Description  Query the latest avatar information by address
-// @Tags         Indexer Avatar Query
-// @Accept       json
-// @Produce      json
-// @Param        address  path  string  true  "Address"
-// @Success      200      {object}  respond.Response{data=respond.IndexerAvatarResponse}
-// @Failure      404      {object}  respond.Response
-// @Router       /avatars/address/{address} [get]
-func (h *IndexerQueryHandler) GetLatestAvatarByAddress(c *gin.Context) {
-	address := c.Param("address")
-	if address == "" {
-		respond.InvalidParam(c, "address is required")
-		return
-	}
-
-	avatar, err := h.indexerFileService.GetLatestAvatarByAddress(address)
-	if err != nil {
-		respond.NotFound(c, err.Error())
-		return
-	}
-
-	respond.Success(c, respond.ToIndexerAvatarResponse(avatar))
-}
-
-// GetAvatarContent get avatar content by PIN ID
-// @Summary      Get avatar content
-// @Description  Get avatar content by PIN ID
-// @Tags         Indexer Avatar Query
+// GetAvatarContentByPinID get avatar content by PIN ID
+// @Summary      Get avatar content by PIN ID
+// @Description  Get avatar content by avatar PIN ID, returns content from storage or redirects to OSS
+// @Tags         Indexer User Info
 // @Accept       json
 // @Produce      octet-stream
-// @Param        pinId  path      string  true  "PIN ID"
-// @Success      200    {file}    binary
+// @Param        pinId  path  string  true  "Avatar PIN ID"
+// @Success      200    {file}    binary  "Avatar content"
+// @Success      307    {string}  string  "Redirect to OSS URL"
 // @Failure      404    {object}  respond.Response
-// @Router       /avatars/content/{pinId} [get]
-func (h *IndexerQueryHandler) GetAvatarContent(c *gin.Context) {
+// @Router       /users/avatar/content/{pinId} [get]
+func (h *IndexerQueryHandler) GetAvatarContentByPinID(c *gin.Context) {
 	pinID := c.Param("pinId")
 	if pinID == "" {
 		respond.InvalidParam(c, "pinId is required")
 		return
 	}
 
-	content, contentType, fileName, err := h.indexerFileService.GetAvatarContent(pinID)
+	// Get avatar OSS URL or content
+	ossURL, contentType, fileName, fileType, isOSS, err := h.indexerFileService.GetAvatarOSSURLByPinID(pinID)
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	// If it's an OSS URL, redirect to OSS
+	if isOSS {
+		c.Redirect(307, ossURL)
+		return
+	}
+
+	// If not OSS, get content from storage
+	content, contentType, fileName, err := h.indexerFileService.GetAvatarContentByPinID(pinID)
 	if err != nil {
 		respond.NotFound(c, err.Error())
 		return
@@ -331,7 +465,8 @@ func (h *IndexerQueryHandler) GetAvatarContent(c *gin.Context) {
 
 	// Set response headers
 	c.Header("Content-Type", contentType)
-	c.Header("Content-Disposition", "inline; filename=\""+fileName+"\"")
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", fileName))
+	c.Header("X-File-Type", fileType)
 	c.Data(200, contentType, content)
 }
 
@@ -380,101 +515,101 @@ func (h *IndexerQueryHandler) GetFastFileContent(c *gin.Context) {
 	c.Redirect(307, ossURL)
 }
 
-// GetFastAvatarContent get accelerated avatar content redirect to OSS
-// @Summary      Get accelerated avatar content (redirect to OSS)
-// @Description  Redirect to OSS URL for avatar content by PIN ID, supports preview/thumbnail processing
-// @Tags         Indexer Avatar Query
-// @Accept       json
-// @Produce      json
-// @Param        pinId       path   string  false  "PIN ID"
-// @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
-// @Success      307         {string}  string  "Redirect to OSS URL"
-// @Failure      404         {object}  respond.Response
-// @Failure      500         {object}  respond.Response
-// @Router       /avatars/accelerate/content/{pinId} [get]
-func (h *IndexerQueryHandler) GetFastAvatarContent(c *gin.Context) {
-	pinID := c.Param("pinId")
-	if pinID == "" {
-		respond.InvalidParam(c, "pinId is required")
-		return
-	}
+// // GetFastAvatarContent get accelerated avatar content redirect to OSS
+// // @Summary      Get accelerated avatar content (redirect to OSS)
+// // @Description  Redirect to OSS URL for avatar content by PIN ID, supports preview/thumbnail processing
+// // @Tags         Indexer Avatar Query
+// // @Accept       json
+// // @Produce      json
+// // @Param        pinId       path   string  false  "PIN ID"
+// // @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
+// // @Success      307         {string}  string  "Redirect to OSS URL"
+// // @Failure      404         {object}  respond.Response
+// // @Failure      500         {object}  respond.Response
+// // @Router       /avatars/accelerate/content/{pinId} [get]
+// func (h *IndexerQueryHandler) GetFastAvatarContent(c *gin.Context) {
+// 	pinID := c.Param("pinId")
+// 	if pinID == "" {
+// 		respond.InvalidParam(c, "pinId is required")
+// 		return
+// 	}
+//
+// 	// Get process type from query parameter
+// 	processType := c.DefaultQuery("process", "")
+//
+// 	// Get OSS URL
+// 	ossURL, err := h.indexerFileService.GetFastAvatarOSSURL(pinID, processType)
+// 	if err != nil {
+// 		respond.NotFound(c, err.Error())
+// 		return
+// 	}
+//
+// 	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
+// 	c.Redirect(307, ossURL)
+// }
 
-	// Get process type from query parameter
-	processType := c.DefaultQuery("process", "")
+// // GetFastAvatarByMetaID get accelerated avatar redirect to OSS by MetaID
+// // @Summary      Get accelerated avatar by MetaID (redirect to OSS)
+// // @Description  Redirect to OSS URL for latest avatar by MetaID, supports preview/thumbnail processing
+// // @Tags         Indexer Avatar Query
+// // @Accept       json
+// // @Produce      json
+// // @Param        metaId      path   string  false  "MetaID"
+// // @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
+// // @Success      307         {string}  string  "Redirect to OSS URL"
+// // @Failure      404         {object}  respond.Response
+// // @Failure      500         {object}  respond.Response
+// // @Router       /avatars/accelerate/metaid/{metaId} [get]
+// func (h *IndexerQueryHandler) GetFastAvatarByMetaID(c *gin.Context) {
+// 	metaID := c.Param("metaId")
+// 	if metaID == "" {
+// 		respond.InvalidParam(c, "metaId is required")
+// 		return
+// 	}
+//
+// 	// Get process type from query parameter
+// 	processType := c.DefaultQuery("process", "")
+//
+// 	// Get OSS URL
+// 	ossURL, err := h.indexerFileService.GetFastAvatarOSSURLByMetaID(metaID, processType)
+// 	if err != nil {
+// 		respond.NotFound(c, err.Error())
+// 		return
+// 	}
+//
+// 	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
+// 	c.Redirect(307, ossURL)
+// }
 
-	// Get OSS URL
-	ossURL, err := h.indexerFileService.GetFastAvatarOSSURL(pinID, processType)
-	if err != nil {
-		respond.NotFound(c, err.Error())
-		return
-	}
-
-	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
-	c.Redirect(307, ossURL)
-}
-
-// GetFastAvatarByMetaID get accelerated avatar redirect to OSS by MetaID
-// @Summary      Get accelerated avatar by MetaID (redirect to OSS)
-// @Description  Redirect to OSS URL for latest avatar by MetaID, supports preview/thumbnail processing
-// @Tags         Indexer Avatar Query
-// @Accept       json
-// @Produce      json
-// @Param        metaId      path   string  false  "MetaID"
-// @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
-// @Success      307         {string}  string  "Redirect to OSS URL"
-// @Failure      404         {object}  respond.Response
-// @Failure      500         {object}  respond.Response
-// @Router       /avatars/accelerate/metaid/{metaId} [get]
-func (h *IndexerQueryHandler) GetFastAvatarByMetaID(c *gin.Context) {
-	metaID := c.Param("metaId")
-	if metaID == "" {
-		respond.InvalidParam(c, "metaId is required")
-		return
-	}
-
-	// Get process type from query parameter
-	processType := c.DefaultQuery("process", "")
-
-	// Get OSS URL
-	ossURL, err := h.indexerFileService.GetFastAvatarOSSURLByMetaID(metaID, processType)
-	if err != nil {
-		respond.NotFound(c, err.Error())
-		return
-	}
-
-	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
-	c.Redirect(307, ossURL)
-}
-
-// GetFastAvatarByAddress get accelerated avatar redirect to OSS by address
-// @Summary      Get accelerated avatar by address (redirect to OSS)
-// @Description  Redirect to OSS URL for latest avatar by address, supports preview/thumbnail processing
-// @Tags         Indexer Avatar Query
-// @Accept       json
-// @Produce      json
-// @Param        address     path   string  false  "Address"
-// @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
-// @Success      307         {string}  string  "Redirect to OSS URL"
-// @Failure      404         {object}  respond.Response
-// @Failure      500         {object}  respond.Response
-// @Router       /avatars/accelerate/address/{address} [get]
-func (h *IndexerQueryHandler) GetFastAvatarByAddress(c *gin.Context) {
-	address := c.Param("address")
-	if address == "" {
-		respond.InvalidParam(c, "address is required")
-		return
-	}
-
-	// Get process type from query parameter
-	processType := c.DefaultQuery("process", "")
-
-	// Get OSS URL
-	ossURL, err := h.indexerFileService.GetFastAvatarOSSURLByAddress(address, processType)
-	if err != nil {
-		respond.NotFound(c, err.Error())
-		return
-	}
-
-	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
-	c.Redirect(307, ossURL)
-}
+// // GetFastAvatarByAddress get accelerated avatar redirect to OSS by address
+// // @Summary      Get accelerated avatar by address (redirect to OSS)
+// // @Description  Redirect to OSS URL for latest avatar by address, supports preview/thumbnail processing
+// // @Tags         Indexer Avatar Query
+// // @Accept       json
+// // @Produce      json
+// // @Param        address     path   string  false  "Address"
+// // @Param        process     query  string  false  "Process type: preview (640px), thumbnail (128x128), empty for original"
+// // @Success      307         {string}  string  "Redirect to OSS URL"
+// // @Failure      404         {object}  respond.Response
+// // @Failure      500         {object}  respond.Response
+// // @Router       /avatars/accelerate/address/{address} [get]
+// func (h *IndexerQueryHandler) GetFastAvatarByAddress(c *gin.Context) {
+// 	address := c.Param("address")
+// 	if address == "" {
+// 		respond.InvalidParam(c, "address is required")
+// 		return
+// 	}
+//
+// 	// Get process type from query parameter
+// 	processType := c.DefaultQuery("process", "")
+//
+// 	// Get OSS URL
+// 	ossURL, err := h.indexerFileService.GetFastAvatarOSSURLByAddress(address, processType)
+// 	if err != nil {
+// 		respond.NotFound(c, err.Error())
+// 		return
+// 	}
+//
+// 	// Redirect to OSS URL (307 Temporary Redirect - preserves original request method)
+// 	c.Redirect(307, ossURL)
+// }

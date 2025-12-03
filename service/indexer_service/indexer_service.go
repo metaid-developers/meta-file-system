@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"meta-file-system/conf"
+	"meta-file-system/database"
 	"meta-file-system/indexer"
 	"meta-file-system/model"
 	"meta-file-system/model/dao"
@@ -192,6 +193,75 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 
 	// Process each PIN in the transaction
 	for _, metaData := range metaDataTx.MetaIDData {
+		// Track firstPinID for modify operations
+		var firstPinID string
+		var firstPath string
+
+		// Handle based on operation type
+		if metaData.Operation == "create" {
+			// Create operation: use original path and save PIN info for future reference
+			firstPinID = metaData.PinID // For create, firstPinID = PinID
+			firstPath = metaData.Path   // For create, firstPath = Path
+
+			pinInfo := &model.IndexerPinInfo{
+				PinID:       metaData.PinID,
+				FirstPinID:  firstPinID,
+				FirstPath:   firstPath,
+				Path:        metaData.Path,
+				Operation:   metaData.Operation,
+				ContentType: metaData.ContentType,
+				ChainName:   metaData.ChainName,
+				BlockHeight: height,
+				Timestamp:   timestamp,
+			}
+			if err := database.DB.CreateOrUpdatePinInfo(pinInfo); err != nil {
+				log.Printf("Failed to save PIN info for %s: %v", metaData.PinID, err)
+			}
+		} else if metaData.Operation == "modify" || metaData.Operation == "revoke" {
+			// Modify/Revoke operation: resolve path and firstPinID if it's a reference (@pinId or host:@pinId)
+			resolvedPath, resolvedFirstPinID, resolvedFirstPath, isValidOperation := s.resolvePathAndFirstPinID(metaData.Path)
+			if !isValidOperation {
+				log.Printf("Invalid operation: %s, path: %s", metaData.Operation, metaData.Path)
+				continue
+			}
+			if resolvedPath != metaData.Path {
+				log.Printf("Resolved path reference for %s: %s -> %s (firstPinID: %s, firstPath: %s)",
+					metaData.Operation, metaData.Path, resolvedPath, resolvedFirstPinID, resolvedFirstPath)
+				// metaData.Path = resolvedPath
+				firstPinID = resolvedFirstPinID
+				firstPath = resolvedFirstPath
+			} else {
+				// Path not a reference, need to find firstPinID by path
+				// This is a fallback - ideally modify/revoke should use @pinId reference
+				firstPinID = metaData.PinID
+				firstPath = metaData.Path
+				log.Printf("Warning: %s operation without @pinId reference, using PinID as firstPinID: %s", metaData.Operation, firstPinID)
+			}
+
+			// Save PIN info for modify/revoke operations
+			pinInfo := &model.IndexerPinInfo{
+				PinID:       metaData.PinID,
+				FirstPinID:  firstPinID,
+				FirstPath:   firstPath,
+				Path:        metaData.Path,
+				Operation:   metaData.Operation,
+				ContentType: metaData.ContentType,
+				ChainName:   metaData.ChainName,
+				BlockHeight: height,
+				Timestamp:   timestamp,
+			}
+			if err := database.DB.CreateOrUpdatePinInfo(pinInfo); err != nil {
+				log.Printf("Failed to save PIN info for %s: %v", metaData.PinID, err)
+			}
+		} else {
+			// For other operations, use PinID as firstPinID
+			firstPinID = metaData.PinID
+			firstPath = metaData.Path
+		}
+
+		// Store firstPinID in metadata for use in processing functions
+		// We'll pass it through a context or store it temporarily
+		// For now, we'll use a simple approach by modifying the processing functions
 		// Check if this is a chunk or index PIN (for large file splitting)
 		log.Printf("Processing PIN: %s (path: %s, operation: %s, content type: %s)",
 			metaData.PinID, metaData.Path, metaData.Operation, metaData.ContentType)
@@ -207,13 +277,13 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 			}
 
 			// Process chunk content
-			if err := s.processChunkContent(metaData, height, timestamp); err != nil {
+			if err := s.processChunkContent(metaData, firstPinID, height, timestamp); err != nil {
 				log.Printf("Failed to process chunk content for PIN %s: %v", metaData.PinID, err)
 				continue
 			}
-		} else if isIndexPath(metaData.Path) && isIndexContentType(metaData.ContentType) {
-			log.Printf("Processing index PIN: %s (path: %s, operation: %s)",
-				metaData.PinID, metaData.Path, metaData.Operation)
+		} else if isIndexPath(firstPath) && isIndexContentType(metaData.ContentType) {
+			log.Printf("Processing index PIN: %s (firstPath: %s, path: %s, operation: %s)",
+				metaData.PinID, firstPath, metaData.Path, metaData.Operation)
 
 			// Check if already exists
 			existingFile, err := s.indexerFileDAO.GetByPinID(metaData.PinID)
@@ -223,14 +293,14 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 			}
 
 			// Process index content
-			if err := s.processIndexContent(metaData, height, timestamp); err != nil {
+			if err := s.processIndexContent(metaData, firstPinID, firstPath, height, timestamp); err != nil {
 				log.Printf("Failed to process index content for PIN %s: %v", metaData.PinID, err)
 				continue
 			}
-		} else if isFilePath(metaData.Path) {
+		} else if isFilePath(firstPath) {
 			// Check if this is a file PIN
-			log.Printf("Processing file PIN: %s (path: %s, operation: %s)",
-				metaData.PinID, metaData.Path, metaData.Operation)
+			log.Printf("Processing file PIN: %s (firstPath: %s, path: %s, operation: %s)",
+				metaData.PinID, firstPath, metaData.Path, metaData.Operation)
 
 			// Check if already exists
 			existingFile, err := s.indexerFileDAO.GetByPinID(metaData.PinID)
@@ -249,36 +319,66 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 			}
 
 			// Process file content
-			if err := s.processFileContent(metaData, height, timestamp); err != nil {
+			if err := s.processFileContent(metaData, firstPinID, firstPath, height, timestamp); err != nil {
 				log.Printf("Failed to process file content for PIN %s: %v", metaData.PinID, err)
 				// Continue processing other PINs even if one fails
 				continue
 			}
-		} else if isAvatarPath(metaData.Path) {
-			// Check if this is an avatar PIN
-			log.Printf("Processing avatar PIN: %s (path: %s, operation: %s)",
-				metaData.PinID, metaData.Path, metaData.Operation)
+			// } else if isAvatarPath(metaData.Path) {
+			// 	// Check if this is an avatar PIN
+			// 	log.Printf("Processing avatar PIN: %s (path: %s, operation: %s)",
+			// 		metaData.PinID, metaData.Path, metaData.Operation)
 
-			// Check if already exists
-			existingAvatar, err := s.indexerUserAvatarDAO.GetByPinID(metaData.PinID)
-			if err == nil && existingAvatar != nil {
-				log.Printf("Avatar PIN already indexed: %s", metaData.PinID)
+			// 	// Check if already exists
+			// 	existingAvatar, err := s.indexerUserAvatarDAO.GetByPinID(metaData.PinID)
+			// 	if err == nil && existingAvatar != nil {
+			// 		log.Printf("Avatar PIN already indexed: %s", metaData.PinID)
 
-				// Update avatar content height
-				if existingAvatar.BlockHeight < height && height > 0 {
-					existingAvatar.BlockHeight = height
-					if err := s.indexerUserAvatarDAO.Update(existingAvatar); err != nil {
-						log.Printf("Failed to update avatar content height: %v", err)
-					}
-				}
+			// 		// Update avatar content height
+			// 		if existingAvatar.BlockHeight < height && height > 0 {
+			// 			existingAvatar.BlockHeight = height
+			// 			if err := s.indexerUserAvatarDAO.Update(existingAvatar); err != nil {
+			// 				log.Printf("Failed to update avatar content height: %v", err)
+			// 			}
+			// 		}
 
+			// 		continue
+			// 	}
+
+			// 	// Process avatar content
+			// 	if err := s.processAvatarContent(metaData, height, timestamp); err != nil {
+			// 		log.Printf("Failed to process avatar content for PIN %s: %v", metaData.PinID, err)
+			// 		// Continue processing other PINs even if one fails
+			// 		continue
+			// 	}
+		} else if isUserNamePath(firstPath) {
+			// Check if this is a user name PIN
+			log.Printf("Processing user name PIN: %s (firstPath: %s, path: %s, operation: %s)",
+				metaData.PinID, firstPath, metaData.Path, metaData.Operation)
+
+			// Process user name content
+			if err := s.processUserNameContent(metaData, firstPinID, firstPath, height, timestamp); err != nil {
+				log.Printf("Failed to process user name content for PIN %s: %v", metaData.PinID, err)
 				continue
 			}
+		} else if isUserAvatarInfoPath(firstPath) {
+			// Check if this is a user avatar info PIN (different from avatar file)
+			log.Printf("Processing user avatar info PIN: %s (firstPath: %s, path: %s, operation: %s)",
+				metaData.PinID, firstPath, metaData.Path, metaData.Operation)
 
-			// Process avatar content
-			if err := s.processAvatarContent(metaData, height, timestamp); err != nil {
-				log.Printf("Failed to process avatar content for PIN %s: %v", metaData.PinID, err)
-				// Continue processing other PINs even if one fails
+			// Process user avatar info content
+			if err := s.processUserAvatarInfoContent(metaData, firstPinID, firstPath, height, timestamp); err != nil {
+				log.Printf("Failed to process user avatar info content for PIN %s: %v", metaData.PinID, err)
+				continue
+			}
+		} else if isUserChatPublicKeyPath(firstPath) {
+			// Check if this is a user chat public key PIN
+			log.Printf("Processing user chat public key PIN: %s (firstPath: %s, path: %s, operation: %s)",
+				metaData.PinID, firstPath, metaData.Path, metaData.Operation)
+
+			// Process user chat public key content
+			if err := s.processUserChatPublicKeyContent(metaData, firstPinID, firstPath, height, timestamp); err != nil {
+				log.Printf("Failed to process user chat public key content for PIN %s: %v", metaData.PinID, err)
 				continue
 			}
 		} else {
@@ -299,10 +399,34 @@ func isFilePath(path string) bool {
 	return strings.HasPrefix(path, "/file") || strings.Contains(path, "/file")
 }
 
-// isAvatarPath check if path is an avatar path
+// isAvatarPath check if path is an avatar path (avatar file, not info)
 func isAvatarPath(path string) bool {
 	// Check if path starts with /info/avatar or contains /info/avatar
+	// But exclude /info/avatar info path (which is for avatar info text)
+	if isUserAvatarInfoPath(path) {
+		return false
+	}
 	return strings.HasPrefix(path, "/info/avatar") || strings.Contains(path, "/info/avatar")
+}
+
+// isUserNamePath check if path is a user name path
+func isUserNamePath(path string) bool {
+	// Check if path starts with /info/name or contains /info/name
+	return strings.HasPrefix(path, "/info/name") || strings.Contains(path, "/info/name")
+}
+
+// isUserAvatarInfoPath check if path is a user avatar info path (text info, not file)
+func isUserAvatarInfoPath(path string) bool {
+	// This is for avatar info text, not avatar file
+	// Usually path like /info/avatar with text content
+	return false // For now, we treat all /info/avatar as avatar files
+}
+
+// isUserChatPublicKeyPath check if path is a user chat public key path
+func isUserChatPublicKeyPath(path string) bool {
+	// Check if path starts with /info/chatpubkey or contains /info/chatpubkey
+	return strings.HasPrefix(path, "/info/chatpubkey") || strings.Contains(path, "/info/chatpubkey") ||
+		strings.HasPrefix(path, "/info/chatPublicKey") || strings.Contains(path, "/info/chatPublicKey")
 }
 
 // isChunkPath check if path is a chunk path
@@ -357,8 +481,19 @@ func decompressGzip(content []byte) ([]byte, error) {
 	return decompressed, nil
 }
 
-// processFileContent process and save file content
-func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
+// processFileContent process and save file content (unified for create and modify)
+func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
+	if metaData.Operation == "create" {
+		return s.processFileContentCreate(metaData, firstPinID, firstPath, height, timestamp)
+	} else if metaData.Operation == "modify" {
+		return s.processFileContentModify(metaData, firstPinID, firstPath, height, timestamp)
+	}
+	// For other operations (like revoke), use create logic as fallback
+	return s.processFileContentCreate(metaData, firstPinID, firstPath, height, timestamp)
+}
+
+// processFileContentCreate process and save file content for create operation
+func (s *IndexerService) processFileContentCreate(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
 	// Get real creator address from CreatorInputLocation if available
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
@@ -428,6 +563,8 @@ func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, height
 
 	// Create database record
 	indexerFile := &model.IndexerFile{
+		FirstPinID:       firstPinID,
+		FirstPath:        firstPath,
 		PinID:            metaData.PinID,
 		TxID:             metaData.TxID,
 		Vout:             metaData.Vout,
@@ -463,14 +600,214 @@ func (s *IndexerService) processFileContent(metaData *indexer.MetaIDData, height
 		return fmt.Errorf("failed to save file to database: %w", err)
 	}
 
-	log.Printf("File indexed successfully: PIN=%s, Path=%s, Type=%s, Ext=%s, Size=%d, Compressed=%v",
-		metaData.PinID, metaData.Path, fileType, fileExtension, len(fileContent), isCompressed)
+	// Add to file info history
+	fileHistory := &model.FileInfoHistory{
+		FirstPinID:  firstPinID,
+		FirstPath:   firstPath,
+		PinID:       metaData.PinID,
+		Path:        metaData.Path,
+		Operation:   metaData.Operation,
+		ContentType: metaData.ContentType,
+		ChainName:   metaData.ChainName,
+		BlockHeight: height,
+		Timestamp:   timestamp,
+	}
+	if err := database.DB.AddFileInfoHistory(fileHistory, firstPinID); err != nil {
+		log.Printf("Failed to add file info to history: %v", err)
+	}
+
+	log.Printf("File indexed successfully (create): PIN=%s, Path=%s, Type=%s, Ext=%s, Size=%d",
+		metaData.PinID, metaData.Path, fileType, fileExtension, len(fileContent))
 
 	return nil
 }
 
-// processAvatarContent process and save avatar content
-func (s *IndexerService) processAvatarContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
+// processFileContentModify process and save file content for modify operation
+func (s *IndexerService) processFileContentModify(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
+	// Get real creator address
+	creatorAddress := metaData.CreatorAddress
+	if metaData.CreatorInputLocation != "" {
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		if err == nil {
+			creatorAddress = realAddress
+		}
+	}
+
+	// Process file content
+	fileContent := metaData.Content
+	isCompressed := isGzipCompressed(metaData.Content)
+	if isCompressed {
+		decompressed, err := decompressGzip(metaData.Content)
+		if err == nil {
+			fileContent = decompressed
+		}
+	}
+
+	fileName := extractFileName(metaData.Path)
+	realContentType := detectRealContentType(fileContent, metaData.ContentType)
+	fileExtension := extractFileExtension(metaData.Path, realContentType, fileContent)
+	fileMd5 := calculateMD5(fileContent)
+	fileHash := calculateSHA256(fileContent)
+	fileType := detectFileType(realContentType)
+
+	storagePath := fmt.Sprintf("indexer/%s/%s%s",
+		metaData.ChainName,
+		metaData.PinID,
+		fileExtension)
+
+	storageType := "local"
+	if conf.Cfg.Storage.Type == "oss" {
+		storageType = "oss"
+	}
+
+	if err := s.storage.Save(storagePath, fileContent); err != nil {
+		return fmt.Errorf("failed to save file to storage: %w", err)
+	}
+
+	creatorMetaID := calculateMetaID(creatorAddress)
+
+	// Use firstPinID from parameter (resolved from @pinId reference)
+	if firstPinID == "" {
+		firstPinID = metaData.PinID // Fallback
+	}
+
+	// Create database record
+	indexerFile := &model.IndexerFile{
+		FirstPinID:       firstPinID, // Reference to first create PIN
+		FirstPath:        firstPath,
+		PinID:            metaData.PinID,
+		TxID:             metaData.TxID,
+		Vout:             metaData.Vout,
+		Path:             metaData.Path,
+		Operation:        metaData.Operation,
+		ParentPath:       metaData.ParentPath,
+		Encryption:       metaData.Encryption,
+		Version:          metaData.Version,
+		ContentType:      metaData.ContentType,
+		ChunkType:        model.ChunkTypeSingle,
+		FileType:         fileType,
+		FileExtension:    fileExtension,
+		FileName:         fileName,
+		FileSize:         int64(len(fileContent)),
+		FileMd5:          fileMd5,
+		FileHash:         fileHash,
+		IsGzipCompressed: isCompressed,
+		StorageType:      storageType,
+		StoragePath:      storagePath,
+		ChainName:        metaData.ChainName,
+		BlockHeight:      height,
+		Timestamp:        timestamp,
+		CreatorMetaId:    creatorMetaID,
+		CreatorAddress:   creatorAddress,
+		OwnerAddress:     metaData.OwnerAddress,
+		OwnerMetaId:      calculateMetaID(metaData.OwnerAddress),
+		Status:           model.StatusSuccess,
+		State:            0,
+	}
+
+	if err := s.indexerFileDAO.Create(indexerFile); err != nil {
+		return fmt.Errorf("failed to save file to database: %w", err)
+	}
+
+	// Add to file info history
+	fileHistory := &model.FileInfoHistory{
+		FirstPinID:  firstPinID,
+		FirstPath:   firstPath,
+		PinID:       metaData.PinID,
+		Path:        metaData.Path,
+		Operation:   metaData.Operation,
+		ContentType: metaData.ContentType,
+		ChainName:   metaData.ChainName,
+		BlockHeight: height,
+		Timestamp:   timestamp,
+	}
+	if err := database.DB.AddFileInfoHistory(fileHistory, firstPinID); err != nil {
+		log.Printf("Failed to add file info to history: %v", err)
+	}
+
+	log.Printf("File indexed successfully (modify): PIN=%s, FirstPIN=%s, Path=%s, Type=%s, Size=%d",
+		metaData.PinID, firstPinID, metaData.Path, fileType, len(fileContent))
+
+	return nil
+}
+
+// // processAvatarContent process and save avatar content
+// func (s *IndexerService) processAvatarContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
+// 	// Get real creator address from CreatorInputLocation if available
+// 	creatorAddress := metaData.CreatorAddress
+// 	if metaData.CreatorInputLocation != "" {
+// 		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+// 		if err != nil {
+// 			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
+// 				metaData.CreatorInputLocation, err)
+// 		} else {
+// 			creatorAddress = realAddress
+// 			log.Printf("Found real creator address for avatar: %s (from location: %s)", realAddress, metaData.CreatorInputLocation)
+// 		}
+// 	}
+
+// 	// Detect real content type from file content
+// 	realContentType := detectRealContentType(metaData.Content, metaData.ContentType)
+
+// 	// Extract file extension from real content type
+// 	fileExtension := extractAvatarFileExtension(realContentType, metaData.Content)
+
+// 	// Calculate file hashes
+// 	fileMd5 := calculateMD5(metaData.Content)
+// 	fileHash := calculateSHA256(metaData.Content)
+
+// 	// Detect file type from real content type
+// 	fileType := detectFileType(realContentType)
+
+// 	// Determine storage path: indexer/avatar/{chain}/{txid}/{pinid}{extension}
+// 	// Use pinID as filename to ensure uniqueness, with file extension
+// 	storagePath := fmt.Sprintf("indexer/avatar/%s/%s/%s%s",
+// 		metaData.ChainName,
+// 		metaData.TxID,
+// 		metaData.PinID,
+// 		fileExtension)
+
+// 	// Save file to storage
+// 	if err := s.storage.Save(storagePath, metaData.Content); err != nil {
+// 		return fmt.Errorf("failed to save avatar to storage: %w", err)
+// 	}
+
+// 	log.Printf("Avatar saved to storage: %s (size: %d bytes)", storagePath, len(metaData.Content))
+
+// 	// Calculate Creator MetaID (SHA256 of address)
+// 	creatorMetaID := calculateMetaID(creatorAddress)
+
+// 	// Create database record
+// 	indexerUserAvatar := &model.IndexerUserAvatar{
+// 		PinID:         metaData.PinID,
+// 		TxID:          metaData.TxID,
+// 		MetaId:        creatorMetaID,
+// 		Address:       creatorAddress, // Use real creator address
+// 		Avatar:        storagePath,
+// 		ContentType:   metaData.ContentType,
+// 		FileSize:      int64(len(metaData.Content)),
+// 		FileMd5:       fileMd5,
+// 		FileHash:      fileHash,
+// 		FileExtension: fileExtension,
+// 		FileType:      fileType,
+// 		ChainName:     metaData.ChainName,
+// 		BlockHeight:   height,
+// 		Timestamp:     timestamp,
+// 	}
+
+// 	// Save to database
+// 	if err := s.indexerUserAvatarDAO.Create(indexerUserAvatar); err != nil {
+// 		return fmt.Errorf("failed to save avatar to database: %w", err)
+// 	}
+
+// 	log.Printf("Avatar indexed successfully: PIN=%s, Path=%s, Type=%s, Ext=%s, Size=%d, MetaID=%s, Address=%s",
+// 		metaData.PinID, metaData.Path, fileType, fileExtension, len(metaData.Content), creatorMetaID, creatorAddress)
+
+// 	return nil
+// }
+
+// processUserNameContent process and save user name content
+func (s *IndexerService) processUserNameContent(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
 	// Get real creator address from CreatorInputLocation if available
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
@@ -480,15 +817,86 @@ func (s *IndexerService) processAvatarContent(metaData *indexer.MetaIDData, heig
 				metaData.CreatorInputLocation, err)
 		} else {
 			creatorAddress = realAddress
-			log.Printf("Found real creator address for avatar: %s (from location: %s)", realAddress, metaData.CreatorInputLocation)
+			log.Printf("Found real creator address for user name: %s (from location: %s)", realAddress, metaData.CreatorInputLocation)
 		}
+	}
+
+	// Calculate Creator MetaID (SHA256 of address)
+	creatorMetaID := calculateMetaID(creatorAddress)
+
+	// Save MetaID-Address mapping for bidirectional lookup
+	if err := database.DB.SaveMetaIdAddress(creatorMetaID, creatorAddress); err != nil {
+		log.Printf("Failed to save MetaID-Address mapping: %v", err)
+	}
+
+	// Save MetaID-Timestamp mapping (only earliest timestamp)
+	if err := database.DB.SaveMetaIdTimestamp(creatorMetaID, timestamp); err != nil {
+		log.Printf("Failed to save MetaID-Timestamp mapping: %v", err)
+	}
+
+	// Extract user name from content (assume content is text)
+	userName := string(metaData.Content)
+
+	// Create user name info
+	userNameInfo := &model.UserNameInfo{
+		FirstPinID:  firstPinID,
+		FirstPath:   firstPath,
+		Name:        userName,
+		PinID:       metaData.PinID,
+		ChainName:   metaData.ChainName,
+		BlockHeight: height,
+		Timestamp:   timestamp,
+	}
+
+	// Save to database - latest info
+	if err := database.DB.CreateOrUpdateLatestUserNameInfo(userNameInfo, creatorMetaID); err != nil {
+		return fmt.Errorf("failed to save user name info to database: %w", err)
+	}
+
+	// Save to database - history
+	if err := database.DB.AddUserNameInfoHistory(userNameInfo, creatorMetaID); err != nil {
+		log.Printf("Failed to add user name info to history: %v", err)
+	}
+
+	log.Printf("User name indexed successfully: PIN=%s, Name=%s, MetaID=%s, Address=%s",
+		metaData.PinID, userName, creatorMetaID, creatorAddress)
+
+	return nil
+}
+
+// processUserAvatarInfoContent process and save user avatar info content
+func (s *IndexerService) processUserAvatarInfoContent(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
+	// Get real creator address from CreatorInputLocation if available
+	creatorAddress := metaData.CreatorAddress
+	if metaData.CreatorInputLocation != "" {
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		if err != nil {
+			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
+				metaData.CreatorInputLocation, err)
+		} else {
+			creatorAddress = realAddress
+			log.Printf("Found real creator address for user avatar info: %s (from location: %s)", realAddress, metaData.CreatorInputLocation)
+		}
+	}
+
+	// Calculate Creator MetaID (SHA256 of address)
+	creatorMetaID := calculateMetaID(creatorAddress)
+
+	// Save MetaID-Address mapping for bidirectional lookup
+	if err := database.DB.SaveMetaIdAddress(creatorMetaID, creatorAddress); err != nil {
+		log.Printf("Failed to save MetaID-Address mapping: %v", err)
+	}
+
+	// Save MetaID-Timestamp mapping (only earliest timestamp)
+	if err := database.DB.SaveMetaIdTimestamp(creatorMetaID, timestamp); err != nil {
+		log.Printf("Failed to save MetaID-Timestamp mapping: %v", err)
 	}
 
 	// Detect real content type from file content
 	realContentType := detectRealContentType(metaData.Content, metaData.ContentType)
 
 	// Extract file extension from real content type
-	fileExtension := extractAvatarFileExtension(realContentType, metaData.Content)
+	fileExtension := contentTypeToExtension(realContentType)
 
 	// Calculate file hashes
 	fileMd5 := calculateMD5(metaData.Content)
@@ -512,34 +920,104 @@ func (s *IndexerService) processAvatarContent(metaData *indexer.MetaIDData, heig
 
 	log.Printf("Avatar saved to storage: %s (size: %d bytes)", storagePath, len(metaData.Content))
 
-	// Calculate Creator MetaID (SHA256 of address)
-	creatorMetaID := calculateMetaID(creatorAddress)
+	// Build avatar URL based on storage type
+	var avatarUrl string
+	if conf.Cfg.Storage.Type == "oss" && conf.Cfg.Storage.OSS.Domain != "" {
+		// OSS storage: use domain + storage path
+		avatarUrl = fmt.Sprintf("%s/%s", conf.Cfg.Storage.OSS.Domain, storagePath)
+	} else {
+		// Local storage: use indexer API endpoint
+		avatarUrl = fmt.Sprintf("/api/v1/avatars/content/%s", metaData.PinID)
+	}
 
-	// Create database record
-	indexerUserAvatar := &model.IndexerUserAvatar{
+	// Create user avatar info
+	userAvatarInfo := &model.UserAvatarInfo{
+		FirstPinID:    firstPinID,
+		FirstPath:     firstPath,
+		Avatar:        storagePath, // Storage path
+		AvatarUrl:     avatarUrl,   // URL for accessing avatar
 		PinID:         metaData.PinID,
-		TxID:          metaData.TxID,
-		MetaId:        creatorMetaID,
-		Address:       creatorAddress, // Use real creator address
-		Avatar:        storagePath,
+		ChainName:     metaData.ChainName,
+		BlockHeight:   height,
+		Timestamp:     timestamp,
 		ContentType:   metaData.ContentType,
 		FileSize:      int64(len(metaData.Content)),
 		FileMd5:       fileMd5,
 		FileHash:      fileHash,
 		FileExtension: fileExtension,
 		FileType:      fileType,
+	}
+
+	// Save to database - latest info
+	if err := database.DB.CreateOrUpdateLatestUserAvatarInfo(userAvatarInfo, creatorMetaID); err != nil {
+		return fmt.Errorf("failed to save user avatar info to database: %w", err)
+	}
+
+	// Save to database - history
+	if err := database.DB.AddUserAvatarInfoHistory(userAvatarInfo, creatorMetaID); err != nil {
+		log.Printf("Failed to add user avatar info to history: %v", err)
+	}
+
+	log.Printf("User avatar info indexed successfully: PIN=%s, Avatar=%s, URL=%s, Type=%s, Ext=%s, Size=%d, MetaID=%s, Address=%s",
+		metaData.PinID, storagePath, avatarUrl, fileType, fileExtension, len(metaData.Content), creatorMetaID, creatorAddress)
+
+	return nil
+}
+
+// processUserChatPublicKeyContent process and save user chat public key content
+func (s *IndexerService) processUserChatPublicKeyContent(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
+	// Get real creator address from CreatorInputLocation if available
+	creatorAddress := metaData.CreatorAddress
+	if metaData.CreatorInputLocation != "" {
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		if err != nil {
+			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
+				metaData.CreatorInputLocation, err)
+		} else {
+			creatorAddress = realAddress
+			log.Printf("Found real creator address for user chat public key: %s (from location: %s)", realAddress, metaData.CreatorInputLocation)
+		}
+	}
+
+	// Calculate Creator MetaID (SHA256 of address)
+	creatorMetaID := calculateMetaID(creatorAddress)
+
+	// Save MetaID-Address mapping for bidirectional lookup
+	if err := database.DB.SaveMetaIdAddress(creatorMetaID, creatorAddress); err != nil {
+		log.Printf("Failed to save MetaID-Address mapping: %v", err)
+	}
+
+	// Save MetaID-Timestamp mapping (only earliest timestamp)
+	if err := database.DB.SaveMetaIdTimestamp(creatorMetaID, timestamp); err != nil {
+		log.Printf("Failed to save MetaID-Timestamp mapping: %v", err)
+	}
+
+	// Extract chat public key from content (assume content is text)
+	chatPublicKey := string(metaData.Content)
+
+	// Create user chat public key info
+	userChatPublicKeyInfo := &model.UserChatPublicKeyInfo{
+		FirstPinID:    firstPinID,
+		FirstPath:     firstPath,
+		ChatPublicKey: chatPublicKey,
+		PinID:         metaData.PinID,
 		ChainName:     metaData.ChainName,
 		BlockHeight:   height,
 		Timestamp:     timestamp,
 	}
 
-	// Save to database
-	if err := s.indexerUserAvatarDAO.Create(indexerUserAvatar); err != nil {
-		return fmt.Errorf("failed to save avatar to database: %w", err)
+	// Save to database - latest info
+	if err := database.DB.CreateOrUpdateLatestUserChatPublicKeyInfo(userChatPublicKeyInfo, creatorMetaID); err != nil {
+		return fmt.Errorf("failed to save user chat public key info to database: %w", err)
 	}
 
-	log.Printf("Avatar indexed successfully: PIN=%s, Path=%s, Type=%s, Ext=%s, Size=%d, MetaID=%s, Address=%s",
-		metaData.PinID, metaData.Path, fileType, fileExtension, len(metaData.Content), creatorMetaID, creatorAddress)
+	// Save to database - history
+	if err := database.DB.AddUserChatPublicKeyHistory(userChatPublicKeyInfo, creatorMetaID); err != nil {
+		log.Printf("Failed to add user chat public key info to history: %v", err)
+	}
+
+	log.Printf("User chat public key indexed successfully: PIN=%s, ChatPublicKey=%s, MetaID=%s, Address=%s",
+		metaData.PinID, chatPublicKey, creatorMetaID, creatorAddress)
 
 	return nil
 }
@@ -602,10 +1080,10 @@ func extractFileExtension(path string, contentType string, content []byte) strin
 	return contentTypeToExtension(contentType)
 }
 
-// extractAvatarFileExtension extract file extension from content type and content for avatar
-func extractAvatarFileExtension(contentType string, content []byte) string {
-	return contentTypeToExtension(contentType)
-}
+// // extractAvatarFileExtension extract file extension from content type and content for avatar
+// func extractAvatarFileExtension(contentType string, content []byte) string {
+// 	return contentTypeToExtension(contentType)
+// }
 
 // contentTypeToExtension map content type to file extension
 func contentTypeToExtension(contentType string) string {
@@ -737,8 +1215,59 @@ func calculateMetaID(address string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// resolvePathAndFirstPinID resolve path and firstPinID if it's a reference (@pinId or host:@pinId)
+// Returns: (resolvedPath, firstPinID, firstPath)
+func (s *IndexerService) resolvePathAndFirstPinID(path string) (string, string, string, bool) {
+	// Check if path is a reference to another PIN
+	// Format: @pinId or host:@pinId
+	var refPinID string
+	isValidOperation := true
+
+	if strings.HasPrefix(path, "@") {
+		// Format: @pinId
+		refPinID = strings.TrimPrefix(path, "@")
+	} else if strings.Contains(path, ":@") {
+		// Format: host:@pinId
+		parts := strings.SplitN(path, ":@", 2)
+		if len(parts) == 2 {
+			refPinID = parts[1]
+		}
+	} else {
+		isValidOperation = false
+	}
+
+	// If no reference found, return original path and empty values
+	if refPinID == "" {
+		return path, "", "", isValidOperation
+	}
+
+	// Look up the referenced PIN info
+	pinInfo, err := database.DB.GetPinInfoByPinID(refPinID)
+	if err != nil {
+		isValidOperation = false
+		log.Printf("Failed to resolve PIN reference %s: %v, using original path", refPinID, err)
+		return path, "", "", isValidOperation
+	}
+
+	// Get firstPinID and firstPath from the referenced PIN
+	// If the referenced PIN is a create operation, use its PinID as firstPinID
+	// If the referenced PIN is a modify/revoke operation, use its FirstPinID
+	firstPinID := pinInfo.FirstPinID
+	firstPath := pinInfo.FirstPath
+
+	if firstPinID == "" {
+		// Fallback: if FirstPinID is not set, use the referenced PinID
+		firstPinID = refPinID
+		firstPath = pinInfo.Path
+	}
+
+	log.Printf("Resolved PIN reference: @%s -> %s (firstPinID: %s, firstPath: %s, operation: %s)",
+		refPinID, pinInfo.Path, firstPinID, firstPath, pinInfo.Operation)
+	return pinInfo.Path, firstPinID, firstPath, isValidOperation
+}
+
 // processChunkContent process and save chunk content
-func (s *IndexerService) processChunkContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
+func (s *IndexerService) processChunkContent(metaData *indexer.MetaIDData, firstPinID string, height, timestamp int64) error {
 	// Check if content is gzip compressed and decompress if needed
 	chunkContent := metaData.Content
 	isCompressed := isGzipCompressed(metaData.Content)
@@ -814,7 +1343,7 @@ func (s *IndexerService) processChunkContent(metaData *indexer.MetaIDData, heigh
 }
 
 // processIndexContent process and save index content, then merge chunks if all are available
-func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
+func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
 	// Get real creator address from CreatorInputLocation if available
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
@@ -949,8 +1478,19 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, heigh
 			return fmt.Errorf("failed to marshal metaFileIndex: %w", err)
 		}
 
+		// Determine firstPinID based on operation
+		fileFirstPinID := firstPinID
+		if fileFirstPinID == "" {
+			fileFirstPinID = indexPinID // Fallback to indexPinID
+		}
+		if metaData.Operation == "create" {
+			fileFirstPinID = indexPinID // For create, firstPinID = PinID
+		}
+
 		// Create database record for merged file
 		indexerFile := &model.IndexerFile{
+			FirstPinID:       fileFirstPinID,
+			FirstPath:        firstPath,
 			PinID:            indexPinID,
 			TxID:             metaData.TxID,
 			Vout:             metaData.Vout,
@@ -987,8 +1527,24 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, heigh
 			return fmt.Errorf("failed to save merged file to database: %w", err)
 		}
 
-		log.Printf("Merged file indexed successfully: PIN=%s, Name=%s, Type=%s, Ext=%s, Size=%d",
-			indexPinID, metaFileIndex.Name, fileType, fileExtension, metaFileIndex.FileSize)
+		// Add to file info history
+		fileHistory := &model.FileInfoHistory{
+			FirstPinID:  fileFirstPinID,
+			FirstPath:   firstPath,
+			PinID:       indexPinID,
+			Path:        metaData.Path,
+			Operation:   metaData.Operation,
+			ContentType: metaData.ContentType,
+			ChainName:   metaData.ChainName,
+			BlockHeight: height,
+			Timestamp:   timestamp,
+		}
+		if err := database.DB.AddFileInfoHistory(fileHistory, fileFirstPinID); err != nil {
+			log.Printf("Failed to add file info to history: %v", err)
+		}
+
+		log.Printf("Merged file indexed successfully (%s): PIN=%s, FirstPIN=%s, Name=%s, Type=%s, Size=%d",
+			metaData.Operation, indexPinID, fileFirstPinID, metaFileIndex.Name, fileType, metaFileIndex.FileSize)
 	} else {
 		log.Printf("Not all chunks available yet for index PIN=%s. Chunks found: %d/%d",
 			indexPinID, len(chunks), metaFileIndex.ChunkNumber)

@@ -85,6 +85,13 @@ type IndexerStatsResponse struct {
 	TotalFiles int64 `json:"total_files" example:"12345"`
 }
 
+// UserInfoListResponse user info list response structure
+type UserInfoListResponse struct {
+	Users      []*model.IndexerUserInfo `json:"users"`
+	NextCursor int64                    `json:"next_cursor" example:"100"`
+	HasMore    bool                     `json:"has_more" example:"true"`
+}
+
 // ToIndexerFileResponse convert model to response
 func ToIndexerFileResponse(file *model.IndexerFile) IndexerFileResponse {
 	if file == nil {
@@ -190,5 +197,14 @@ func ToIndexerSyncStatusResponse(status *model.IndexerSyncStatus, latestBlockHei
 func ToIndexerStatsResponse(totalFiles int64) IndexerStatsResponse {
 	return IndexerStatsResponse{
 		TotalFiles: totalFiles,
+	}
+}
+
+// ToUserInfoListResponse convert to user info list response
+func ToUserInfoListResponse(users []*model.IndexerUserInfo, nextCursor int64, hasMore bool) UserInfoListResponse {
+	return UserInfoListResponse{
+		Users:      users,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
 	}
 }

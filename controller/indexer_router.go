@@ -73,29 +73,45 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 			files.GET("/metaid/:metaId", indexerQueryHandler.GetByCreatorMetaID)
 		}
 
-		// Indexer avatar query routes
-		avatars := v1.Group("/avatars")
+		// Indexer avatar query routes - DEPRECATED (commented out)
+		// avatars := v1.Group("/avatars")
+		// {
+		// 	// Get avatar list (cursor pagination)
+		// 	avatars.GET("", indexerQueryHandler.ListAvatars)
+		//
+		// 	// Get avatar content by PIN ID
+		// 	avatars.GET("/content/:pinId", indexerQueryHandler.GetAvatarContent)
+		//
+		// 	// Get accelerated avatar content redirect to OSS by PIN ID
+		// 	avatars.GET("/accelerate/content/:pinId", indexerQueryHandler.GetFastAvatarContent)
+		//
+		// 	// Get latest avatar by MetaID
+		// 	avatars.GET("/metaid/:metaId", indexerQueryHandler.GetLatestAvatarByMetaID)
+		//
+		// 	// Get accelerated avatar redirect to OSS by MetaID
+		// 	avatars.GET("/accelerate/metaid/:metaId", indexerQueryHandler.GetFastAvatarByMetaID)
+		//
+		// 	// Get latest avatar by address
+		// 	avatars.GET("/address/:address", indexerQueryHandler.GetLatestAvatarByAddress)
+		//
+		// 	// Get accelerated avatar redirect to OSS by address
+		// 	avatars.GET("/accelerate/address/:address", indexerQueryHandler.GetFastAvatarByAddress)
+		// }
+
+		// Indexer user info query routes
+		users := v1.Group("/users")
 		{
-			// Get avatar list (cursor pagination)
-			avatars.GET("", indexerQueryHandler.ListAvatars)
+			// Get user info list (cursor pagination)
+			users.GET("", indexerQueryHandler.ListUserInfo)
+
+			// Get user info by MetaID
+			users.GET("/metaid/:metaId", indexerQueryHandler.GetUserInfoByMetaID)
+
+			// Get user info by address
+			users.GET("/address/:address", indexerQueryHandler.GetUserInfoByAddress)
 
 			// Get avatar content by PIN ID
-			avatars.GET("/content/:pinId", indexerQueryHandler.GetAvatarContent)
-
-			// Get accelerated avatar content redirect to OSS by PIN ID
-			avatars.GET("/accelerate/content/:pinId", indexerQueryHandler.GetFastAvatarContent)
-
-			// Get latest avatar by MetaID
-			avatars.GET("/metaid/:metaId", indexerQueryHandler.GetLatestAvatarByMetaID)
-
-			// Get accelerated avatar redirect to OSS by MetaID
-			avatars.GET("/accelerate/metaid/:metaId", indexerQueryHandler.GetFastAvatarByMetaID)
-
-			// Get latest avatar by address
-			avatars.GET("/address/:address", indexerQueryHandler.GetLatestAvatarByAddress)
-
-			// Get accelerated avatar redirect to OSS by address
-			avatars.GET("/accelerate/address/:address", indexerQueryHandler.GetFastAvatarByAddress)
+			users.GET("/avatar/content/:pinId", indexerQueryHandler.GetAvatarContentByPinID)
 		}
 
 		// Sync status route
