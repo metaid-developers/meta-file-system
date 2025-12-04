@@ -25,8 +25,9 @@ type BlockScanner struct {
 	interval    time.Duration
 	chainType   ChainType // Chain type: btc or mvc
 	progressBar *progressbar.ProgressBar
-	zmqClient   *ZMQClient // ZMQ client for real-time transaction monitoring
-	zmqEnabled  bool       // Whether ZMQ is enabled
+	zmqClient   *ZMQClient    // ZMQ client for real-time transaction monitoring
+	zmqEnabled  bool          // Whether ZMQ is enabled
+	parser      *MetaIDParser // Shared parser to avoid repeated allocation
 }
 
 // NewBlockScanner create block scanner (default MVC)
@@ -51,6 +52,7 @@ func NewBlockScannerWithChain(rpcURL, rpcUser, rpcPassword string, startHeight i
 		interval:    time.Duration(interval) * time.Second,
 		chainType:   chainType,
 		zmqEnabled:  false,
+		parser:      NewMetaIDParser(""), // Create shared parser once
 	}
 }
 
@@ -195,6 +197,121 @@ func (s *BlockScanner) GetRawTransaction(txid string) (string, error) {
 	return txHex, nil
 }
 
+// GetRawMempool get all transaction IDs in mempool
+func (s *BlockScanner) GetRawMempool() ([]string, error) {
+	request := RPCRequest{
+		Jsonrpc: "1.0",
+		ID:      "getrawmempool",
+		Method:  "getrawmempool",
+		Params:  []interface{}{false}, // verbose=false, return array of txids
+	}
+
+	response, err := s.rpcCall(request)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.Error != nil {
+		return nil, fmt.Errorf("rpc error: %s", response.Error.Message)
+	}
+
+	// Response should be an array of transaction IDs
+	txidsInterface, ok := response.Result.([]interface{})
+	if !ok {
+		return nil, errors.New("invalid mempool response format")
+	}
+
+	txids := make([]string, 0, len(txidsInterface))
+	for _, txidInterface := range txidsInterface {
+		if txid, ok := txidInterface.(string); ok {
+			txids = append(txids, txid)
+		}
+	}
+
+	return txids, nil
+}
+
+// ScanMempool scan all transactions in mempool and process MetaID transactions
+// Returns the number of processed MetaID transactions
+func (s *BlockScanner) ScanMempool(handler func(tx interface{}, metaDataTx *MetaIDDataTx, height, timestamp int64) error) (int, error) {
+	// Get all transaction IDs in mempool
+	txids, err := s.GetRawMempool()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get mempool: %w", err)
+	}
+
+	if len(txids) == 0 {
+		log.Printf("[%s] Mempool is empty", s.chainType)
+		return 0, nil
+	}
+
+	log.Printf("[%s] Scanning %d transactions in mempool...", s.chainType, len(txids))
+
+	processedCount := 0
+	metaidPinCount := 0
+	currentTime := time.Now().UnixMilli()
+
+	for i, txid := range txids {
+		// Get raw transaction hex
+		txHex, err := s.GetRawTransaction(txid)
+		if err != nil {
+			log.Printf("[%s] Failed to get transaction %s from mempool: %v", s.chainType, txid, err)
+			continue
+		}
+
+		// Decode hex to bytes
+		txBytes, err := hex.DecodeString(txHex)
+		if err != nil {
+			log.Printf("[%s] Failed to decode transaction hex: %v", s.chainType, err)
+			continue
+		}
+
+		// Deserialize transaction based on chain type
+		var tx interface{}
+		if s.chainType == ChainTypeBTC {
+			var btcTx btcwire.MsgTx
+			if err := btcTx.Deserialize(bytes.NewReader(txBytes)); err != nil {
+				log.Printf("[%s] Failed to deserialize BTC transaction: %v", s.chainType, err)
+				continue
+			}
+			tx = &btcTx
+		} else {
+			var mvcTx wire.MsgTx
+			if err := mvcTx.Deserialize(bytes.NewReader(txBytes)); err != nil {
+				log.Printf("[%s] Failed to deserialize MVC transaction: %v", s.chainType, err)
+				continue
+			}
+			tx = &mvcTx
+		}
+
+		// Parse MetaID data using shared parser
+		metaDataTx, err := s.parser.ParseAllPINs(tx, s.chainType)
+		if err != nil || metaDataTx == nil {
+			// not MetaID transaction, skip
+			continue
+		}
+
+		metaidPinCount += len(metaDataTx.MetaIDData)
+
+		// Call handler with height=0 (mempool transaction)
+		if err := handler(tx, metaDataTx, 0, currentTime); err != nil {
+			log.Printf("[%s] Failed to handle mempool transaction %s: %v", s.chainType, metaDataTx.TxID, err)
+		} else {
+			processedCount++
+		}
+
+		// Log progress every 100 transactions
+		if (i+1)%100 == 0 {
+			log.Printf("[%s] Mempool scan progress: %d/%d transactions processed", s.chainType, i+1, len(txids))
+		}
+	}
+
+	log.Printf("[%s] Mempool scan complete: processed %d MetaID transactions with %d PINs from %d total transactions",
+		s.chainType, processedCount, metaidPinCount, len(txids))
+
+	return processedCount, nil
+}
+
 // GetBlockMsg get block message (MsgBlock) with all transactions
 // Returns interface{} which can be *wire.MsgBlock (MVC) or *btcwire.MsgBlock (BTC)
 func (s *BlockScanner) GetBlockMsg(height int64) (interface{}, int, error) {
@@ -251,8 +368,8 @@ func (s *BlockScanner) ScanBlock(height int64, handler func(tx interface{}, meta
 	processedCount := 0
 	metaidPinCount := 0
 
-	// Create parser
-	parser := NewMetaIDParser("")
+	// Use shared parser to avoid repeated allocation
+	// Note: parser := NewMetaIDParser("") removed to reduce memory allocation
 
 	// Process transactions based on chain type
 	if s.chainType == ChainTypeBTC {
@@ -265,8 +382,8 @@ func (s *BlockScanner) ScanBlock(height int64, handler func(tx interface{}, meta
 
 		// Traverse transactions
 		for _, tx := range btcBlock.Transactions {
-			// Parse MetaID data
-			metaDataTx, err := parser.ParseAllPINs(tx, ChainTypeBTC)
+			// Parse MetaID data using shared parser
+			metaDataTx, err := s.parser.ParseAllPINs(tx, ChainTypeBTC)
 			if err != nil {
 				// not MetaID transaction, skip
 				continue
@@ -294,8 +411,8 @@ func (s *BlockScanner) ScanBlock(height int64, handler func(tx interface{}, meta
 
 		// Traverse transactions
 		for _, tx := range mvcBlock.Transactions {
-			// Parse MetaID data
-			metaDataTx, err := parser.ParseAllPINs(tx, ChainTypeMVC)
+			// Parse MetaID data using shared parser
+			metaDataTx, err := s.parser.ParseAllPINs(tx, ChainTypeMVC)
 			if err != nil {
 				// not MetaID transaction, skip
 				continue
@@ -304,6 +421,10 @@ func (s *BlockScanner) ScanBlock(height int64, handler func(tx interface{}, meta
 				// not MetaID transaction, skip
 				continue
 			}
+			// has
+			// for _, pin := range metaDataTx.MetaIDData {
+			// 	if
+			// }
 
 			// Call handler
 			if err := handler(tx, metaDataTx, height, timestamp); err != nil {
@@ -383,6 +504,7 @@ func (s *BlockScanner) Start(
 
 			// Finish progress bar
 			s.progressBar.Finish()
+			s.progressBar = nil // Clear reference to help GC
 			log.Printf("\nCompleted scanning to block %d", latestHeight)
 
 			// Start ZMQ client after catching up to latest block (only once)

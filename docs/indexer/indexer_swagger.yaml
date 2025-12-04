@@ -1,70 +1,5 @@
 basePath: /api/v1
 definitions:
-  meta-file-system_controller_respond.IndexerAvatarListResponse:
-    properties:
-      avatars:
-        items:
-          $ref: '#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse'
-        type: array
-      has_more:
-        example: true
-        type: boolean
-      next_cursor:
-        example: 100
-        type: integer
-    type: object
-  meta-file-system_controller_respond.IndexerAvatarResponse:
-    properties:
-      address:
-        example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
-        type: string
-      avatar:
-        example: indexer/avatar/mvc/xyz789/xyz789i0.jpg
-        type: string
-      block_height:
-        example: 12345
-        type: integer
-      chain_name:
-        example: mvc
-        type: string
-      content_type:
-        example: image/jpeg
-        type: string
-      created_at:
-        example: "2024-01-01T00:00:00Z"
-        type: string
-      file_extension:
-        example: .jpg
-        type: string
-      file_hash:
-        example: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-        type: string
-      file_md5:
-        example: d41d8cd98f00b204e9800998ecf8427e
-        type: string
-      file_size:
-        example: 102400
-        type: integer
-      file_type:
-        example: image
-        type: string
-      meta_id:
-        example: abc123def456...
-        type: string
-      pin_id:
-        description: ID            int64     `json:"id" example:"1"`
-        example: xyz789i0
-        type: string
-      timestamp:
-        example: 1699999999
-        type: integer
-      tx_id:
-        example: xyz789
-        type: string
-      updated_at:
-        example: "2024-01-01T00:00:00Z"
-        type: string
-    type: object
   meta-file-system_controller_respond.IndexerFileListResponse:
     properties:
       files:
@@ -143,8 +78,51 @@ definitions:
         example: abc123def456789
         type: string
     type: object
+  meta-file-system_controller_respond.IndexerMultiChainSyncStatusResponse:
+    properties:
+      chains:
+        items:
+          $ref: '#/definitions/meta-file-system_controller_respond.IndexerSyncStatusResponse'
+        type: array
+    type: object
+  meta-file-system_controller_respond.IndexerPinInfoResponse:
+    properties:
+      block_height:
+        example: 12345
+        type: integer
+      chain_name:
+        example: mvc
+        type: string
+      content_type:
+        example: text/plain
+        type: string
+      first_path:
+        example: /protocols/simplebuzz/info/name
+        type: string
+      first_pin_id:
+        example: xyz789i0
+        type: string
+      operation:
+        example: modify
+        type: string
+      path:
+        example: '@xyz789i0'
+        type: string
+      pin_id:
+        example: abc123def456i0
+        type: string
+      timestamp:
+        example: 1699999999
+        type: integer
+    type: object
   meta-file-system_controller_respond.IndexerStatsResponse:
     properties:
+      chain_stats:
+        additionalProperties:
+          format: int64
+          type: integer
+        description: Per-chain file counts
+        type: object
       total_files:
         example: 12345
         type: integer
@@ -168,6 +146,126 @@ definitions:
         example: "2024-01-01T00:00:00Z"
         type: string
     type: object
+  meta-file-system_controller_respond.MetaIDUserInfo:
+    properties:
+      address:
+        example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+        type: string
+      avatar:
+        example: https://oss.example.com/avatar.jpg
+        type: string
+      avatarId:
+        example: xyz789i0
+        type: string
+      chatpubkey:
+        example: 02abc123...
+        type: string
+      chatpubkeyId:
+        example: def456i0
+        type: string
+      metaid:
+        example: abc123def456...
+        type: string
+      name:
+        example: John Doe
+        type: string
+    type: object
+  meta-file-system_controller_respond.RescanRequest:
+    properties:
+      chain:
+        example: mvc
+        type: string
+      end_height:
+        example: 100100
+        type: integer
+      start_height:
+        example: 100000
+        type: integer
+    required:
+    - chain
+    - end_height
+    - start_height
+    type: object
+  meta-file-system_controller_respond.RescanResponse:
+    properties:
+      chain:
+        example: mvc
+        type: string
+      end_height:
+        example: 100100
+        type: integer
+      message:
+        example: Block rescan task started successfully
+        type: string
+      start_height:
+        example: 100000
+        type: integer
+      task_id:
+        example: rescan_mvc_100000_100100_1699999999
+        type: string
+    type: object
+  meta-file-system_controller_respond.RescanStatusResponse:
+    properties:
+      chain:
+        example: mvc
+        type: string
+      current_height:
+        example: 100050
+        type: integer
+      elapsed_time:
+        description: milliseconds
+        example: 4050
+        type: integer
+      end_height:
+        example: 100100
+        type: integer
+      error_message:
+        example: ""
+        type: string
+      estimated_time_left:
+        description: milliseconds
+        example: 4100
+        type: integer
+      processed_blocks:
+        example: 50
+        type: integer
+      progress:
+        description: percentage
+        example: 49.5
+        type: number
+      speed:
+        description: blocks per second
+        example: 12.34
+        type: number
+      start_height:
+        example: 100000
+        type: integer
+      start_time:
+        example: 1699999999
+        type: integer
+      status:
+        description: idle, running, completed, cancelled, failed
+        example: running
+        type: string
+      task_id:
+        example: rescan_mvc_100000_100100_1699999999
+        type: string
+      total_blocks:
+        example: 101
+        type: integer
+    type: object
+  meta-file-system_controller_respond.RescanStopResponse:
+    properties:
+      message:
+        example: Rescan task stopped successfully
+        type: string
+      status:
+        example: cancelled
+        type: string
+      task_id:
+        example: rescan_mvc_100000_100100_1699999999
+        type: string
+    type: object
   meta-file-system_controller_respond.Response:
     description: Unified API response structure
     properties:
@@ -180,6 +278,59 @@ definitions:
         type: string
       processingTime:
         example: 123
+        type: integer
+    type: object
+  meta-file-system_controller_respond.UserInfoListResponse:
+    properties:
+      has_more:
+        example: true
+        type: boolean
+      next_cursor:
+        example: 100
+        type: integer
+      total:
+        description: Total number of users
+        example: 1000
+        type: integer
+      users:
+        items:
+          $ref: '#/definitions/model.IndexerUserInfo'
+        type: array
+    type: object
+  model.IndexerUserInfo:
+    properties:
+      address:
+        description: 用户地址
+        type: string
+      avatar:
+        description: 头像路径
+        type: string
+      avatarPinId:
+        description: 头像 PIN ID
+        type: string
+      blockHeight:
+        description: 区块高度
+        type: integer
+      chainName:
+        description: 链名称
+        type: string
+      chatPublicKey:
+        description: 聊天公钥
+        type: string
+      chatPublicKeyPinId:
+        description: 聊天公钥 PIN ID
+        type: string
+      metaId:
+        description: 用户 MetaID
+        type: string
+      name:
+        description: 用户名称
+        type: string
+      namePinId:
+        description: 用户名称 PIN ID
+        type: string
+      timestamp:
+        description: 时间戳
         type: integer
     type: object
 host: localhost:7281
@@ -197,22 +348,19 @@ info:
   title: Meta File System Indexer API
   version: "1.0"
 paths:
-  /avatars:
-    get:
+  /admin/rescan:
+    post:
       consumes:
       - application/json
-      description: Query avatar list with cursor pagination
+      description: Trigger asynchronous rescan of blocks within specified height range
+        for a specific chain
       parameters:
-      - default: 0
-        description: Cursor (last avatar ID)
-        in: query
-        name: cursor
-        type: integer
-      - default: 20
-        description: Page size
-        in: query
-        name: size
-        type: integer
+      - description: Rescan request parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/meta-file-system_controller_respond.RescanRequest'
       produces:
       - application/json
       responses:
@@ -223,128 +371,24 @@ paths:
             - $ref: '#/definitions/meta-file-system_controller_respond.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerAvatarListResponse'
+                  $ref: '#/definitions/meta-file-system_controller_respond.RescanResponse'
               type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/meta-file-system_controller_respond.Response'
-      summary: Query avatar list
-      tags:
-      - Indexer Avatar Query
-  /avatars/accelerate/address/{address}:
-    get:
-      consumes:
-      - application/json
-      description: Redirect to OSS URL for latest avatar by address, supports preview/thumbnail
-        processing
-      parameters:
-      - description: Address
-        in: path
-        name: address
-        type: string
-      - description: 'Process type: preview (640px), thumbnail (128x128), empty for
-          original'
-        in: query
-        name: process
-        type: string
-      produces:
-      - application/json
-      responses:
-        "307":
-          description: Redirect to OSS URL
-          schema:
-            type: string
-        "404":
-          description: Not Found
+        "400":
+          description: Bad Request
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
-      summary: Get accelerated avatar by address (redirect to OSS)
+      summary: Rescan blocks
       tags:
-      - Indexer Avatar Query
-  /avatars/accelerate/content/{pinId}:
+      - Indexer Admin
+  /admin/rescan/status:
     get:
       consumes:
       - application/json
-      description: Redirect to OSS URL for avatar content by PIN ID, supports preview/thumbnail
-        processing
-      parameters:
-      - description: PIN ID
-        in: path
-        name: pinId
-        type: string
-      - description: 'Process type: preview (640px), thumbnail (128x128), empty for
-          original'
-        in: query
-        name: process
-        type: string
-      produces:
-      - application/json
-      responses:
-        "307":
-          description: Redirect to OSS URL
-          schema:
-            type: string
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/meta-file-system_controller_respond.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/meta-file-system_controller_respond.Response'
-      summary: Get accelerated avatar content (redirect to OSS)
-      tags:
-      - Indexer Avatar Query
-  /avatars/accelerate/metaid/{metaId}:
-    get:
-      consumes:
-      - application/json
-      description: Redirect to OSS URL for latest avatar by MetaID, supports preview/thumbnail
-        processing
-      parameters:
-      - description: MetaID
-        in: path
-        name: metaId
-        type: string
-      - description: 'Process type: preview (640px), thumbnail (128x128), empty for
-          original'
-        in: query
-        name: process
-        type: string
-      produces:
-      - application/json
-      responses:
-        "307":
-          description: Redirect to OSS URL
-          schema:
-            type: string
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/meta-file-system_controller_respond.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/meta-file-system_controller_respond.Response'
-      summary: Get accelerated avatar by MetaID (redirect to OSS)
-      tags:
-      - Indexer Avatar Query
-  /avatars/address/{address}:
-    get:
-      consumes:
-      - application/json
-      description: Query the latest avatar information by address
-      parameters:
-      - description: Address
-        in: path
-        name: address
-        required: true
-        type: string
+      description: Get current rescan task status
       produces:
       - application/json
       responses:
@@ -355,51 +399,20 @@ paths:
             - $ref: '#/definitions/meta-file-system_controller_respond.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse'
+                  $ref: '#/definitions/meta-file-system_controller_respond.RescanStatusResponse'
               type: object
-        "404":
-          description: Not Found
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
-      summary: Get latest avatar by address
+      summary: Get rescan status
       tags:
-      - Indexer Avatar Query
-  /avatars/content/{pinId}:
-    get:
+      - Indexer Admin
+  /admin/rescan/stop:
+    post:
       consumes:
       - application/json
-      description: Get avatar content by PIN ID
-      parameters:
-      - description: PIN ID
-        in: path
-        name: pinId
-        required: true
-        type: string
-      produces:
-      - application/octet-stream
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: file
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/meta-file-system_controller_respond.Response'
-      summary: Get avatar content
-      tags:
-      - Indexer Avatar Query
-  /avatars/metaid/{metaId}:
-    get:
-      consumes:
-      - application/json
-      description: Query the latest avatar information by MetaID
-      parameters:
-      - description: MetaID
-        in: path
-        name: metaId
-        required: true
-        type: string
+      description: Stop the current rescan task
       produces:
       - application/json
       responses:
@@ -410,15 +423,19 @@ paths:
             - $ref: '#/definitions/meta-file-system_controller_respond.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse'
+                  $ref: '#/definitions/meta-file-system_controller_respond.RescanStopResponse'
               type: object
-        "404":
-          description: Not Found
+        "400":
+          description: Bad Request
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
-      summary: Get latest avatar by MetaID
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Stop rescan
       tags:
-      - Indexer Avatar Query
+      - Indexer Admin
   /files:
     get:
       consumes:
@@ -518,6 +535,40 @@ paths:
       summary: Get accelerated file content (redirect to OSS)
       tags:
       - Indexer File Query
+  /files/accelerate/content/latest/{firstPinId}:
+    get:
+      consumes:
+      - application/json
+      description: Redirect to OSS URL for latest file content by first PIN ID, supports
+        preview/thumbnail/video processing
+      parameters:
+      - description: First PIN ID
+        in: path
+        name: firstPinId
+        type: string
+      - description: 'Process type: preview (640px for image), thumbnail (235px for
+          image), video (first frame for video), empty for original'
+        in: query
+        name: process
+        type: string
+      produces:
+      - application/json
+      responses:
+        "307":
+          description: Redirect to OSS URL
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get latest accelerated file content (redirect to OSS)
+      tags:
+      - Indexer File Query
   /files/content/{pinId}:
     get:
       consumes:
@@ -541,6 +592,31 @@ paths:
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
       summary: Get file content
+      tags:
+      - Indexer File Query
+  /files/content/latest/{firstPinId}:
+    get:
+      consumes:
+      - application/json
+      description: Get latest file content by first PIN ID
+      parameters:
+      - description: First PIN ID
+        in: path
+        name: firstPinId
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get latest file content
       tags:
       - Indexer File Query
   /files/creator/{address}:
@@ -583,6 +659,36 @@ paths:
       summary: Get files by creator address
       tags:
       - Indexer File Query
+  /files/latest/{firstPinId}:
+    get:
+      consumes:
+      - application/json
+      description: Query latest file details by first PIN ID
+      parameters:
+      - description: First PIN ID
+        in: path
+        name: firstPinId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get latest file by first PIN ID
+      tags:
+      - Indexer File Query
   /files/metaid/{metaId}:
     get:
       consumes:
@@ -623,11 +729,143 @@ paths:
       summary: Get files by creator MetaID
       tags:
       - Indexer File Query
+  /info/address/{address}:
+    get:
+      consumes:
+      - application/json
+      description: Query user information in MetaID format by address
+      parameters:
+      - description: Address
+        in: path
+        name: address
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.MetaIDUserInfo'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get MetaID user info by address
+      tags:
+      - Indexer User Info
+  /info/metaid/{metaid}:
+    get:
+      consumes:
+      - application/json
+      description: Query user information in MetaID format by MetaID
+      parameters:
+      - description: MetaID
+        in: path
+        name: metaid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.MetaIDUserInfo'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get MetaID user info by MetaID
+      tags:
+      - Indexer User Info
+  /info/search:
+    get:
+      consumes:
+      - application/json
+      description: Fuzzy search user information by keyword and keytype (metaid or
+        name)
+      parameters:
+      - description: Search keyword (partial MetaID or Name)
+        in: query
+        name: keyword
+        required: true
+        type: string
+      - description: 'Key type: metaid (fuzzy) or name (fuzzy)'
+        in: query
+        name: keytype
+        required: true
+        type: string
+      - description: 'Result limit (default: 10, max: 100)'
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/meta-file-system_controller_respond.MetaIDUserInfo'
+                  type: array
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Search MetaID user info (fuzzy)
+      tags:
+      - Indexer User Info
+  /pins/{pinId}:
+    get:
+      consumes:
+      - application/json
+      description: Query PIN details from collectionPinInfo by PIN ID
+      parameters:
+      - description: PIN ID
+        in: path
+        name: pinId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerPinInfoResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get PIN info by PIN ID
+      tags:
+      - Indexer PIN Query
   /stats:
     get:
       consumes:
       - application/json
-      description: Get indexer statistics (total files count, etc.)
+      description: Get indexer statistics (total files count and per-chain breakdown)
       produces:
       - application/json
       responses:
@@ -651,8 +889,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get indexer synchronization status (includes latest block height
-        from node)
+      description: Get current sync status for all chains (current sync height and
+        latest block height)
       produces:
       - application/json
       responses:
@@ -663,7 +901,7 @@ paths:
             - $ref: '#/definitions/meta-file-system_controller_respond.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerSyncStatusResponse'
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerMultiChainSyncStatusResponse'
               type: object
         "500":
           description: Internal Server Error
@@ -672,6 +910,191 @@ paths:
       summary: Get sync status
       tags:
       - Indexer Status
+  /users:
+    get:
+      consumes:
+      - application/json
+      description: Query user info list with cursor pagination
+      parameters:
+      - default: 0
+        description: Cursor
+        in: query
+        name: cursor
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.UserInfoListResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Query user info list
+      tags:
+      - Indexer User Info
+  /users/address/{address}:
+    get:
+      consumes:
+      - application/json
+      description: Query user information (name, avatar, chat public key) by address
+      parameters:
+      - description: Address
+        in: path
+        name: address
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.IndexerUserInfo'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get user info by address
+      tags:
+      - Indexer User Info
+  /users/avatar/accelerate/{pinId}:
+    get:
+      consumes:
+      - application/json
+      description: Redirect to OSS URL for avatar content by avatar PIN ID, supports
+        preview/thumbnail processing
+      parameters:
+      - description: Avatar PIN ID
+        in: path
+        name: pinId
+        required: true
+        type: string
+      - description: 'Process type: preview (640px), thumbnail (128px), empty for
+          original'
+        in: query
+        name: process
+        type: string
+      produces:
+      - application/json
+      responses:
+        "307":
+          description: Redirect to OSS URL
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get accelerated avatar content (redirect to OSS)
+      tags:
+      - Indexer User Info
+  /users/avatar/content/{pinId}:
+    get:
+      consumes:
+      - application/json
+      description: Get specific avatar version content by avatar PIN ID
+      parameters:
+      - description: Avatar PIN ID
+        in: path
+        name: pinId
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Avatar content
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get avatar content by PIN ID
+      tags:
+      - Indexer User Info
+  /users/metaid/{metaId}:
+    get:
+      consumes:
+      - application/json
+      description: Query user information (name, avatar, chat public key) by MetaID
+      parameters:
+      - description: MetaID
+        in: path
+        name: metaId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.IndexerUserInfo'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get user info by MetaID
+      tags:
+      - Indexer User Info
+  /users/metaid/{metaId}/avatar:
+    get:
+      consumes:
+      - application/json
+      description: Get avatar content by user MetaID, returns content from storage
+        or redirects to OSS
+      parameters:
+      - description: User MetaID
+        in: path
+        name: metaId
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Avatar content
+          schema:
+            type: file
+        "307":
+          description: Redirect to OSS URL
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get avatar content by MetaID
+      tags:
+      - Indexer User Info
 schemes:
 - https
 - http

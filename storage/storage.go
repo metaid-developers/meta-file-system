@@ -43,6 +43,12 @@ func NewStorage() (Storage, error) {
 	case "oss":
 		return NewOSSStorage(conf.Cfg.Storage.OSS.Endpoint, conf.Cfg.Storage.OSS.AccessKey,
 			conf.Cfg.Storage.OSS.SecretKey, conf.Cfg.Storage.OSS.Bucket)
+	case "s3":
+		return NewS3Storage(conf.Cfg.Storage.S3.Region, conf.Cfg.Storage.S3.Endpoint,
+			conf.Cfg.Storage.S3.AccessKey, conf.Cfg.Storage.S3.SecretKey, conf.Cfg.Storage.S3.Bucket)
+	case "minio":
+		return NewMinIOStorage(conf.Cfg.Storage.MinIO.Endpoint, conf.Cfg.Storage.MinIO.AccessKey,
+			conf.Cfg.Storage.MinIO.SecretKey, conf.Cfg.Storage.MinIO.Bucket)
 	default:
 		// Default to local storage
 		return NewLocalStorage(conf.Cfg.Storage.Local.BasePath)

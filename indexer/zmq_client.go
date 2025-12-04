@@ -40,8 +40,8 @@ type ZMQClient struct {
 	// Chain type
 	chainType ChainType
 
-	// Transaction handler
-	txHandler func(tx interface{}, metaDataTx *MetaIDDataTx) error
+	// Transaction handler (exported for external access)
+	TxHandler func(tx interface{}, metaDataTx *MetaIDDataTx) error
 }
 
 // MessageHandler is the function type for handling ZMQ messages
@@ -63,7 +63,7 @@ func NewZMQClient(address string, chainType ChainType) *ZMQClient {
 
 // SetTransactionHandler set transaction handler for processing MetaID transactions
 func (c *ZMQClient) SetTransactionHandler(handler func(tx interface{}, metaDataTx *MetaIDDataTx) error) {
-	c.txHandler = handler
+	c.TxHandler = handler
 }
 
 // AddTopic adds a topic to listen to and its handler
@@ -221,8 +221,8 @@ func (c *ZMQClient) handleRawTx(topic string, data []byte) error {
 		metaDataTx.TxID, metaDataTx.ChainName, len(metaDataTx.MetaIDData))
 
 	// Call transaction handler if set
-	if c.txHandler != nil {
-		if err := c.txHandler(tx, metaDataTx); err != nil {
+	if c.TxHandler != nil {
+		if err := c.TxHandler(tx, metaDataTx); err != nil {
 			return fmt.Errorf("failed to handle transaction: %w", err)
 		}
 	}

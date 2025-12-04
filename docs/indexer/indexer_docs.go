@@ -24,9 +24,9 @@ const docTemplateindexer = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/avatars": {
-            "get": {
-                "description": "Query avatar list with cursor pagination",
+        "/admin/rescan": {
+            "post": {
+                "description": "Trigger asynchronous rescan of blocks within specified height range for a specific chain",
                 "consumes": [
                     "application/json"
                 ],
@@ -34,23 +34,18 @@ const docTemplateindexer = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Indexer Avatar Query"
+                    "Indexer Admin"
                 ],
-                "summary": "Query avatar list",
+                "summary": "Rescan blocks",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "Cursor (last avatar ID)",
-                        "name": "cursor",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 20,
-                        "description": "Page size",
-                        "name": "size",
-                        "in": "query"
+                        "description": "Rescan request parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.RescanRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -65,7 +60,54 @@ const docTemplateindexer = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerAvatarListResponse"
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.RescanResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/rescan/status": {
+            "get": {
+                "description": "Get current rescan task status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer Admin"
+                ],
+                "summary": "Get rescan status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.RescanStatusResponse"
                                         }
                                     }
                                 }
@@ -81,9 +123,9 @@ const docTemplateindexer = `{
                 }
             }
         },
-        "/avatars/accelerate/address/{address}": {
-            "get": {
-                "description": "Redirect to OSS URL for latest avatar by address, supports preview/thumbnail processing",
+        "/admin/rescan/stop": {
+            "post": {
+                "description": "Stop the current rescan task",
                 "consumes": [
                     "application/json"
                 ],
@@ -91,165 +133,9 @@ const docTemplateindexer = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Indexer Avatar Query"
+                    "Indexer Admin"
                 ],
-                "summary": "Get accelerated avatar by address (redirect to OSS)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Address",
-                        "name": "address",
-                        "in": "path"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Process type: preview (640px), thumbnail (128x128), empty for original",
-                        "name": "process",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "307": {
-                        "description": "Redirect to OSS URL",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/avatars/accelerate/content/{pinId}": {
-            "get": {
-                "description": "Redirect to OSS URL for avatar content by PIN ID, supports preview/thumbnail processing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Indexer Avatar Query"
-                ],
-                "summary": "Get accelerated avatar content (redirect to OSS)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "PIN ID",
-                        "name": "pinId",
-                        "in": "path"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Process type: preview (640px), thumbnail (128x128), empty for original",
-                        "name": "process",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "307": {
-                        "description": "Redirect to OSS URL",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/avatars/accelerate/metaid/{metaId}": {
-            "get": {
-                "description": "Redirect to OSS URL for latest avatar by MetaID, supports preview/thumbnail processing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Indexer Avatar Query"
-                ],
-                "summary": "Get accelerated avatar by MetaID (redirect to OSS)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "MetaID",
-                        "name": "metaId",
-                        "in": "path"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Process type: preview (640px), thumbnail (128x128), empty for original",
-                        "name": "process",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "307": {
-                        "description": "Redirect to OSS URL",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/avatars/address/{address}": {
-            "get": {
-                "description": "Query the latest avatar information by address",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Indexer Avatar Query"
-                ],
-                "summary": "Get latest avatar by address",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Address",
-                        "name": "address",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
+                "summary": "Stop rescan",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -262,103 +148,21 @@ const docTemplateindexer = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse"
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.RescanStopResponse"
                                         }
                                     }
                                 }
                             ]
                         }
                     },
-                    "404": {
-                        "description": "Not Found",
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/meta-file-system_controller_respond.Response"
                         }
-                    }
-                }
-            }
-        },
-        "/avatars/content/{pinId}": {
-            "get": {
-                "description": "Get avatar content by PIN ID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/octet-stream"
-                ],
-                "tags": [
-                    "Indexer Avatar Query"
-                ],
-                "summary": "Get avatar content",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "PIN ID",
-                        "name": "pinId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "file"
-                        }
                     },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/avatars/metaid/{metaId}": {
-            "get": {
-                "description": "Query the latest avatar information by MetaID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Indexer Avatar Query"
-                ],
-                "summary": "Get latest avatar by MetaID",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "MetaID",
-                        "name": "metaId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/meta-file-system_controller_respond.Response"
                         }
@@ -423,6 +227,55 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "/files/accelerate/content/latest/{firstPinId}": {
+            "get": {
+                "description": "Redirect to OSS URL for latest file content by first PIN ID, supports preview/thumbnail/video processing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer File Query"
+                ],
+                "summary": "Get latest accelerated file content (redirect to OSS)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "First PIN ID",
+                        "name": "firstPinId",
+                        "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Process type: preview (640px for image), thumbnail (235px for image), video (first frame for video), empty for original",
+                        "name": "process",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect to OSS URL",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/files/accelerate/content/{pinId}": {
             "get": {
                 "description": "Redirect to OSS URL for file content by PIN ID, supports preview/thumbnail/video processing",
@@ -465,6 +318,44 @@ const docTemplateindexer = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/content/latest/{firstPinId}": {
+            "get": {
+                "description": "Get latest file content by first PIN ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Indexer File Query"
+                ],
+                "summary": "Get latest file content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "First PIN ID",
+                        "name": "firstPinId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/meta-file-system_controller_respond.Response"
                         }
@@ -567,6 +458,56 @@ const docTemplateindexer = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/latest/{firstPinId}": {
+            "get": {
+                "description": "Query latest file details by first PIN ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer File Query"
+                ],
+                "summary": "Get latest file by first PIN ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "First PIN ID",
+                        "name": "firstPinId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerFileResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/meta-file-system_controller_respond.Response"
                         }
@@ -688,9 +629,225 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "/info/address/{address}": {
+            "get": {
+                "description": "Query user information in MetaID format by address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get MetaID user info by address",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Address",
+                        "name": "address",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.MetaIDUserInfo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/info/metaid/{metaid}": {
+            "get": {
+                "description": "Query user information in MetaID format by MetaID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get MetaID user info by MetaID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MetaID",
+                        "name": "metaid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.MetaIDUserInfo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/info/search": {
+            "get": {
+                "description": "Fuzzy search user information by keyword and keytype (metaid or name)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Search MetaID user info (fuzzy)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search keyword (partial MetaID or Name)",
+                        "name": "keyword",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Key type: metaid (fuzzy) or name (fuzzy)",
+                        "name": "keytype",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Result limit (default: 10, max: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/meta-file-system_controller_respond.MetaIDUserInfo"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/pins/{pinId}": {
+            "get": {
+                "description": "Query PIN details from collectionPinInfo by PIN ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer PIN Query"
+                ],
+                "summary": "Get PIN info by PIN ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PIN ID",
+                        "name": "pinId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerPinInfoResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/stats": {
             "get": {
-                "description": "Get indexer statistics (total files count, etc.)",
+                "description": "Get indexer statistics (total files count and per-chain breakdown)",
                 "consumes": [
                     "application/json"
                 ],
@@ -731,7 +888,7 @@ const docTemplateindexer = `{
         },
         "/status": {
             "get": {
-                "description": "Get indexer synchronization status (includes latest block height from node)",
+                "description": "Get current sync status for all chains (current sync height and latest block height)",
                 "consumes": [
                     "application/json"
                 ],
@@ -754,7 +911,7 @@ const docTemplateindexer = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerSyncStatusResponse"
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerMultiChainSyncStatusResponse"
                                         }
                                     }
                                 }
@@ -769,98 +926,298 @@ const docTemplateindexer = `{
                     }
                 }
             }
+        },
+        "/users": {
+            "get": {
+                "description": "Query user info list with cursor pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Query user info list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.UserInfoListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/address/{address}": {
+            "get": {
+                "description": "Query user information (name, avatar, chat public key) by address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get user info by address",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Address",
+                        "name": "address",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.IndexerUserInfo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/avatar/accelerate/{pinId}": {
+            "get": {
+                "description": "Redirect to OSS URL for avatar content by avatar PIN ID, supports preview/thumbnail processing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get accelerated avatar content (redirect to OSS)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Avatar PIN ID",
+                        "name": "pinId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Process type: preview (640px), thumbnail (128px), empty for original",
+                        "name": "process",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect to OSS URL",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/avatar/content/{pinId}": {
+            "get": {
+                "description": "Get specific avatar version content by avatar PIN ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get avatar content by PIN ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Avatar PIN ID",
+                        "name": "pinId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Avatar content",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/metaid/{metaId}": {
+            "get": {
+                "description": "Query user information (name, avatar, chat public key) by MetaID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get user info by MetaID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MetaID",
+                        "name": "metaId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.IndexerUserInfo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/metaid/{metaId}/avatar": {
+            "get": {
+                "description": "Get avatar content by user MetaID, returns content from storage or redirects to OSS",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get avatar content by MetaID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User MetaID",
+                        "name": "metaId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Avatar content",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "307": {
+                        "description": "Redirect to OSS URL",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
-        "meta-file-system_controller_respond.IndexerAvatarListResponse": {
-            "type": "object",
-            "properties": {
-                "avatars": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meta-file-system_controller_respond.IndexerAvatarResponse"
-                    }
-                },
-                "has_more": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "next_cursor": {
-                    "type": "integer",
-                    "example": 100
-                }
-            }
-        },
-        "meta-file-system_controller_respond.IndexerAvatarResponse": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "type": "string",
-                    "example": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
-                },
-                "avatar": {
-                    "type": "string",
-                    "example": "indexer/avatar/mvc/xyz789/xyz789i0.jpg"
-                },
-                "block_height": {
-                    "type": "integer",
-                    "example": 12345
-                },
-                "chain_name": {
-                    "type": "string",
-                    "example": "mvc"
-                },
-                "content_type": {
-                    "type": "string",
-                    "example": "image/jpeg"
-                },
-                "created_at": {
-                    "type": "string",
-                    "example": "2024-01-01T00:00:00Z"
-                },
-                "file_extension": {
-                    "type": "string",
-                    "example": ".jpg"
-                },
-                "file_hash": {
-                    "type": "string",
-                    "example": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                },
-                "file_md5": {
-                    "type": "string",
-                    "example": "d41d8cd98f00b204e9800998ecf8427e"
-                },
-                "file_size": {
-                    "type": "integer",
-                    "example": 102400
-                },
-                "file_type": {
-                    "type": "string",
-                    "example": "image"
-                },
-                "meta_id": {
-                    "type": "string",
-                    "example": "abc123def456..."
-                },
-                "pin_id": {
-                    "description": "ID            int64     ` + "`" + `json:\"id\" example:\"1\"` + "`" + `",
-                    "type": "string",
-                    "example": "xyz789i0"
-                },
-                "timestamp": {
-                    "type": "integer",
-                    "example": 1699999999
-                },
-                "tx_id": {
-                    "type": "string",
-                    "example": "xyz789"
-                },
-                "updated_at": {
-                    "type": "string",
-                    "example": "2024-01-01T00:00:00Z"
-                }
-            }
-        },
         "meta-file-system_controller_respond.IndexerFileListResponse": {
             "type": "object",
             "properties": {
@@ -967,9 +1324,69 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "meta-file-system_controller_respond.IndexerMultiChainSyncStatusResponse": {
+            "type": "object",
+            "properties": {
+                "chains": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meta-file-system_controller_respond.IndexerSyncStatusResponse"
+                    }
+                }
+            }
+        },
+        "meta-file-system_controller_respond.IndexerPinInfoResponse": {
+            "type": "object",
+            "properties": {
+                "block_height": {
+                    "type": "integer",
+                    "example": 12345
+                },
+                "chain_name": {
+                    "type": "string",
+                    "example": "mvc"
+                },
+                "content_type": {
+                    "type": "string",
+                    "example": "text/plain"
+                },
+                "first_path": {
+                    "type": "string",
+                    "example": "/protocols/simplebuzz/info/name"
+                },
+                "first_pin_id": {
+                    "type": "string",
+                    "example": "xyz789i0"
+                },
+                "operation": {
+                    "type": "string",
+                    "example": "modify"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "@xyz789i0"
+                },
+                "pin_id": {
+                    "type": "string",
+                    "example": "abc123def456i0"
+                },
+                "timestamp": {
+                    "type": "integer",
+                    "example": 1699999999
+                }
+            }
+        },
         "meta-file-system_controller_respond.IndexerStatsResponse": {
             "type": "object",
             "properties": {
+                "chain_stats": {
+                    "description": "Per-chain file counts",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
                 "total_files": {
                     "type": "integer",
                     "example": 12345
@@ -1002,6 +1419,169 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "meta-file-system_controller_respond.MetaIDUserInfo": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+                },
+                "avatar": {
+                    "type": "string",
+                    "example": "https://oss.example.com/avatar.jpg"
+                },
+                "avatarId": {
+                    "type": "string",
+                    "example": "xyz789i0"
+                },
+                "chatpubkey": {
+                    "type": "string",
+                    "example": "02abc123..."
+                },
+                "chatpubkeyId": {
+                    "type": "string",
+                    "example": "def456i0"
+                },
+                "metaid": {
+                    "type": "string",
+                    "example": "abc123def456..."
+                },
+                "name": {
+                    "type": "string",
+                    "example": "John Doe"
+                }
+            }
+        },
+        "meta-file-system_controller_respond.RescanRequest": {
+            "type": "object",
+            "required": [
+                "chain",
+                "end_height",
+                "start_height"
+            ],
+            "properties": {
+                "chain": {
+                    "type": "string",
+                    "example": "mvc"
+                },
+                "end_height": {
+                    "type": "integer",
+                    "example": 100100
+                },
+                "start_height": {
+                    "type": "integer",
+                    "example": 100000
+                }
+            }
+        },
+        "meta-file-system_controller_respond.RescanResponse": {
+            "type": "object",
+            "properties": {
+                "chain": {
+                    "type": "string",
+                    "example": "mvc"
+                },
+                "end_height": {
+                    "type": "integer",
+                    "example": 100100
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Block rescan task started successfully"
+                },
+                "start_height": {
+                    "type": "integer",
+                    "example": 100000
+                },
+                "task_id": {
+                    "type": "string",
+                    "example": "rescan_mvc_100000_100100_1699999999"
+                }
+            }
+        },
+        "meta-file-system_controller_respond.RescanStatusResponse": {
+            "type": "object",
+            "properties": {
+                "chain": {
+                    "type": "string",
+                    "example": "mvc"
+                },
+                "current_height": {
+                    "type": "integer",
+                    "example": 100050
+                },
+                "elapsed_time": {
+                    "description": "milliseconds",
+                    "type": "integer",
+                    "example": 4050
+                },
+                "end_height": {
+                    "type": "integer",
+                    "example": 100100
+                },
+                "error_message": {
+                    "type": "string",
+                    "example": ""
+                },
+                "estimated_time_left": {
+                    "description": "milliseconds",
+                    "type": "integer",
+                    "example": 4100
+                },
+                "processed_blocks": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "progress": {
+                    "description": "percentage",
+                    "type": "number",
+                    "example": 49.5
+                },
+                "speed": {
+                    "description": "blocks per second",
+                    "type": "number",
+                    "example": 12.34
+                },
+                "start_height": {
+                    "type": "integer",
+                    "example": 100000
+                },
+                "start_time": {
+                    "type": "integer",
+                    "example": 1699999999
+                },
+                "status": {
+                    "description": "idle, running, completed, cancelled, failed",
+                    "type": "string",
+                    "example": "running"
+                },
+                "task_id": {
+                    "type": "string",
+                    "example": "rescan_mvc_100000_100100_1699999999"
+                },
+                "total_blocks": {
+                    "type": "integer",
+                    "example": 101
+                }
+            }
+        },
+        "meta-file-system_controller_respond.RescanStopResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Rescan task stopped successfully"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "cancelled"
+                },
+                "task_id": {
+                    "type": "string",
+                    "example": "rescan_mvc_100000_100100_1699999999"
+                }
+            }
+        },
         "meta-file-system_controller_respond.Response": {
             "description": "Unified API response structure",
             "type": "object",
@@ -1018,6 +1598,79 @@ const docTemplateindexer = `{
                 "processingTime": {
                     "type": "integer",
                     "example": 123
+                }
+            }
+        },
+        "meta-file-system_controller_respond.UserInfoListResponse": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "next_cursor": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "total": {
+                    "description": "Total number of users",
+                    "type": "integer",
+                    "example": 1000
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.IndexerUserInfo"
+                    }
+                }
+            }
+        },
+        "model.IndexerUserInfo": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "description": "用户地址",
+                    "type": "string"
+                },
+                "avatar": {
+                    "description": "头像路径",
+                    "type": "string"
+                },
+                "avatarPinId": {
+                    "description": "头像 PIN ID",
+                    "type": "string"
+                },
+                "blockHeight": {
+                    "description": "区块高度",
+                    "type": "integer"
+                },
+                "chainName": {
+                    "description": "链名称",
+                    "type": "string"
+                },
+                "chatPublicKey": {
+                    "description": "聊天公钥",
+                    "type": "string"
+                },
+                "chatPublicKeyPinId": {
+                    "description": "聊天公钥 PIN ID",
+                    "type": "string"
+                },
+                "metaId": {
+                    "description": "用户 MetaID",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "用户名称",
+                    "type": "string"
+                },
+                "namePinId": {
+                    "description": "用户名称 PIN ID",
+                    "type": "string"
+                },
+                "timestamp": {
+                    "description": "时间戳",
+                    "type": "integer"
                 }
             }
         }

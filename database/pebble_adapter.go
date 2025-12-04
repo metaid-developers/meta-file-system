@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	"meta-file-system/model"
 
@@ -39,6 +40,8 @@ const (
 	collectionFileHash        = "file_hash"         // key: {hash}:{pin_id}, value: JSON(IndexerFile) - 按 Hash 索引
 	collectionFileInfoHistory = "file_info_history" // key: {first_pin_id}, value: JSON(List[{pin_id, path, operation, content_type, chain_name, block_height, timestamp}]) - 按地址索引
 
+	collectionChainFileInfo = "chain_file_info" // key: {chain_name}:{first_pin_id}, value: JSON(IndexerFile) - 按链名称和第一个 PIN ID 索引
+
 	// Avatar collections
 	collectionAvatarPinID           = "avatar_pin"            // key: {pin_id}, value: JSON(IndexerUserAvatar) - PinID 到 ID 的映射
 	collectionAvatarMetaID          = "avatar_meta"           // key: {meta_id}:{block_height}, value: JSON(IndexerUserAvatar) - 按 MetaID 索引
@@ -60,6 +63,7 @@ const (
 	collectionUserAvatarInfoHistory       = "user_avatar_info_history"         // key: {meta_id} Or {address}, value: JSON(List[{avatar, pin_id, chain_name, block_height, timestamp}]) - 按 MetaID 或地址和区块高度索引
 	collectionUserChatPublicKeyHistory    = "user_chat_public_key_history"     // key: {meta_id} Or {address}, value: JSON(List[{chat_public_key, pin_id, chain_name, block_height, timestamp}]) - 按 MetaID 或地址和区块高度索引
 	collectionMetaIdTimestamp             = "meta_id_timestamp"                // key: {timestamp}:{meta_id}, value: JSON({meta_id, timestamp}) - 按 MetaID 和时间戳索引
+	collectionUserAvatarInfo              = "user_avatar_info"                 // key: {pinId}, value: JSON({avatar, pin_id, chain_name, block_height, timestamp}) - 按 MetaID 索引
 
 	// PinInfo collections
 	collectionPinInfo = "pin_info" // key: {pin_id}, value: JSON({path, operation, content_type, chain_name, block_height, timestamp}) - 按 PIN ID 索引
@@ -98,6 +102,7 @@ func NewPebbleDatabase(config interface{}) (Database, error) {
 		collectionFileMetaID,
 		collectionFileHash,
 		collectionFileInfoHistory,
+		collectionChainFileInfo,
 		collectionAvatarPinID,
 		collectionAvatarMetaID,
 		collectionAvatarMetaIDTimestamp,
@@ -114,6 +119,7 @@ func NewPebbleDatabase(config interface{}) (Database, error) {
 		collectionUserNameInfoHistory,
 		collectionUserAvatarInfoHistory,
 		collectionUserChatPublicKeyHistory,
+		collectionUserAvatarInfo,
 		collectionPinInfo,
 		collectionSyncStatus,
 		collectionCounters,
@@ -290,6 +296,43 @@ func (p *PebbleDatabase) CreateIndexerFile(file *model.IndexerFile) error {
 		return err
 	}
 
+	// Store in chain file info collection (for per-chain statistics)
+	// key: chain_name:first_pin_id, value: JSON(IndexerFile)
+	if file.ChainName != "" && firstPinID != "" {
+		chainFileKey := file.ChainName + ":" + firstPinID
+		chainFileDB := p.collections[collectionChainFileInfo]
+
+		// Check if there's an existing file info
+		existingChainData, closer, err := chainFileDB.Get([]byte(chainFileKey))
+		if err != nil && err != pebble.ErrNotFound {
+			return err
+		}
+
+		shouldUpdateChain := false
+		if err == pebble.ErrNotFound {
+			// No existing file, this is the first one
+			shouldUpdateChain = true
+		} else {
+			// Compare timestamp with existing file
+			defer closer.Close()
+			var existingChainFile model.IndexerFile
+			if err := json.Unmarshal(existingChainData, &existingChainFile); err != nil {
+				return err
+			}
+
+			// Update if new file has a later timestamp
+			if file.Timestamp > existingChainFile.Timestamp {
+				shouldUpdateChain = true
+			}
+		}
+
+		if shouldUpdateChain {
+			if err := chainFileDB.Set([]byte(chainFileKey), data, pebble.Sync); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -415,6 +458,37 @@ func (p *PebbleDatabase) GetIndexerFilesCount() (int64, error) {
 
 	// Iterate through all files and count
 	iter, err := filePinDB.NewIter(nil)
+	if err != nil {
+		return 0, err
+	}
+	defer iter.Close()
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		var file model.IndexerFile
+		if err := json.Unmarshal(iter.Value(), &file); err != nil {
+			continue
+		}
+
+		// Only count successful files
+		if file.Status == model.StatusSuccess {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+func (p *PebbleDatabase) GetIndexerFilesCountByChain(chainName string) (int64, error) {
+	var count int64
+
+	chainFileDB := p.collections[collectionChainFileInfo]
+	prefix := chainName + ":"
+
+	// Create iterator with prefix filter
+	iter, err := chainFileDB.NewIter(&pebble.IterOptions{
+		LowerBound: []byte(prefix),
+		UpperBound: []byte(prefix + "~"),
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -786,6 +860,7 @@ func (p *PebbleDatabase) UpdateIndexerSyncStatusHeight(chainName string, height 
 	}
 
 	status.CurrentSyncHeight = height
+	status.UpdatedAt = time.Now()
 	return p.CreateOrUpdateIndexerSyncStatus(status)
 }
 
@@ -851,6 +926,9 @@ func (p *PebbleDatabase) CreateOrUpdateLatestUserNameInfo(info *model.UserNameIn
 			return err
 		}
 		log.Printf("Latest user name updated for MetaID: %s (timestamp: %d)", metaID, info.Timestamp)
+
+		// Update cache: query and cache full user info
+		go p.updateUserInfoCache(metaID)
 	}
 
 	return nil
@@ -984,6 +1062,16 @@ func (p *PebbleDatabase) CreateOrUpdateLatestUserAvatarInfo(info *model.UserAvat
 			return err
 		}
 		log.Printf("Latest user avatar updated for MetaID: %s (timestamp: %d)", metaID, info.Timestamp)
+
+		// Update cache: query and cache full user info
+		go p.updateUserInfoCache(metaID)
+	}
+
+	// Also store in UserAvatarInfo collection by PinID for direct lookup
+	// key: pin_id, value: JSON(UserAvatarInfo)
+	avatarInfoDB := p.collections[collectionUserAvatarInfo]
+	if err := avatarInfoDB.Set([]byte(info.PinID), data, pebble.Sync); err != nil {
+		return err
 	}
 
 	return nil
@@ -1008,6 +1096,87 @@ func (p *PebbleDatabase) GetLatestUserAvatarInfo(key string) (*model.UserAvatarI
 	}
 
 	return &info, nil
+}
+
+// GetUserAvatarInfoByPinID get user avatar info by avatar PIN ID
+func (p *PebbleDatabase) GetUserAvatarInfoByPinID(pinID string) (*model.UserAvatarInfo, error) {
+	db := p.collections[collectionUserAvatarInfo]
+
+	data, closer, err := db.Get([]byte(pinID))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var info model.UserAvatarInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
+// IterateUserAvatarHistory iterate through all user avatar history entries
+// Callback function receives metaID and history list for each user
+func (p *PebbleDatabase) IterateUserAvatarHistory(callback func(metaID string, history []model.UserAvatarInfo) error) error {
+	db := p.collections[collectionUserAvatarInfoHistory]
+
+	// Create iterator for all entries
+	iter, err := db.NewIter(nil)
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+
+	count := 0
+	for iter.First(); iter.Valid(); iter.Next() {
+		metaID := string(iter.Key())
+
+		var history []model.UserAvatarInfo
+		if err := json.Unmarshal(iter.Value(), &history); err != nil {
+			log.Printf("Failed to unmarshal avatar history for MetaID %s: %v", metaID, err)
+			continue
+		}
+
+		// Call callback function
+		if err := callback(metaID, history); err != nil {
+			log.Printf("Callback error for MetaID %s: %v", metaID, err)
+			// Continue processing other entries
+		}
+
+		count++
+		if count%100 == 0 {
+			log.Printf("Iterated %d user avatar histories...", count)
+		}
+	}
+
+	log.Printf("Completed iteration: %d user avatar histories", count)
+	return nil
+}
+
+// StoreUserAvatarInfoByPinID store user avatar info by PinID to collectionUserAvatarInfo
+func (p *PebbleDatabase) StoreUserAvatarInfoByPinID(avatarInfo *model.UserAvatarInfo) error {
+	if avatarInfo.PinID == "" {
+		return fmt.Errorf("pinID is empty")
+	}
+
+	db := p.collections[collectionUserAvatarInfo]
+
+	// Serialize avatar info
+	data, err := json.Marshal(avatarInfo)
+	if err != nil {
+		return err
+	}
+
+	// Store by PinID
+	if err := db.Set([]byte(avatarInfo.PinID), data, pebble.Sync); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // AddUserAvatarInfoHistory add user avatar info to history
@@ -1117,6 +1286,9 @@ func (p *PebbleDatabase) CreateOrUpdateLatestUserChatPublicKeyInfo(info *model.U
 			return err
 		}
 		log.Printf("Latest user chat public key updated for MetaID: %s (timestamp: %d)", metaID, info.Timestamp)
+
+		// Update cache: query and cache full user info
+		go p.updateUserInfoCache(metaID)
 	}
 
 	return nil
@@ -1440,6 +1612,24 @@ func (p *PebbleDatabase) ListMetaIdsByTimestamp(cursor int64, size int) ([]model
 	return results, nextCursor, hasMore, nil
 }
 
+// GetMetaIDCount get total count of unique MetaIDs (users)
+func (p *PebbleDatabase) GetMetaIDCount() (int64, error) {
+	db := p.collections[collectionMetaIdTimestamp]
+
+	iter, err := db.NewIter(nil)
+	if err != nil {
+		return 0, err
+	}
+	defer iter.Close()
+
+	var count int64 = 0
+	for iter.First(); iter.Valid(); iter.Next() {
+		count++
+	}
+
+	return count, nil
+}
+
 // MetaIdAddress operations
 
 // SaveMetaIdAddress save or update MetaID-Address mapping (supports bidirectional lookup)
@@ -1582,6 +1772,88 @@ func (p *PebbleDatabase) GetPinInfoByPinID(pinID string) (*model.IndexerPinInfo,
 	}
 
 	return &pinInfo, nil
+}
+
+// updateUserInfoCache update user info cache after data change
+func (p *PebbleDatabase) updateUserInfoCache(metaID string) {
+	// This runs in a goroutine, don't block the main flow
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("⚠️  Panic in updateUserInfoCache: %v", r)
+		}
+	}()
+
+	if !IsRedisEnabled() {
+		return // Redis not available, skip
+	}
+
+	// Query complete user info from database
+	// Get latest user name
+	nameInfo, _ := p.GetLatestUserNameInfo(metaID)
+
+	// Get latest user avatar
+	avatarInfo, _ := p.GetLatestUserAvatarInfo(metaID)
+
+	// Get latest user chat public key
+	chatPubKeyInfo, _ := p.GetLatestUserChatPublicKeyInfo(metaID)
+
+	// Get address
+	address, _ := p.GetAddressByMetaID(metaID)
+
+	// Build IndexerUserInfo
+	userInfo := &model.IndexerUserInfo{
+		MetaId:  metaID,
+		Address: address,
+	}
+
+	if nameInfo != nil {
+		userInfo.Name = nameInfo.Name
+		userInfo.NamePinId = nameInfo.PinID
+		userInfo.ChainName = nameInfo.ChainName
+		userInfo.BlockHeight = nameInfo.BlockHeight
+		userInfo.Timestamp = nameInfo.Timestamp
+	}
+
+	if avatarInfo != nil {
+		userInfo.Avatar = avatarInfo.AvatarUrl
+		userInfo.AvatarPinId = avatarInfo.PinID
+		if avatarInfo.Timestamp > userInfo.Timestamp {
+			userInfo.Timestamp = avatarInfo.Timestamp
+			userInfo.BlockHeight = avatarInfo.BlockHeight
+			userInfo.ChainName = avatarInfo.ChainName
+		}
+	}
+
+	if chatPubKeyInfo != nil {
+		userInfo.ChatPublicKey = chatPubKeyInfo.ChatPublicKey
+		userInfo.ChatPublicKeyPinId = chatPubKeyInfo.PinID
+		if chatPubKeyInfo.Timestamp > userInfo.Timestamp {
+			userInfo.Timestamp = chatPubKeyInfo.Timestamp
+			userInfo.BlockHeight = chatPubKeyInfo.BlockHeight
+			userInfo.ChainName = chatPubKeyInfo.ChainName
+		}
+	}
+
+	// Update cache by MetaID
+	if err := SetCache("user:metaid:"+metaID, userInfo); err != nil {
+		log.Printf("⚠️  Failed to update cache for MetaID %s: %v", metaID, err)
+	}
+
+	// Update cache by Address (if available)
+	if address != "" {
+		if err := SetCache("user:address:"+address, userInfo); err != nil {
+			log.Printf("⚠️  Failed to update cache for address %s: %v", address, err)
+		}
+	}
+
+	// Update user name index for fuzzy search
+	// Store in Redis Hash: user:name:index
+	// field: metaID, value: name
+	if nameInfo != nil && nameInfo.Name != "" {
+		if err := SetHashField("user:name:index", metaID, nameInfo.Name); err != nil {
+			log.Printf("⚠️  Failed to update user name index for MetaID %s: %v", metaID, err)
+		}
+	}
 }
 
 // Close close all database connections

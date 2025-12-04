@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"meta-file-system/common"
 
 	"github.com/bitcoinsv/bsvd/wire"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -33,22 +34,23 @@ type MetaIDDataTx struct {
 
 // MetaIDData MetaID protocol data
 type MetaIDData struct {
-	PinID                string // PIN ID
-	Operation            string // create/modify/revoke
-	OriginalPath         string // Original path
-	Host                 string // Host
-	Path                 string // File path
-	ParentPath           string // Parent path
-	Encryption           string // Encryption method
-	Version              string // Version
-	ContentType          string // Content type
-	Content              []byte // File content
-	TxID                 string // Transaction ID
-	Vout                 uint32 // Output index
-	CreatorInputLocation string // Creator input location txId:vin
-	CreatorAddress       string // Creator address
-	OwnerAddress         string // Owner address
-	ChainName            string // Chain name: btc, mvc
+	PinID                     string // PIN ID
+	Operation                 string // create/modify/revoke
+	OriginalPath              string // Original path
+	Host                      string // Host
+	Path                      string // File path
+	ParentPath                string // Parent path
+	Encryption                string // Encryption method
+	Version                   string // Version
+	ContentType               string // Content type
+	Content                   []byte // File content
+	TxID                      string // Transaction ID
+	Vout                      uint32 // Output index
+	CreatorInputLocation      string // Creator input location txId:vin
+	CreatorInputTxVinLocation string // Creator input transaction vin location PreTxId:vin
+	CreatorAddress            string // Creator address
+	OwnerAddress              string // Owner address
+	ChainName                 string // Chain name: btc, mvc
 }
 
 // MetaIDParser MetaID protocol parser
@@ -211,7 +213,7 @@ func (p *MetaIDParser) ParseAllPINs(tx interface{}, chainType ChainType) (*MetaI
 			return nil, fmt.Errorf("failed to serialize MVC transaction: %w", err)
 		}
 		txBytes = buf.Bytes()
-		txID = mvcTx.TxHash().String()
+		txID = common.GetMvcTxhashFromRaw(hex.EncodeToString(txBytes))
 		address = extractMVCCreatorAddress(mvcTx)
 	}
 
@@ -242,22 +244,23 @@ func (p *MetaIDParser) ParseAllPINs(tx interface{}, chainType ChainType) (*MetaI
 	var results []*MetaIDData
 	for _, pin := range pins {
 		data := &MetaIDData{
-			PinID:                pin.Id,
-			Operation:            pin.Operation,
-			OriginalPath:         pin.OriginalPath,
-			Host:                 pin.Host,
-			Path:                 pin.Path,
-			ParentPath:           pin.ParentPath,
-			Encryption:           pin.Encryption,
-			Version:              pin.Version,
-			ContentType:          pin.ContentType,
-			Content:              pin.ContentBody,
-			TxID:                 txID,
-			Vout:                 pin.Vout,
-			CreatorAddress:       pin.OwnerAddress,
-			CreatorInputLocation: pin.CreatorInputLocation,
-			OwnerAddress:         pin.OwnerAddress,
-			ChainName:            chainName,
+			PinID:                     pin.Id,
+			Operation:                 pin.Operation,
+			OriginalPath:              pin.OriginalPath,
+			Host:                      pin.Host,
+			Path:                      pin.Path,
+			ParentPath:                pin.ParentPath,
+			Encryption:                pin.Encryption,
+			Version:                   pin.Version,
+			ContentType:               pin.ContentType,
+			Content:                   pin.ContentBody,
+			TxID:                      txID,
+			Vout:                      pin.Vout,
+			CreatorAddress:            pin.OwnerAddress,
+			CreatorInputLocation:      pin.CreatorInputLocation,
+			CreatorInputTxVinLocation: pin.CreatorInputTxVinLocation,
+			OwnerAddress:              pin.OwnerAddress,
+			ChainName:                 chainName,
 		}
 		results = append(results, data)
 	}
@@ -309,70 +312,141 @@ func TxToHex(tx *wire.MsgTx) (string, error) {
 }
 
 // FindCreatorAddressFromCreatorInputLocation find creator address from CreatorInputLocation
-// CreatorInputLocation format: "txid:vin" (e.g., "abc123def456:0")
-// Returns the address from the specified input of the referenced transaction
-func (p *MetaIDParser) FindCreatorAddressFromCreatorInputLocation(creatorInputLocation string, chainType ChainType) (string, error) {
-	if creatorInputLocation == "" {
-		return "", errors.New("creatorInputLocation is empty")
-	}
-
+// For MVC: uses creatorInputLocation format "txid:vout"
+// For BTC: uses creatorInputTxVinLocation format "txid:vin", traces back two levels to find the address
+func (p *MetaIDParser) FindCreatorAddressFromCreatorInputLocation(creatorInputLocation string, creatorInputTxVinLocation string, chainType ChainType) (string, error) {
 	if p.blockScanner == nil {
 		return "", errors.New("blockScanner not set, cannot fetch transaction from node")
 	}
 
-	// Parse CreatorInputLocation: "txid:vin"
-	parts := bytes.Split([]byte(creatorInputLocation), []byte(":"))
-	if len(parts) != 2 {
-		return "", fmt.Errorf("invalid creatorInputLocation format: %s (expected txid:vin)", creatorInputLocation)
-	}
-
-	txid := string(parts[0])
-	voutStr := string(parts[1])
-
-	// Parse vin (input index)
-	var vout int
-	if _, err := fmt.Sscanf(voutStr, "%d", &vout); err != nil {
-		return "", fmt.Errorf("invalid vout in creatorInputLocation: %s", voutStr)
-	}
-
-	// Get raw transaction from node
-	txHex, err := p.blockScanner.GetRawTransaction(txid)
-	if err != nil {
-		return "", fmt.Errorf("failed to get transaction %s: %w", txid, err)
-	}
-
-	// Decode hex to bytes
-	txBytes, err := hex.DecodeString(txHex)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode transaction hex: %w", err)
-	}
-
-	// Deserialize transaction based on chain type
-	var address string
-	if chainType == ChainTypeBTC {
-		// Parse as BTC transaction
-		var btcTx btcwire.MsgTx
-		if err := btcTx.Deserialize(bytes.NewReader(txBytes)); err != nil {
-			return "", fmt.Errorf("failed to deserialize BTC transaction: %w", err)
+	// MVC chain: use creatorInputLocation directly
+	if chainType == ChainTypeMVC {
+		if creatorInputLocation == "" {
+			return "", errors.New("creatorInputLocation is empty for MVC chain")
 		}
 
-		// Get address from the specified input
-		address, err = extractAddressFromBTCInput(&btcTx, vout)
+		// Parse CreatorInputLocation: "txid:vout"
+		parts := bytes.Split([]byte(creatorInputLocation), []byte(":"))
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid creatorInputLocation format: %s (expected txid:vout)", creatorInputLocation)
+		}
+
+		txid := string(parts[0])
+		voutStr := string(parts[1])
+
+		// Parse vout (output index)
+		var vout int
+		if _, err := fmt.Sscanf(voutStr, "%d", &vout); err != nil {
+			return "", fmt.Errorf("invalid vout in creatorInputLocation: %s", voutStr)
+		}
+
+		// Get raw transaction from node
+		txHex, err := p.blockScanner.GetRawTransaction(txid)
 		if err != nil {
-			return "", fmt.Errorf("failed to extract address from BTC input: %w", err)
+			return "", fmt.Errorf("failed to get transaction %s: %w", txid, err)
 		}
-	} else {
+
+		// Decode hex to bytes
+		txBytes, err := hex.DecodeString(txHex)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode transaction hex: %w", err)
+		}
+
 		// Parse as MVC transaction
 		var mvcTx wire.MsgTx
 		if err := mvcTx.Deserialize(bytes.NewReader(txBytes)); err != nil {
 			return "", fmt.Errorf("failed to deserialize MVC transaction: %w", err)
 		}
 
-		// Get address from the specified input
-		address, err = extractAddressFromMVCInput(&mvcTx, vout)
+		// Get address from the specified output
+		address, err := extractAddressFromMVCInput(&mvcTx, vout)
 		if err != nil {
-			return "", fmt.Errorf("failed to extract address from MVC input: %w", err)
+			return "", fmt.Errorf("failed to extract address from MVC output: %w", err)
 		}
+
+		return address, nil
+	}
+
+	// BTC chain: use creatorInputTxVinLocation and trace back two levels
+	if creatorInputTxVinLocation == "" {
+		return "", errors.New("creatorInputTxVinLocation is empty for BTC chain")
+	}
+
+	// Parse CreatorInputTxVinLocation: "txid:vin"
+	parts := bytes.Split([]byte(creatorInputTxVinLocation), []byte(":"))
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid creatorInputTxVinLocation format: %s (expected txid:vin)", creatorInputTxVinLocation)
+	}
+
+	txid1 := string(parts[0])
+
+	// Step 1: Get the first transaction (tx1)
+	tx1Hex, err := p.blockScanner.GetRawTransaction(txid1)
+	if err != nil {
+		return "", fmt.Errorf("failed to get transaction %s: %w", txid1, err)
+	}
+
+	tx1Bytes, err := hex.DecodeString(tx1Hex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode transaction hex: %w", err)
+	}
+
+	var tx1 btcwire.MsgTx
+	if err := tx1.Deserialize(bytes.NewReader(tx1Bytes)); err != nil {
+		return "", fmt.Errorf("failed to deserialize BTC transaction: %w", err)
+	}
+
+	// Step 2: Get the first input's previous transaction (preTxId)
+	if len(tx1.TxIn) == 0 {
+		return "", errors.New("transaction has no inputs")
+	}
+
+	preTxId := tx1.TxIn[0].PreviousOutPoint.Hash.String()
+
+	// Step 3: Get the previous transaction (preTx)
+	preTxHex, err := p.blockScanner.GetRawTransaction(preTxId)
+	if err != nil {
+		return "", fmt.Errorf("failed to get previous transaction %s: %w", preTxId, err)
+	}
+
+	preTxBytes, err := hex.DecodeString(preTxHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode previous transaction hex: %w", err)
+	}
+
+	var preTx btcwire.MsgTx
+	if err := preTx.Deserialize(bytes.NewReader(preTxBytes)); err != nil {
+		return "", fmt.Errorf("failed to deserialize previous BTC transaction: %w", err)
+	}
+
+	// Step 4: Get the first input's previous transaction from preTx
+	if len(preTx.TxIn) == 0 {
+		return "", errors.New("previous transaction has no inputs")
+	}
+
+	preTxId2 := preTx.TxIn[0].PreviousOutPoint.Hash.String()
+	preVout2 := preTx.TxIn[0].PreviousOutPoint.Index
+
+	// Step 5: Get the previous previous transaction (preTx2)
+	preTx2Hex, err := p.blockScanner.GetRawTransaction(preTxId2)
+	if err != nil {
+		return "", fmt.Errorf("failed to get previous previous transaction %s: %w", preTxId2, err)
+	}
+
+	preTx2Bytes, err := hex.DecodeString(preTx2Hex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode previous previous transaction hex: %w", err)
+	}
+
+	var preTx2 btcwire.MsgTx
+	if err := preTx2.Deserialize(bytes.NewReader(preTx2Bytes)); err != nil {
+		return "", fmt.Errorf("failed to deserialize previous previous BTC transaction: %w", err)
+	}
+
+	// Step 6: Extract address from the output
+	address, err := extractAddressFromBTCInput(&preTx2, int(preVout2))
+	if err != nil {
+		return "", fmt.Errorf("failed to extract address from BTC output: %w", err)
 	}
 
 	return address, nil

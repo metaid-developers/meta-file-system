@@ -64,3 +64,8 @@ func (dao *IndexerFileDAO) GetByCreatorMetaIDWithCursor(metaID string, cursor in
 func (dao *IndexerFileDAO) GetFilesCount() (int64, error) {
 	return dao.db.GetIndexerFilesCount()
 }
+
+// GetLatestFileInfoByFirstPinID get latest file info by first PIN ID
+func (dao *IndexerFileDAO) GetLatestFileInfoByFirstPinID(firstPinID string) (*model.IndexerFile, error) {
+	return dao.db.GetLatestFileInfoByFirstPinID(firstPinID)
+}

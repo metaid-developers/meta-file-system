@@ -1,8 +1,12 @@
 package indexer_service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"meta-file-system/conf"
@@ -38,6 +42,37 @@ func NewIndexerFileService(storage storage.Storage) *IndexerFileService {
 	}
 }
 
+// GetPinInfoByPinID get PIN information by PIN ID from collectionPinInfo
+func (s *IndexerFileService) GetPinInfoByPinID(pinID string) (*model.IndexerPinInfo, error) {
+	if pinID == "" {
+		return nil, errors.New("pinID is empty")
+	}
+
+	pinInfo, err := database.DB.GetPinInfoByPinID(pinID)
+	if err != nil {
+		if err == database.ErrNotFound {
+			return nil, fmt.Errorf("PIN info not found for PIN ID: %s", pinID)
+		}
+		return nil, fmt.Errorf("failed to get PIN info: %w", err)
+	}
+
+	return pinInfo, nil
+}
+
+// GetLatestFileByFirstPinID get latest file information by first PIN ID
+func (s *IndexerFileService) GetLatestFileByFirstPinID(firstPinID string) (*model.IndexerFile, error) {
+	if firstPinID == "" {
+		return nil, errors.New("firstPinID is empty")
+	}
+
+	file, err := s.indexerFileDAO.GetLatestFileInfoByFirstPinID(firstPinID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest file by firstPinID: %w", err)
+	}
+
+	return file, nil
+}
+
 // GetFileByPinID get file information by PIN ID
 func (s *IndexerFileService) GetFileByPinID(pinID string) (*model.IndexerFile, error) {
 	file, err := s.indexerFileDAO.GetByPinID(pinID)
@@ -46,6 +81,9 @@ func (s *IndexerFileService) GetFileByPinID(pinID string) (*model.IndexerFile, e
 			return nil, errors.New("file not found")
 		}
 		return nil, fmt.Errorf("failed to get file: %w", err)
+	}
+	if file == nil {
+		return nil, errors.New("file not found")
 	}
 	return file, nil
 }
@@ -110,12 +148,27 @@ func (s *IndexerFileService) ListFiles(cursor int64, size int) ([]*model.Indexer
 	return files, nextCursor, hasMore, nil
 }
 
+// GetLatestFileContentByFirstPinID get latest file content by first PIN ID
+func (s *IndexerFileService) GetLatestFileContentByFirstPinID(firstPinID string) ([]byte, string, string, error) {
+	// Get latest file info by firstPinID
+	file, err := s.GetLatestFileByFirstPinID(firstPinID)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	// Use the latest file's pinID to get content
+	return s.GetFileContent(file.PinID)
+}
+
 // GetFileContent get file content by PIN ID
 func (s *IndexerFileService) GetFileContent(pinID string) ([]byte, string, string, error) {
 	// Get file information
 	file, err := s.GetFileByPinID(pinID)
 	if err != nil {
 		return nil, "", "", err
+	}
+	if file == nil {
+		return nil, "", "", errors.New("file not found")
 	}
 
 	// Read file content from storage layer
@@ -130,6 +183,28 @@ func (s *IndexerFileService) GetFileContent(pinID string) ([]byte, string, strin
 // GetFilesCount get total count of indexed files
 func (s *IndexerFileService) GetFilesCount() (int64, error) {
 	return s.indexerFileDAO.GetFilesCount()
+}
+
+// GetFilesCountByChains get file count for each chain
+func (s *IndexerFileService) GetFilesCountByChains() (map[string]int64, error) {
+	// Get all sync statuses to know which chains exist
+	statuses, err := database.DB.GetAllIndexerSyncStatus()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sync statuses: %w", err)
+	}
+
+	chainStats := make(map[string]int64)
+	for _, status := range statuses {
+		count, err := database.DB.GetIndexerFilesCountByChain(status.ChainName)
+		if err != nil {
+			// Log error but continue with other chains
+			chainStats[status.ChainName] = 0
+		} else {
+			chainStats[status.ChainName] = count
+		}
+	}
+
+	return chainStats, nil
 }
 
 // ============================================================
@@ -222,6 +297,15 @@ func (s *IndexerFileService) GetFilesCount() (int64, error) {
 
 // GetUserInfoByMetaID get user information by MetaID
 func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerUserInfo, error) {
+	// Try to get from cache first
+	cacheKey := "user:metaid:" + metaID
+	var cachedUser model.IndexerUserInfo
+	if err := database.GetCache(cacheKey, &cachedUser); err == nil {
+		// Cache hit
+		return &cachedUser, nil
+	}
+
+	// Cache miss, query from database
 	// Get latest user name
 	nameInfo, err := database.DB.GetLatestUserNameInfo(metaID)
 	if err != nil && !errors.Is(err, database.ErrNotFound) {
@@ -282,11 +366,25 @@ func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerU
 		}
 	}
 
+	// Set cache
+	if err := database.SetCache(cacheKey, userInfo); err != nil {
+		log.Printf("⚠️  Failed to set cache for MetaID %s: %v", metaID, err)
+	}
+
 	return userInfo, nil
 }
 
 // GetUserInfoByAddress get user information by address
 func (s *IndexerFileService) GetUserInfoByAddress(address string) (*model.IndexerUserInfo, error) {
+	// Try to get from cache first
+	cacheKey := "user:address:" + address
+	var cachedUser model.IndexerUserInfo
+	if err := database.GetCache(cacheKey, &cachedUser); err == nil {
+		// Cache hit
+		return &cachedUser, nil
+	}
+
+	// Cache miss, query from database
 	// Calculate MetaID from address (SHA256)
 	metaID := calculateMetaIDFromAddress(address)
 
@@ -296,7 +394,195 @@ func (s *IndexerFileService) GetUserInfoByAddress(address string) (*model.Indexe
 	}
 
 	userInfo.Address = address
+
+	// Set cache
+	if err := database.SetCache(cacheKey, userInfo); err != nil {
+		log.Printf("⚠️  Failed to set cache for address %s: %v", address, err)
+	}
+
 	return userInfo, nil
+}
+
+// SearchUserInfo fuzzy search user info by keyword and keytype
+// keytype: "metaid" (fuzzy match metaid) or "name" (fuzzy match name)
+// limit: maximum number of results to return
+// Returns list of matching users
+func (s *IndexerFileService) SearchUserInfo(keyword string, keytype string, limit int) ([]*model.IndexerUserInfo, error) {
+	if keyword == "" {
+		return nil, errors.New("keyword is required")
+	}
+
+	if keytype == "" {
+		keytype = "metaid" // Default to metaid
+	}
+
+	if limit < 1 {
+		limit = 10 // Default limit
+	}
+
+	// Fuzzy search from cache
+	if keytype == "metaid" {
+		return s.fuzzySearchByMetaID(keyword, limit)
+	} else if keytype == "name" {
+		return s.fuzzySearchByName(keyword, limit)
+	} else {
+		return nil, fmt.Errorf("invalid keytype: %s (expected: metaid or name)", keytype)
+	}
+}
+
+// fuzzySearchByMetaID fuzzy search users by MetaID from cache
+func (s *IndexerFileService) fuzzySearchByMetaID(keyword string, limit int) ([]*model.IndexerUserInfo, error) {
+	// Get all user name mappings from cache (also contains metaID)
+	userMap, err := database.GetAllHashFields("user:name:index")
+	if err != nil || len(userMap) == 0 {
+		// Cache miss or empty, rebuild cache
+		if err := s.rebuildUserNameCache(); err != nil {
+			log.Printf("⚠️  Failed to rebuild user name cache: %v", err)
+			return nil, errors.New("search is not available (cache not ready)")
+		}
+
+		// Retry
+		userMap, err = database.GetAllHashFields("user:name:index")
+		if err != nil || len(userMap) == 0 {
+			return nil, errors.New("no users found")
+		}
+	}
+
+	// Fuzzy match: find all metaIDs that contain the keyword (case-insensitive)
+	keywordLower := strings.ToLower(keyword)
+	var matchedMetaIDs []string
+
+	for metaID := range userMap {
+		// Stop if we have enough matches
+		if len(matchedMetaIDs) >= limit {
+			break
+		}
+
+		metaIDLower := strings.ToLower(metaID)
+		if strings.Contains(metaIDLower, keywordLower) {
+			matchedMetaIDs = append(matchedMetaIDs, metaID)
+		}
+	}
+
+	if len(matchedMetaIDs) == 0 {
+		return []*model.IndexerUserInfo{}, nil // Return empty list
+	}
+
+	// Get full user info for matched MetaIDs (up to limit)
+	var users []*model.IndexerUserInfo
+	for _, metaID := range matchedMetaIDs {
+		if len(users) >= limit {
+			break
+		}
+
+		userInfo, err := s.GetUserInfoByMetaID(metaID)
+		if err != nil {
+			log.Printf("⚠️  Failed to get user info for MetaID %s: %v", metaID, err)
+			continue
+		}
+		users = append(users, userInfo)
+	}
+
+	return users, nil
+}
+
+// fuzzySearchByName fuzzy search users by name from cache
+func (s *IndexerFileService) fuzzySearchByName(keyword string, limit int) ([]*model.IndexerUserInfo, error) {
+	// Get all user name mappings from cache
+	userMap, err := database.GetAllHashFields("user:name:index")
+	if err != nil || len(userMap) == 0 {
+		// Cache miss or empty, rebuild cache
+		if err := s.rebuildUserNameCache(); err != nil {
+			log.Printf("⚠️  Failed to rebuild user name cache: %v", err)
+			return nil, errors.New("search is not available (cache not ready)")
+		}
+
+		// Retry
+		userMap, err = database.GetAllHashFields("user:name:index")
+		if err != nil || len(userMap) == 0 {
+			return nil, errors.New("no users found")
+		}
+	}
+
+	// Fuzzy match: find all names that contain the keyword (case-insensitive)
+	keywordLower := strings.ToLower(keyword)
+	var matchedMetaIDs []string
+
+	for metaID, nameJSON := range userMap {
+		// Stop if we have enough matches
+		if len(matchedMetaIDs) >= limit {
+			break
+		}
+
+		var name string
+		if err := json.Unmarshal([]byte(nameJSON), &name); err != nil {
+			continue
+		}
+
+		nameLower := strings.ToLower(name)
+		if strings.Contains(nameLower, keywordLower) {
+			matchedMetaIDs = append(matchedMetaIDs, metaID)
+		}
+	}
+
+	if len(matchedMetaIDs) == 0 {
+		return []*model.IndexerUserInfo{}, nil // Return empty list
+	}
+
+	// Get full user info for matched MetaIDs (up to limit)
+	var users []*model.IndexerUserInfo
+	for _, metaID := range matchedMetaIDs {
+		if len(users) >= limit {
+			break
+		}
+
+		userInfo, err := s.GetUserInfoByMetaID(metaID)
+		if err != nil {
+			log.Printf("⚠️  Failed to get user info for MetaID %s: %v", metaID, err)
+			continue
+		}
+		users = append(users, userInfo)
+	}
+
+	return users, nil
+}
+
+// rebuildUserNameCache rebuild user name cache from database
+func (s *IndexerFileService) rebuildUserNameCache() error {
+	log.Println("🔄 Rebuilding user name cache...")
+
+	if !database.IsRedisEnabled() {
+		return errors.New("redis is not enabled")
+	}
+
+	// Get all users
+	metaIdTimestamps, _, _, err := database.DB.ListMetaIdsByTimestamp(0, 10000)
+	if err != nil {
+		return fmt.Errorf("failed to list MetaIDs: %w", err)
+	}
+
+	count := 0
+	for _, metaIdTs := range metaIdTimestamps {
+		nameInfo, err := database.DB.GetLatestUserNameInfo(metaIdTs.MetaId)
+		if err != nil || nameInfo == nil {
+			continue
+		}
+
+		// Store in Redis hash: user:name:index
+		// field: metaID, value: name
+		if err := database.SetHashField("user:name:index", metaIdTs.MetaId, nameInfo.Name); err != nil {
+			log.Printf("⚠️  Failed to cache user name for MetaID %s: %v", metaIdTs.MetaId, err)
+			continue
+		}
+
+		count++
+		if count%100 == 0 {
+			log.Printf("Progress: Cached %d user names...", count)
+		}
+	}
+
+	log.Printf("✅ User name cache rebuilt: %d users cached", count)
+	return nil
 }
 
 // calculateMetaIDFromAddress calculate MetaID from address (SHA256 hash)
@@ -304,12 +590,22 @@ func calculateMetaIDFromAddress(address string) string {
 	if address == "" {
 		return ""
 	}
-	// Import crypto/sha256 and encoding/hex inline to avoid unused import
-	return fmt.Sprintf("%x", func() []byte {
-		h := [32]byte{}
-		copy(h[:], address) // Simplified - in production use proper SHA256
-		return h[:]
-	}())
+	hash := sha256.Sum256([]byte(address))
+	return hex.EncodeToString(hash[:])
+}
+
+// GetLatestFastFileOSSURLByFirstPinID get latest OSS URL for fast file content redirect by first PIN ID
+// processType: "preview" for image preview (640), "thumbnail" for thumbnail (235), "video" for video first frame, "" for original
+// Returns: OSS URL, ContentType, FileName, FileType, error
+func (s *IndexerFileService) GetLatestFastFileOSSURLByFirstPinID(firstPinID string, processType string) (string, string, string, string, error) {
+	// Get latest file info by firstPinID
+	file, err := s.GetLatestFileByFirstPinID(firstPinID)
+	if err != nil {
+		return "", "", "", "", err
+	}
+
+	// Use the latest file's pinID to get OSS URL
+	return s.GetFastFileOSSURL(file.PinID, processType)
 }
 
 // GetFastFileOSSURL get OSS URL for fast file content redirect
@@ -320,6 +616,10 @@ func (s *IndexerFileService) GetFastFileOSSURL(pinID string, processType string)
 	file, err := s.GetFileByPinID(pinID)
 	if err != nil {
 		return "", "", "", "", err
+	}
+
+	if file == nil {
+		return "", "", "", "", errors.New("file not found")
 	}
 
 	// Check if storage type is OSS
@@ -483,15 +783,22 @@ func (s *IndexerFileService) GetFastFileOSSURL(pinID string, processType string)
 
 // GetUserInfoList get user info list with pagination
 // This method uses MetaIdTimestamp collection to get users ordered by earliest activity timestamp
-func (s *IndexerFileService) GetUserInfoList(cursor int64, size int) ([]*model.IndexerUserInfo, int64, bool, error) {
+func (s *IndexerFileService) GetUserInfoList(cursor int64, size int) ([]*model.IndexerUserInfo, int64, bool, int64, error) {
 	if size < 1 || size > 100 {
 		size = 20
+	}
+
+	// Get total count of users
+	total, err := database.DB.GetMetaIDCount()
+	if err != nil {
+		log.Printf("⚠️  Failed to get MetaID count: %v", err)
+		total = 0 // Continue even if count fails
 	}
 
 	// Get MetaID list ordered by timestamp (descending)
 	metaIdTimestamps, nextCursor, hasMore, err := database.DB.ListMetaIdsByTimestamp(cursor, size)
 	if err != nil {
-		return nil, 0, false, fmt.Errorf("failed to list MetaIDs by timestamp: %w", err)
+		return nil, 0, false, 0, fmt.Errorf("failed to list MetaIDs by timestamp: %w", err)
 	}
 
 	// Build user info for each MetaID
@@ -505,14 +812,14 @@ func (s *IndexerFileService) GetUserInfoList(cursor int64, size int) ([]*model.I
 		users = append(users, userInfo)
 	}
 
-	return users, nextCursor, hasMore, nil
+	return users, nextCursor, hasMore, total, nil
 }
 
-// GetAvatarOSSURLByPinID get avatar OSS URL or content by PIN ID
+// GetAvatarOSSURLByMetaID get avatar OSS URL or content by MetaID
 // Returns: (ossURL, contentType, fileName, fileType, isOSS, error)
-func (s *IndexerFileService) GetAvatarOSSURLByPinID(pinID string) (string, string, string, string, bool, error) {
-	// Get avatar info by PIN ID
-	avatarInfo, err := database.DB.GetLatestUserAvatarInfo(pinID)
+func (s *IndexerFileService) GetAvatarOSSURLByMetaID(metaID string) (string, string, string, string, bool, error) {
+	// Get avatar info by MetaID
+	avatarInfo, err := database.DB.GetLatestUserAvatarInfo(metaID)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			return "", "", "", "", false, errors.New("avatar not found")
@@ -526,9 +833,9 @@ func (s *IndexerFileService) GetAvatarOSSURLByPinID(pinID string) (string, strin
 	}
 
 	// Determine filename
-	fileName := pinID
+	fileName := avatarInfo.PinID
 	if avatarInfo.FileExtension != "" {
-		fileName = pinID + avatarInfo.FileExtension
+		fileName = avatarInfo.PinID + avatarInfo.FileExtension
 	}
 
 	// Check if it's an OSS URL (starts with http:// or https://)
@@ -538,11 +845,11 @@ func (s *IndexerFileService) GetAvatarOSSURLByPinID(pinID string) (string, strin
 	return avatarInfo.AvatarUrl, avatarInfo.ContentType, fileName, avatarInfo.FileType, isOSSURL, nil
 }
 
-// GetAvatarContentByPinID get avatar content by PIN ID (from storage)
+// GetAvatarContentByMetaID get avatar content by MetaID (from storage)
 // Returns: (content, contentType, fileName, error)
-func (s *IndexerFileService) GetAvatarContentByPinID(pinID string) ([]byte, string, string, error) {
-	// Get avatar info by PIN ID
-	avatarInfo, err := database.DB.GetLatestUserAvatarInfo(pinID)
+func (s *IndexerFileService) GetAvatarContentByMetaID(metaID string) ([]byte, string, string, error) {
+	// Get avatar info by MetaID
+	avatarInfo, err := database.DB.GetLatestUserAvatarInfo(metaID)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			return nil, "", "", errors.New("avatar not found")
@@ -557,9 +864,9 @@ func (s *IndexerFileService) GetAvatarContentByPinID(pinID string) ([]byte, stri
 	}
 
 	// Determine filename
-	fileName := pinID
+	fileName := avatarInfo.PinID
 	if avatarInfo.FileExtension != "" {
-		fileName = pinID + avatarInfo.FileExtension
+		fileName = avatarInfo.PinID + avatarInfo.FileExtension
 	}
 
 	contentType := avatarInfo.ContentType
@@ -568,4 +875,82 @@ func (s *IndexerFileService) GetAvatarContentByPinID(pinID string) ([]byte, stri
 	}
 
 	return content, contentType, fileName, nil
+}
+
+// GetAvatarContentByPinID get specific avatar content by avatar PIN ID
+// Returns: (content, contentType, fileName, error)
+func (s *IndexerFileService) GetAvatarContentByPinID(avatarPinID string) ([]byte, string, string, error) {
+	// Get avatar info by PinID
+	avatarInfo, err := database.DB.GetUserAvatarInfoByPinID(avatarPinID)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, "", "", errors.New("avatar not found")
+		}
+		return nil, "", "", fmt.Errorf("failed to get avatar info: %w", err)
+	}
+
+	// Read avatar content from storage
+	content, err := s.storage.Get(avatarInfo.Avatar)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to get avatar content from storage: %w", err)
+	}
+
+	// Determine filename
+	fileName := avatarInfo.PinID
+	if avatarInfo.FileExtension != "" {
+		fileName = avatarInfo.PinID + avatarInfo.FileExtension
+	}
+
+	contentType := avatarInfo.ContentType
+	if contentType == "" {
+		contentType = "image/jpeg" // Default for avatars
+	}
+
+	return content, contentType, fileName, nil
+}
+
+// GetFastAvatarOSSURLByPinID get OSS URL for fast avatar content redirect by avatar PIN ID
+// processType: "preview" for preview (640), "thumbnail" for thumbnail (128), "" for original
+// Returns: OSS URL, ContentType, FileName, FileType, error
+func (s *IndexerFileService) GetFastAvatarOSSURLByPinID(avatarPinID string, processType string) (string, string, string, string, error) {
+	// Get avatar info by PinID
+	avatarInfo, err := database.DB.GetUserAvatarInfoByPinID(avatarPinID)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return "", "", "", "", errors.New("avatar not found")
+		}
+		return "", "", "", "", fmt.Errorf("failed to get avatar info: %w", err)
+	}
+
+	// Check if avatar has OSS URL
+	if avatarInfo.AvatarUrl == "" {
+		return "", "", "", "", errors.New("avatar URL not available, please use direct content endpoint")
+	}
+
+	// Determine filename
+	fileName := avatarInfo.PinID
+	if avatarInfo.FileExtension != "" {
+		fileName = avatarInfo.PinID + avatarInfo.FileExtension
+	}
+
+	// Determine content type
+	contentType := avatarInfo.ContentType
+	if contentType == "" {
+		contentType = "image/jpeg" // Default for avatars
+	}
+
+	// Build OSS URL with processing parameters
+	ossURL := avatarInfo.AvatarUrl
+
+	// Apply OSS processing based on processType
+	if processType == "preview" {
+		// Preview size (640px width)
+		ossURL += OssProcess640
+	} else if processType == "thumbnail" {
+		// Thumbnail size (128x128)
+		ossURL += OssProcess128
+	}
+	// For empty processType, return original URL
+
+	return ossURL, contentType, fileName, "image", nil
 }

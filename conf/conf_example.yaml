@@ -21,6 +21,24 @@ indexer:
   swagger_base_url: "localhost:7281"  # Swagger API base URL (shown in Swagger UI)
   zmq_enabled: false  # Enable ZMQ real-time monitoring
   zmq_address: "tcp://127.0.0.1:28332"  # ZMQ server address (for BTC/MVC node)
+  
+  # Multi-chain configuration (if configured, will use multi-chain mode)
+  time_ordering_enabled: true  # Enable strict time ordering across chains
+  chains:
+    - name: "mvc"
+      rpc_url: "http://127.0.0.1:9882"
+      rpc_user: "rpcuser"
+      rpc_pass: "rpcpassword"
+      start_height: 350000
+      zmq_enabled: true
+      zmq_address: "tcp://127.0.0.1:28332"
+    - name: "btc"
+      rpc_url: "http://127.0.0.1:8332"
+      rpc_user: "btcuser"
+      rpc_pass: "btcpass"
+      start_height: 800000
+      zmq_enabled: true
+      zmq_address: "tcp://127.0.0.1:28333"
 
 # Uploader configuration
 uploader:
@@ -39,7 +57,7 @@ chain:
 
 # Storage configuration
 storage:
-  type: "local"  # local/oss
+  type: "local"  # local/oss/s3/minio
   local:
     base_path: "./data/files"
   oss:
@@ -48,5 +66,28 @@ storage:
     secret_key: ""
     bucket: ""
     domain: ""
+  s3:
+    region: "us-east-1"
+    endpoint: ""  # Optional custom endpoint (leave empty for AWS S3)
+    access_key: ""
+    secret_key: ""
+    bucket: ""
+    domain: ""
+  minio:
+    endpoint: "http://localhost:9000"
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    bucket: "meta-file-system"
+    use_ssl: false
+    domain: ""
+
+# Redis configuration
+redis:
+  enabled: true  # Enable Redis cache for user info
+  host: "redis"  # Use "redis" when running in Docker Compose
+  port: 6379  # Use internal port 6379 (not 6380) when running in Docker Compose
+  password: ""  # Empty for no password
+  db: 1
+  cache_ttl: 1800  # Cache TTL in seconds (30 minutes)
 
 

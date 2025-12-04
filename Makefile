@@ -48,11 +48,11 @@ swagger: swagger-indexer swagger-uploader
 swagger-indexer:
 	@echo "Generating Indexer Swagger docs..."
 	@if command -v swag >/dev/null 2>&1; then \
-		swag init -g cmd/indexer/main.go -o docs/indexer --parseDependency --parseInternal --instanceName indexer --tags "Indexer File Query,Indexer Avatar Query,Indexer Status"; \
+		swag init -g cmd/indexer/main.go -o docs/indexer --parseDependency --parseInternal --instanceName indexer --tags "Indexer File Query,Indexer PIN Query,Indexer Status,Indexer User Info,Indexer Admin"; \
 	elif [ -f ~/go/bin/swag ]; then \
-		~/go/bin/swag init -g cmd/indexer/main.go -o docs/indexer --parseDependency --parseInternal --instanceName indexer --tags "Indexer File Query,Indexer Avatar Query,Indexer Status"; \
+		~/go/bin/swag init -g cmd/indexer/main.go -o docs/indexer --parseDependency --parseInternal --instanceName indexer --tags "Indexer File Query,Indexer PIN Query,Indexer Status,Indexer User Info,Indexer Admin"; \
 	elif [ -f $${GOPATH}/bin/swag ]; then \
-		$${GOPATH}/bin/swag init -g cmd/indexer/main.go -o docs/indexer --parseDependency --parseInternal --instanceName indexer --tags "Indexer File Query,Indexer Avatar Query,Indexer Status"; \
+		$${GOPATH}/bin/swag init -g cmd/indexer/main.go -o docs/indexer --parseDependency --parseInternal --instanceName indexer --tags "Indexer File Query,Indexer PIN Query,Indexer Status,Indexer User Info,Indexer Admin"; \
 	else \
 		echo "Error: swag not found. Please run 'make install-swag' first"; \
 		exit 1; \

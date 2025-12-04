@@ -3,6 +3,7 @@ package indexer_service
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,7 +13,10 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"meta-file-system/conf"
 	"meta-file-system/database"
@@ -21,7 +25,37 @@ import (
 	"meta-file-system/model/dao"
 	"meta-file-system/service/common_service/metaid_protocols"
 	"meta-file-system/storage"
+
+	"github.com/bitcoinsv/bsvd/wire"
+	btcwire "github.com/btcsuite/btcd/wire"
 )
+
+// RescanTaskStatus represents the status of a rescan task
+type RescanTaskStatus string
+
+const (
+	RescanStatusIdle      RescanTaskStatus = "idle"
+	RescanStatusRunning   RescanTaskStatus = "running"
+	RescanStatusCompleted RescanTaskStatus = "completed"
+	RescanStatusCancelled RescanTaskStatus = "cancelled"
+	RescanStatusFailed    RescanTaskStatus = "failed"
+)
+
+// RescanTask represents a rescan task
+type RescanTask struct {
+	TaskID          string
+	Chain           string
+	Status          RescanTaskStatus
+	StartHeight     int64
+	EndHeight       int64
+	CurrentHeight   int64
+	ProcessedBlocks int64
+	TotalBlocks     int64
+	StartTime       time.Time
+	ErrorMessage    string
+	CancelFunc      context.CancelFunc
+	mu              sync.RWMutex
+}
 
 // IndexerService indexer service
 type IndexerService struct {
@@ -34,6 +68,14 @@ type IndexerService struct {
 	storage              storage.Storage
 	chainType            indexer.ChainType
 	parser               *indexer.MetaIDParser
+
+	// Multi-chain support
+	coordinator  *indexer.MultiChainCoordinator
+	isMultiChain bool
+
+	// Rescan task management
+	currentRescanTask *RescanTask
+	rescanMu          sync.Mutex
 }
 
 // NewIndexerService create indexer service instance
@@ -122,6 +164,222 @@ func NewIndexerServiceWithChain(storage storage.Storage, chainType indexer.Chain
 	return service, nil
 }
 
+// NewMultiChainIndexerService create multi-chain indexer service instance
+func NewMultiChainIndexerService(storage storage.Storage, chainConfigs []conf.ChainInstanceConfig) (*IndexerService, error) {
+	if len(chainConfigs) == 0 {
+		return nil, fmt.Errorf("no chain configurations provided")
+	}
+
+	log.Printf("Creating multi-chain indexer service with %d chains", len(chainConfigs))
+
+	// Create coordinator
+	coordinator := indexer.NewMultiChainCoordinator(conf.Cfg.Indexer.TimeOrderingEnabled)
+
+	// Create service instance
+	service := &IndexerService{
+		fileDAO:              dao.NewFileDAO(),
+		indexerFileDAO:       dao.NewIndexerFileDAO(),
+		indexerFileChunkDAO:  dao.NewIndexerFileChunkDAO(),
+		indexerUserAvatarDAO: dao.NewIndexerUserAvatarDAO(),
+		syncStatusDAO:        dao.NewIndexerSyncStatusDAO(),
+		storage:              storage,
+		coordinator:          coordinator,
+		isMultiChain:         true,
+		parser:               indexer.NewMetaIDParser(""),
+	}
+
+	// Create scanner for each chain
+	for _, chainConfig := range chainConfigs {
+		if err := service.addChainScanner(chainConfig); err != nil {
+			return nil, fmt.Errorf("failed to add chain %s: %w", chainConfig.Name, err)
+		}
+	}
+
+	// Set block event handler
+	coordinator.SetHandler(service.handleBlockEvent)
+
+	log.Println("Multi-chain indexer service created successfully")
+	return service, nil
+}
+
+// addChainScanner adds a chain scanner to the coordinator
+func (s *IndexerService) addChainScanner(chainConfig conf.ChainInstanceConfig) error {
+	// Determine chain type
+	var chainType indexer.ChainType
+	switch strings.ToLower(chainConfig.Name) {
+	case "btc":
+		chainType = indexer.ChainTypeBTC
+	case "mvc":
+		chainType = indexer.ChainTypeMVC
+	default:
+		return fmt.Errorf("unsupported chain type: %s", chainConfig.Name)
+	}
+
+	chainName := string(chainType)
+	syncStatusDAO := dao.NewIndexerSyncStatusDAO()
+
+	// Get current sync height from database
+	var currentSyncHeight int64 = 0
+	syncStatus, err := syncStatusDAO.GetByChainName(chainName)
+	if err == nil && syncStatus != nil && syncStatus.CurrentSyncHeight > 0 {
+		currentSyncHeight = syncStatus.CurrentSyncHeight
+		log.Printf("[%s] Found existing sync status, current sync height: %d", chainName, currentSyncHeight)
+	}
+
+	// Determine start height
+	startHeight := chainConfig.StartHeight
+	if currentSyncHeight > startHeight {
+		startHeight = currentSyncHeight + 1
+		log.Printf("[%s] Using current sync height + 1 as start height: %d", chainName, startHeight)
+	} else if chainConfig.StartHeight > 0 {
+		log.Printf("[%s] Using configured start height: %d", chainName, startHeight)
+	} else {
+		startHeight = 0
+		log.Printf("[%s] No start height configured, starting from: %d", chainName, startHeight)
+	}
+
+	// Create block scanner
+	scanner := indexer.NewBlockScannerWithChain(
+		chainConfig.RpcUrl,
+		chainConfig.RpcUser,
+		chainConfig.RpcPass,
+		startHeight,
+		conf.Cfg.Indexer.ScanInterval,
+		chainType,
+	)
+
+	// Enable ZMQ if configured
+	if chainConfig.ZmqEnabled && chainConfig.ZmqAddress != "" {
+		scanner.EnableZMQ(chainConfig.ZmqAddress)
+		log.Printf("[%s] ZMQ real-time monitoring enabled: %s", chainName, chainConfig.ZmqAddress)
+
+		// Set ZMQ transaction handler for this chain
+		scanner.SetZMQTransactionHandler(func(tx interface{}, metaDataTx *indexer.MetaIDDataTx) error {
+			// Call the same handler but with height = 0 (mempool transaction)
+			// and current timestamp for ZMQ transactions
+			return s.handleTransaction(tx, metaDataTx, 0, time.Now().UnixMilli())
+		})
+		log.Printf("[%s] ZMQ transaction handler configured", chainName)
+	}
+
+	// Add to coordinator
+	if err := s.coordinator.AddChain(chainName, scanner); err != nil {
+		return err
+	}
+
+	// Initialize sync status in database
+	if err := s.initializeSyncStatusForChain(chainName, startHeight); err != nil {
+		log.Printf("[%s] Failed to initialize sync status: %v", chainName, err)
+	}
+
+	log.Printf("[%s] Chain scanner added successfully", chainName)
+	return nil
+}
+
+// initializeSyncStatusForChain initialize sync status for a specific chain
+func (s *IndexerService) initializeSyncStatusForChain(chainName string, startHeight int64) error {
+	// Try to get existing status
+	existingStatus, err := s.syncStatusDAO.GetByChainName(chainName)
+	if err == nil && existingStatus != nil {
+		log.Printf("[%s] Sync status already exists, current sync height: %d", chainName, existingStatus.CurrentSyncHeight)
+		return nil
+	}
+
+	// Create initial status
+	initialHeight := int64(0)
+	if startHeight > 0 {
+		initialHeight = startHeight - 1
+	}
+
+	status := &model.IndexerSyncStatus{
+		ChainName:         chainName,
+		CurrentSyncHeight: initialHeight,
+		CreatedAt:         time.Now(),
+	}
+
+	if err := s.syncStatusDAO.CreateOrUpdate(status); err != nil {
+		return fmt.Errorf("failed to create sync status: %w", err)
+	}
+
+	log.Printf("[%s] Initialized sync status with height: %d", chainName, initialHeight)
+	return nil
+}
+
+// handleBlockEvent handles a block event from the multi-chain coordinator
+func (s *IndexerService) handleBlockEvent(event *indexer.BlockEvent) error {
+	log.Printf("[%s] Processing block at height %d (timestamp: %d)",
+		event.ChainName, event.Height, event.Timestamp)
+
+	// Determine chain type
+	var chainType indexer.ChainType
+	switch strings.ToLower(event.ChainName) {
+	case "btc":
+		chainType = indexer.ChainTypeBTC
+	case "mvc":
+		chainType = indexer.ChainTypeMVC
+	default:
+		return fmt.Errorf("unsupported chain type: %s", event.ChainName)
+	}
+
+	// Parse MetaID transactions from the block
+	parser := indexer.NewMetaIDParser("")
+
+	// Process transactions based on chain type
+	if chainType == indexer.ChainTypeBTC {
+		btcBlock, ok := event.Block.(*btcwire.MsgBlock)
+		if !ok {
+			return fmt.Errorf("invalid BTC block type")
+		}
+		//判断event.Timestamp的位数是否13位，不是的话，则认为是10位，则需要乘以1000
+		if len(strconv.FormatInt(event.Timestamp, 10)) != 13 {
+			event.Timestamp = event.Timestamp * 1000
+		}
+
+		// Process each transaction
+		for _, tx := range btcBlock.Transactions {
+			metaDataTx, err := parser.ParseAllPINs(tx, chainType)
+			if err != nil || metaDataTx == nil {
+				continue
+			}
+
+			// Handle the transaction
+			if err := s.handleTransaction(tx, metaDataTx, event.Height, event.Timestamp); err != nil {
+				log.Printf("[%s] Failed to handle transaction %s: %v", event.ChainName, metaDataTx.TxID, err)
+			}
+		}
+	} else {
+		mvcBlock, ok := event.Block.(*wire.MsgBlock)
+		if !ok {
+			return fmt.Errorf("invalid MVC block type")
+		}
+
+		//判断event.Timestamp的位数是否13位，不是的话，则认为是10位，则需要乘以1000
+		if len(strconv.FormatInt(event.Timestamp, 10)) != 13 {
+			event.Timestamp = event.Timestamp * 1000
+		}
+
+		// Process each transaction
+		for _, tx := range mvcBlock.Transactions {
+			metaDataTx, err := parser.ParseAllPINs(tx, chainType)
+			if err != nil || metaDataTx == nil {
+				continue
+			}
+
+			// Handle the transaction
+			if err := s.handleTransaction(tx, metaDataTx, event.Height, event.Timestamp); err != nil {
+				log.Printf("[%s] Failed to handle transaction %s: %v", event.ChainName, metaDataTx.TxID, err)
+			}
+		}
+	}
+
+	// Update sync status
+	if err := s.syncStatusDAO.UpdateCurrentSyncHeight(event.ChainName, event.Height); err != nil {
+		return fmt.Errorf("failed to update sync height: %w", err)
+	}
+
+	return nil
+}
+
 // initializeSyncStatus initialize sync status in database
 func (s *IndexerService) initializeSyncStatus(startHeight int64) error {
 	chainName := string(s.chainType)
@@ -142,6 +400,7 @@ func (s *IndexerService) initializeSyncStatus(startHeight int64) error {
 	status := &model.IndexerSyncStatus{
 		ChainName:         chainName,
 		CurrentSyncHeight: initialHeight,
+		CreatedAt:         time.Now(),
 	}
 
 	if err := s.syncStatusDAO.CreateOrUpdate(status); err != nil {
@@ -156,13 +415,45 @@ func (s *IndexerService) initializeSyncStatus(startHeight int64) error {
 func (s *IndexerService) Start() {
 	log.Println("Indexer service starting...")
 
-	// Start block scanning with block complete callback
-	s.scanner.Start(s.handleTransaction, s.onBlockComplete)
+	if s.isMultiChain {
+		// Multi-chain mode
+		log.Println("Starting in multi-chain mode...")
+		if err := s.coordinator.Start(); err != nil {
+			log.Fatalf("Failed to start multi-chain coordinator: %v", err)
+		}
+	} else {
+		// Single-chain mode
+		log.Println("Starting in single-chain mode...")
+		s.scanner.Start(s.handleTransaction, s.onBlockComplete)
+	}
 }
 
-// GetScanner get block scanner instance
+// GetScanner get block scanner instance (for single-chain mode)
 func (s *IndexerService) GetScanner() *indexer.BlockScanner {
 	return s.scanner
+}
+
+// GetCoordinator get multi-chain coordinator instance (for multi-chain mode)
+func (s *IndexerService) GetCoordinator() *indexer.MultiChainCoordinator {
+	return s.coordinator
+}
+
+// IsMultiChain returns whether the service is running in multi-chain mode
+func (s *IndexerService) IsMultiChain() bool {
+	return s.isMultiChain
+}
+
+// Stop stops the indexer service
+func (s *IndexerService) Stop() {
+	log.Println("Stopping indexer service...")
+
+	if s.isMultiChain && s.coordinator != nil {
+		s.coordinator.Stop()
+	} else if s.scanner != nil {
+		s.scanner.Stop()
+	}
+
+	log.Println("Indexer service stopped")
 }
 
 // onBlockComplete called after each block is successfully scanned
@@ -203,6 +494,10 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 			firstPinID = metaData.PinID // For create, firstPinID = PinID
 			firstPath = metaData.Path   // For create, firstPath = Path
 
+			if !metaid_protocols.IsProtocolPath(firstPath) {
+				continue
+			}
+
 			pinInfo := &model.IndexerPinInfo{
 				PinID:       metaData.PinID,
 				FirstPinID:  firstPinID,
@@ -236,6 +531,10 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 				firstPinID = metaData.PinID
 				firstPath = metaData.Path
 				log.Printf("Warning: %s operation without @pinId reference, using PinID as firstPinID: %s", metaData.Operation, firstPinID)
+			}
+
+			if !metaid_protocols.IsProtocolPath(firstPath) {
+				continue
 			}
 
 			// Save PIN info for modify/revoke operations
@@ -324,33 +623,6 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 				// Continue processing other PINs even if one fails
 				continue
 			}
-			// } else if isAvatarPath(metaData.Path) {
-			// 	// Check if this is an avatar PIN
-			// 	log.Printf("Processing avatar PIN: %s (path: %s, operation: %s)",
-			// 		metaData.PinID, metaData.Path, metaData.Operation)
-
-			// 	// Check if already exists
-			// 	existingAvatar, err := s.indexerUserAvatarDAO.GetByPinID(metaData.PinID)
-			// 	if err == nil && existingAvatar != nil {
-			// 		log.Printf("Avatar PIN already indexed: %s", metaData.PinID)
-
-			// 		// Update avatar content height
-			// 		if existingAvatar.BlockHeight < height && height > 0 {
-			// 			existingAvatar.BlockHeight = height
-			// 			if err := s.indexerUserAvatarDAO.Update(existingAvatar); err != nil {
-			// 				log.Printf("Failed to update avatar content height: %v", err)
-			// 			}
-			// 		}
-
-			// 		continue
-			// 	}
-
-			// 	// Process avatar content
-			// 	if err := s.processAvatarContent(metaData, height, timestamp); err != nil {
-			// 		log.Printf("Failed to process avatar content for PIN %s: %v", metaData.PinID, err)
-			// 		// Continue processing other PINs even if one fails
-			// 		continue
-			// 	}
 		} else if isUserNamePath(firstPath) {
 			// Check if this is a user name PIN
 			log.Printf("Processing user name PIN: %s (firstPath: %s, path: %s, operation: %s)",
@@ -400,14 +672,14 @@ func isFilePath(path string) bool {
 }
 
 // isAvatarPath check if path is an avatar path (avatar file, not info)
-func isAvatarPath(path string) bool {
-	// Check if path starts with /info/avatar or contains /info/avatar
-	// But exclude /info/avatar info path (which is for avatar info text)
-	if isUserAvatarInfoPath(path) {
-		return false
-	}
-	return strings.HasPrefix(path, "/info/avatar") || strings.Contains(path, "/info/avatar")
-}
+// func isAvatarPath(path string) bool {
+// 	// Check if path starts with /info/avatar or contains /info/avatar
+// 	// But exclude /info/avatar info path (which is for avatar info text)
+// 	if isUserAvatarInfoPath(path) {
+// 		return false
+// 	}
+// 	return strings.HasPrefix(path, "/info/avatar") || strings.Contains(path, "/info/avatar")
+// }
 
 // isUserNamePath check if path is a user name path
 func isUserNamePath(path string) bool {
@@ -419,20 +691,21 @@ func isUserNamePath(path string) bool {
 func isUserAvatarInfoPath(path string) bool {
 	// This is for avatar info text, not avatar file
 	// Usually path like /info/avatar with text content
-	return false // For now, we treat all /info/avatar as avatar files
+	return strings.HasPrefix(path, "/info/avatar") || strings.Contains(path, "/info/avatar")
 }
 
 // isUserChatPublicKeyPath check if path is a user chat public key path
 func isUserChatPublicKeyPath(path string) bool {
 	// Check if path starts with /info/chatpubkey or contains /info/chatpubkey
-	return strings.HasPrefix(path, "/info/chatpubkey") || strings.Contains(path, "/info/chatpubkey") ||
-		strings.HasPrefix(path, "/info/chatPublicKey") || strings.Contains(path, "/info/chatPublicKey")
+	return strings.HasPrefix(strings.ToLower(path), "/info/chatpubkey") || strings.Contains(strings.ToLower(path), "/info/chatpubkey") ||
+		strings.HasPrefix(strings.ToLower(path), strings.ToLower("/info/chatPublicKey")) || strings.Contains(strings.ToLower(path), strings.ToLower("/info/chatPublicKey"))
 }
 
 // isChunkPath check if path is a chunk path
 func isChunkPath(path string) bool {
 	// Check if path contains /file/_chunk
-	return strings.Contains(path, "/file/_chunk") || strings.Contains(path, "/file/"+metaid_protocols.MonitorFileChunk)
+	return strings.Contains(path, "/file/_chunk") || strings.Contains(path, "/file/"+metaid_protocols.MonitorFileChunk) ||
+		strings.Contains(path, "/file/chunk") || strings.Contains(path, "/file/"+metaid_protocols.MonitorFileChunkOld)
 }
 
 // isIndexPath check if path is an index path
@@ -497,7 +770,7 @@ func (s *IndexerService) processFileContentCreate(metaData *indexer.MetaIDData, 
 	// Get real creator address from CreatorInputLocation if available
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
-		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
 		if err != nil {
 			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
 				metaData.CreatorInputLocation, err)
@@ -627,7 +900,7 @@ func (s *IndexerService) processFileContentModify(metaData *indexer.MetaIDData, 
 	// Get real creator address
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
-		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
 		if err == nil {
 			creatorAddress = realAddress
 		}
@@ -736,7 +1009,7 @@ func (s *IndexerService) processFileContentModify(metaData *indexer.MetaIDData, 
 // 	// Get real creator address from CreatorInputLocation if available
 // 	creatorAddress := metaData.CreatorAddress
 // 	if metaData.CreatorInputLocation != "" {
-// 		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+// 		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
 // 		if err != nil {
 // 			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
 // 				metaData.CreatorInputLocation, err)
@@ -811,7 +1084,7 @@ func (s *IndexerService) processUserNameContent(metaData *indexer.MetaIDData, fi
 	// Get real creator address from CreatorInputLocation if available
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
-		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
 		if err != nil {
 			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
 				metaData.CreatorInputLocation, err)
@@ -869,7 +1142,7 @@ func (s *IndexerService) processUserAvatarInfoContent(metaData *indexer.MetaIDDa
 	// Get real creator address from CreatorInputLocation if available
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
-		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
 		if err != nil {
 			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
 				metaData.CreatorInputLocation, err)
@@ -969,7 +1242,7 @@ func (s *IndexerService) processUserChatPublicKeyContent(metaData *indexer.MetaI
 	// Get real creator address from CreatorInputLocation if available
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
-		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
 		if err != nil {
 			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
 				metaData.CreatorInputLocation, err)
@@ -1347,7 +1620,7 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, first
 	// Get real creator address from CreatorInputLocation if available
 	creatorAddress := metaData.CreatorAddress
 	if metaData.CreatorInputLocation != "" {
-		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, s.chainType)
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
 		if err != nil {
 			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
 				metaData.CreatorInputLocation, err)
@@ -1358,8 +1631,34 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, first
 	}
 
 	// Parse index JSON content
+	// First parse to a flexible structure to handle numeric fields that might be floats
+	var rawIndex map[string]interface{}
+	if err := json.Unmarshal(metaData.Content, &rawIndex); err != nil {
+		return fmt.Errorf("failed to parse index JSON: %w", err)
+	}
+
+	// Convert float values to int for numeric fields (chunkSize, fileSize)
+	if chunkSize, ok := rawIndex["chunkSize"]; ok {
+		switch v := chunkSize.(type) {
+		case float64:
+			rawIndex["chunkSize"] = int64(v)
+		}
+	}
+	if fileSize, ok := rawIndex["fileSize"]; ok {
+		switch v := fileSize.(type) {
+		case float64:
+			rawIndex["fileSize"] = int64(v)
+		}
+	}
+
+	// Re-marshal and unmarshal to the proper struct
+	correctedJSON, err := json.Marshal(rawIndex)
+	if err != nil {
+		return fmt.Errorf("failed to re-marshal corrected JSON: %w", err)
+	}
+
 	var metaFileIndex metaid_protocols.MetaFileIndex
-	if err := json.Unmarshal(metaData.Content, &metaFileIndex); err != nil {
+	if err := json.Unmarshal(correctedJSON, &metaFileIndex); err != nil {
 		return fmt.Errorf("failed to parse index JSON: %w", err)
 	}
 
@@ -1552,5 +1851,213 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, first
 		// For now, we just log that chunks are missing
 	}
 
+	return nil
+}
+
+// RescanBlocksAsync asynchronously rescans blocks within a specified range
+func (s *IndexerService) RescanBlocksAsync(chain string, startHeight, endHeight int64) (string, error) {
+	// Check if a task is already running
+	s.rescanMu.Lock()
+	if s.currentRescanTask != nil && s.currentRescanTask.Status == RescanStatusRunning {
+		s.rescanMu.Unlock()
+		return "", fmt.Errorf("another rescan task is already running: %s", s.currentRescanTask.TaskID)
+	}
+
+	// Validate parameters
+	if startHeight <= 0 {
+		s.rescanMu.Unlock()
+		return "", fmt.Errorf("start height must be greater than 0")
+	}
+	if endHeight < startHeight {
+		s.rescanMu.Unlock()
+		return "", fmt.Errorf("end height must be greater than or equal to start height")
+	}
+
+	// Validate chain
+	var chainType indexer.ChainType
+	switch strings.ToLower(chain) {
+	case "btc":
+		chainType = indexer.ChainTypeBTC
+	case "mvc":
+		chainType = indexer.ChainTypeMVC
+	default:
+		s.rescanMu.Unlock()
+		return "", fmt.Errorf("unsupported chain: %s, only 'btc' and 'mvc' are supported", chain)
+	}
+
+	chainName := string(chainType)
+
+	// Check if we're in multi-chain mode
+	var scanner *indexer.BlockScanner
+	if s.isMultiChain {
+		// Get scanner from coordinator
+		if s.coordinator == nil {
+			s.rescanMu.Unlock()
+			return "", fmt.Errorf("coordinator not initialized")
+		}
+		scanner = s.coordinator.GetScanner(chainName)
+		if scanner == nil {
+			s.rescanMu.Unlock()
+			return "", fmt.Errorf("scanner not found for chain: %s", chainName)
+		}
+	} else {
+		// Single chain mode
+		if s.scanner == nil {
+			s.rescanMu.Unlock()
+			return "", fmt.Errorf("scanner not initialized")
+		}
+		if string(s.chainType) != chainName {
+			s.rescanMu.Unlock()
+			return "", fmt.Errorf("current scanner is for chain %s, cannot rescan chain %s", s.chainType, chainName)
+		}
+		scanner = s.scanner
+	}
+
+	// Generate task ID
+	taskID := fmt.Sprintf("rescan_%s_%d_%d_%d", chainName, startHeight, endHeight, time.Now().Unix())
+
+	// Create context for cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create task
+	totalBlocks := endHeight - startHeight + 1
+	task := &RescanTask{
+		TaskID:          taskID,
+		Chain:           chainName,
+		Status:          RescanStatusRunning,
+		StartHeight:     startHeight,
+		EndHeight:       endHeight,
+		CurrentHeight:   startHeight,
+		ProcessedBlocks: 0,
+		TotalBlocks:     totalBlocks,
+		StartTime:       time.Now(),
+		CancelFunc:      cancel,
+	}
+
+	s.currentRescanTask = task
+	s.rescanMu.Unlock()
+
+	// Create handler for processing transactions during rescan
+	handler := s.handleTransaction
+
+	// Start rescan in goroutine
+	go func() {
+		log.Printf("[Rescan %s] Starting rescan task: %s (height %d to %d)", chainName, taskID, startHeight, endHeight)
+
+		defer func() {
+			// Clean up on completion
+			s.rescanMu.Lock()
+			if s.currentRescanTask != nil && s.currentRescanTask.TaskID == taskID {
+				if s.currentRescanTask.Status == RescanStatusRunning {
+					s.currentRescanTask.Status = RescanStatusCompleted
+				}
+			}
+			s.rescanMu.Unlock()
+		}()
+
+		for height := startHeight; height <= endHeight; height++ {
+			// Check for cancellation
+			select {
+			case <-ctx.Done():
+				task.mu.Lock()
+				task.Status = RescanStatusCancelled
+				task.mu.Unlock()
+				log.Printf("[Rescan %s] Task cancelled: %s at height %d", chainName, taskID, height)
+				return
+			default:
+			}
+
+			// Scan block
+			_, err := scanner.ScanBlock(height, handler)
+			if err != nil {
+				log.Printf("[Rescan %s] Failed to scan block %d: %v", chainName, height, err)
+				// Update error but continue
+				task.mu.Lock()
+				if task.ErrorMessage == "" {
+					task.ErrorMessage = fmt.Sprintf("Failed to scan block %d: %v", height, err)
+				}
+				task.mu.Unlock()
+				continue
+			}
+
+			// Update task progress
+			task.mu.Lock()
+			task.ProcessedBlocks++
+			task.CurrentHeight = height
+			task.mu.Unlock()
+
+			// Log progress every 100 blocks or at the end
+			if task.ProcessedBlocks%100 == 0 || height == endHeight {
+				task.mu.RLock()
+				elapsed := time.Since(task.StartTime)
+				blocksPerSecond := float64(task.ProcessedBlocks) / elapsed.Seconds()
+				progress := float64(task.ProcessedBlocks) / float64(totalBlocks) * 100
+
+				log.Printf("[Rescan %s] Progress: %.2f%% (%d/%d blocks), Speed: %.2f blocks/sec",
+					chainName, progress, task.ProcessedBlocks, totalBlocks, blocksPerSecond)
+				task.mu.RUnlock()
+			}
+		}
+
+		elapsed := time.Since(task.StartTime)
+		log.Printf("[Rescan %s] Completed task %s: rescanned %d blocks in %v (%.2f blocks/sec)",
+			chainName, taskID, task.ProcessedBlocks, elapsed, float64(task.ProcessedBlocks)/elapsed.Seconds())
+	}()
+
+	log.Printf("[Rescan %s] Rescan task queued: %s (height %d to %d)", chainName, taskID, startHeight, endHeight)
+	return taskID, nil
+}
+
+// GetRescanStatus returns the current rescan task status
+func (s *IndexerService) GetRescanStatus() *RescanTask {
+	s.rescanMu.Lock()
+	defer s.rescanMu.Unlock()
+
+	if s.currentRescanTask == nil {
+		// Return an idle task
+		return &RescanTask{
+			Status: RescanStatusIdle,
+		}
+	}
+
+	// Return a copy of the current task to avoid race conditions
+	s.currentRescanTask.mu.RLock()
+	defer s.currentRescanTask.mu.RUnlock()
+
+	taskCopy := &RescanTask{
+		TaskID:          s.currentRescanTask.TaskID,
+		Chain:           s.currentRescanTask.Chain,
+		Status:          s.currentRescanTask.Status,
+		StartHeight:     s.currentRescanTask.StartHeight,
+		EndHeight:       s.currentRescanTask.EndHeight,
+		CurrentHeight:   s.currentRescanTask.CurrentHeight,
+		ProcessedBlocks: s.currentRescanTask.ProcessedBlocks,
+		TotalBlocks:     s.currentRescanTask.TotalBlocks,
+		StartTime:       s.currentRescanTask.StartTime,
+		ErrorMessage:    s.currentRescanTask.ErrorMessage,
+	}
+
+	return taskCopy
+}
+
+// StopRescan stops the current rescan task
+func (s *IndexerService) StopRescan() error {
+	s.rescanMu.Lock()
+	defer s.rescanMu.Unlock()
+
+	if s.currentRescanTask == nil {
+		return fmt.Errorf("no rescan task is running")
+	}
+
+	if s.currentRescanTask.Status != RescanStatusRunning {
+		return fmt.Errorf("rescan task is not running (status: %s)", s.currentRescanTask.Status)
+	}
+
+	// Cancel the task
+	if s.currentRescanTask.CancelFunc != nil {
+		s.currentRescanTask.CancelFunc()
+	}
+
+	log.Printf("[Rescan] Stopping task: %s", s.currentRescanTask.TaskID)
 	return nil
 }

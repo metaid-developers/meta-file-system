@@ -41,3 +41,5 @@ tmp/
 temp/
 
 nginx.d
+
+fix_service.go

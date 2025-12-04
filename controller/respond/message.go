@@ -42,6 +42,17 @@ func Success(c *gin.Context, data interface{}) {
 	SuccessWithMsg(c, MsgSuccess, data)
 }
 
+// Success return success response
+func SuccessWithCode(c *gin.Context, code int, data interface{}) {
+	processingTime := getProcessingTime(c)
+	c.JSON(200, Message{
+		Code:           code,
+		Message:        MsgSuccess,
+		ProcessingTime: processingTime,
+		Data:           data,
+	})
+}
+
 // SuccessWithMsg return success response (custom message)
 func SuccessWithMsg(c *gin.Context, message string, data interface{}) {
 	processingTime := getProcessingTime(c)

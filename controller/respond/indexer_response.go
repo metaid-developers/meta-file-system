@@ -56,6 +56,60 @@ type IndexerAvatarResponse struct {
 	UpdatedAt     time.Time `json:"updated_at" example:"2024-01-01T00:00:00Z"`
 }
 
+// RescanRequest request structure for block rescan
+type RescanRequest struct {
+	Chain       string `json:"chain" binding:"required" example:"mvc"`
+	StartHeight int64  `json:"start_height" binding:"required,gt=0" example:"100000"`
+	EndHeight   int64  `json:"end_height" binding:"required,gtefield=StartHeight" example:"100100"`
+}
+
+// RescanResponse response structure for block rescan
+type RescanResponse struct {
+	Message     string `json:"message" example:"Block rescan task started successfully"`
+	Chain       string `json:"chain" example:"mvc"`
+	StartHeight int64  `json:"start_height" example:"100000"`
+	EndHeight   int64  `json:"end_height" example:"100100"`
+	TaskID      string `json:"task_id" example:"rescan_mvc_100000_100100_1699999999"`
+}
+
+// RescanStatusResponse response structure for rescan status query
+type RescanStatusResponse struct {
+	TaskID            string  `json:"task_id" example:"rescan_mvc_100000_100100_1699999999"`
+	Chain             string  `json:"chain" example:"mvc"`
+	Status            string  `json:"status" example:"running"` // idle, running, completed, cancelled, failed
+	StartHeight       int64   `json:"start_height" example:"100000"`
+	EndHeight         int64   `json:"end_height" example:"100100"`
+	CurrentHeight     int64   `json:"current_height" example:"100050"`
+	ProcessedBlocks   int64   `json:"processed_blocks" example:"50"`
+	TotalBlocks       int64   `json:"total_blocks" example:"101"`
+	Progress          float64 `json:"progress" example:"49.50"` // percentage
+	Speed             float64 `json:"speed" example:"12.34"`    // blocks per second
+	StartTime         int64   `json:"start_time" example:"1699999999"`
+	ElapsedTime       int64   `json:"elapsed_time" example:"4050"`        // milliseconds
+	EstimatedTimeLeft int64   `json:"estimated_time_left" example:"4100"` // milliseconds
+	ErrorMessage      string  `json:"error_message,omitempty" example:""`
+}
+
+// RescanStopResponse response structure for stop rescan
+type RescanStopResponse struct {
+	Message string `json:"message" example:"Rescan task stopped successfully"`
+	TaskID  string `json:"task_id" example:"rescan_mvc_100000_100100_1699999999"`
+	Status  string `json:"status" example:"cancelled"`
+}
+
+// IndexerPinInfoResponse PIN information response structure
+type IndexerPinInfoResponse struct {
+	PinID       string `json:"pin_id" example:"abc123def456i0"`
+	FirstPinID  string `json:"first_pin_id" example:"xyz789i0"`
+	FirstPath   string `json:"first_path" example:"/protocols/simplebuzz/info/name"`
+	Path        string `json:"path" example:"@xyz789i0"`
+	Operation   string `json:"operation" example:"modify"`
+	ContentType string `json:"content_type" example:"text/plain"`
+	ChainName   string `json:"chain_name" example:"mvc"`
+	BlockHeight int64  `json:"block_height" example:"12345"`
+	Timestamp   int64  `json:"timestamp" example:"1699999999"`
+}
+
 // IndexerSyncStatusResponse sync status response structure
 type IndexerSyncStatusResponse struct {
 	// ID                int64     `json:"id" example:"1"`
@@ -82,7 +136,8 @@ type IndexerAvatarListResponse struct {
 
 // IndexerStatsResponse statistics response structure
 type IndexerStatsResponse struct {
-	TotalFiles int64 `json:"total_files" example:"12345"`
+	TotalFiles int64            `json:"total_files" example:"12345"`
+	ChainStats map[string]int64 `json:"chain_stats,omitempty"` // Per-chain file counts
 }
 
 // UserInfoListResponse user info list response structure
@@ -90,6 +145,7 @@ type UserInfoListResponse struct {
 	Users      []*model.IndexerUserInfo `json:"users"`
 	NextCursor int64                    `json:"next_cursor" example:"100"`
 	HasMore    bool                     `json:"has_more" example:"true"`
+	Total      int64                    `json:"total" example:"1000"` // Total number of users
 }
 
 // ToIndexerFileResponse convert model to response
@@ -193,6 +249,24 @@ func ToIndexerSyncStatusResponse(status *model.IndexerSyncStatus, latestBlockHei
 	}
 }
 
+// ToIndexerPinInfoResponse convert model to response
+func ToIndexerPinInfoResponse(pinInfo *model.IndexerPinInfo) IndexerPinInfoResponse {
+	if pinInfo == nil {
+		return IndexerPinInfoResponse{}
+	}
+	return IndexerPinInfoResponse{
+		PinID:       pinInfo.PinID,
+		FirstPinID:  pinInfo.FirstPinID,
+		FirstPath:   pinInfo.FirstPath,
+		Path:        pinInfo.Path,
+		Operation:   pinInfo.Operation,
+		ContentType: pinInfo.ContentType,
+		ChainName:   pinInfo.ChainName,
+		BlockHeight: pinInfo.BlockHeight,
+		Timestamp:   pinInfo.Timestamp,
+	}
+}
+
 // ToIndexerStatsResponse convert stats to response
 func ToIndexerStatsResponse(totalFiles int64) IndexerStatsResponse {
 	return IndexerStatsResponse{
@@ -200,11 +274,65 @@ func ToIndexerStatsResponse(totalFiles int64) IndexerStatsResponse {
 	}
 }
 
+// ToIndexerStatsResponseWithChains convert stats with chain breakdown to response
+func ToIndexerStatsResponseWithChains(totalFiles int64, chainStats map[string]int64) IndexerStatsResponse {
+	return IndexerStatsResponse{
+		TotalFiles: totalFiles,
+		ChainStats: chainStats,
+	}
+}
+
+// IndexerMultiChainSyncStatusResponse multi-chain sync status response
+type IndexerMultiChainSyncStatusResponse struct {
+	Chains []IndexerSyncStatusResponse `json:"chains"`
+}
+
+// ToIndexerMultiChainSyncStatusResponse convert multiple statuses to response
+func ToIndexerMultiChainSyncStatusResponse(statuses []*model.IndexerSyncStatus, latestHeights map[string]int64) IndexerMultiChainSyncStatusResponse {
+	chains := make([]IndexerSyncStatusResponse, 0, len(statuses))
+	for _, status := range statuses {
+		latestHeight := int64(0)
+		if h, ok := latestHeights[status.ChainName]; ok {
+			latestHeight = h
+		}
+		chains = append(chains, ToIndexerSyncStatusResponse(status, latestHeight))
+	}
+	return IndexerMultiChainSyncStatusResponse{
+		Chains: chains,
+	}
+}
+
 // ToUserInfoListResponse convert to user info list response
-func ToUserInfoListResponse(users []*model.IndexerUserInfo, nextCursor int64, hasMore bool) UserInfoListResponse {
+func ToUserInfoListResponse(users []*model.IndexerUserInfo, nextCursor int64, hasMore bool, total int64) UserInfoListResponse {
 	return UserInfoListResponse{
 		Users:      users,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
+		Total:      total,
+	}
+}
+
+// MetaIDUserInfo MetaID user info response (compatible with external API format)
+type MetaIDUserInfo struct {
+	Metaid       string `json:"metaid" example:"abc123def456..."`
+	Name         string `json:"name" example:"John Doe"`
+	Address      string `json:"address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
+	Avatar       string `json:"avatar" example:"https://oss.example.com/avatar.jpg"`
+	AvatarId     string `json:"avatarId" example:"xyz789i0"`
+	Chatpubkey   string `json:"chatpubkey" example:"02abc123..."`
+	ChatpubkeyId string `json:"chatpubkeyId" example:"def456i0"`
+}
+
+// ToMetaIDUserInfo convert IndexerUserInfo to MetaIDUserInfo
+func ToMetaIDUserInfo(userInfo *model.IndexerUserInfo) *MetaIDUserInfo {
+	return &MetaIDUserInfo{
+		Metaid:  userInfo.MetaId,
+		Name:    userInfo.Name,
+		Address: userInfo.Address,
+		// Avatar:       userInfo.Avatar,
+		Avatar:       "/content/" + userInfo.AvatarPinId,
+		AvatarId:     userInfo.AvatarPinId,
+		Chatpubkey:   userInfo.ChatPublicKey,
+		ChatpubkeyId: userInfo.ChatPublicKeyPinId,
 	}
 }

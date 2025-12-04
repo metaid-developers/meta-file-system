@@ -14,6 +14,7 @@ type Database interface {
 	GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
 	GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
 	GetIndexerFilesCount() (int64, error)
+	GetIndexerFilesCountByChain(chainName string) (int64, error)
 	GetLatestFileInfoByFirstPinID(firstPinID string) (*model.IndexerFile, error)
 	AddFileInfoHistory(history *model.FileInfoHistory, firstPinID string) error
 	GetFileInfoHistory(firstPinID string) ([]model.FileInfoHistory, error)
@@ -47,6 +48,7 @@ type Database interface {
 	// User Avatar
 	CreateOrUpdateLatestUserAvatarInfo(info *model.UserAvatarInfo, metaID string) error
 	GetLatestUserAvatarInfo(key string) (*model.UserAvatarInfo, error)
+	GetUserAvatarInfoByPinID(pinID string) (*model.UserAvatarInfo, error)
 	AddUserAvatarInfoHistory(info *model.UserAvatarInfo, metaID string) error
 	GetUserAvatarInfoHistory(key string) ([]model.UserAvatarInfo, error)
 	// User Chat Public Key
@@ -67,6 +69,7 @@ type Database interface {
 	// MetaIdTimestamp operations
 	SaveMetaIdTimestamp(metaID string, timestamp int64) error
 	ListMetaIdsByTimestamp(cursor int64, size int) ([]model.MetaIdTimestamp, int64, bool, error)
+	GetMetaIDCount() (int64, error)
 
 	// General operations
 	Close() error

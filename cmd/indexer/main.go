@@ -59,6 +59,9 @@ func main() {
 
 	log.Println("Shutting down indexer service...")
 
+	// Stop indexer service
+	indexerService.Stop()
+
 	// Gracefully shutdown HTTP service
 	shutdownServer(srv)
 
@@ -98,6 +101,11 @@ func initAll() (*indexer_service.IndexerService, *http.Server, func()) {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// Initialize Redis (optional, won't fail if disabled or unavailable)
+	if err := database.InitRedis(); err != nil {
+		log.Printf("⚠️  Redis initialization failed (cache will be disabled): %v", err)
+	}
+
 	// Initialize storage
 	stor, err := storage.NewStorage()
 	if err != nil {
@@ -105,10 +113,98 @@ func initAll() (*indexer_service.IndexerService, *http.Server, func()) {
 	}
 	log.Printf("Storage initialized: type=%s", conf.Cfg.Storage.Type)
 
-	// Create indexer service
-	indexerService, err := indexer_service.NewIndexerService(stor)
-	if err != nil {
-		log.Fatalf("Failed to create indexer service: %v", err)
+	// 🔧 执行数据修复（执行一次后可以注释掉）
+	// 注意：需要先创建 BlockScanner 才能使用修复服务
+	// 从多链配置中获取 MVC 和 BTC 配置
+	// var mvcConfig, btcConfig *conf.ChainInstanceConfig
+	// for i := range conf.Cfg.Indexer.Chains {
+	// 	chain := &conf.Cfg.Indexer.Chains[i]
+	// 	if chain.Name == "mvc" {
+	// 		mvcConfig = chain
+	// 	} else if chain.Name == "btc" {
+	// 		btcConfig = chain
+	// 	}
+	// }
+
+	// // 如果没有多链配置，使用单链配置作为 fallback
+	// var mvcBlockScanner, btcBlockScanner *indexer.BlockScanner
+	// if mvcConfig != nil {
+	// 	mvcBlockScanner = indexer.NewBlockScannerWithChain(
+	// 		mvcConfig.RpcUrl,
+	// 		mvcConfig.RpcUser,
+	// 		mvcConfig.RpcPass,
+	// 		mvcConfig.StartHeight,
+	// 		conf.Cfg.Indexer.ScanInterval,
+	// 		indexer.ChainTypeMVC,
+	// 	)
+	// } else {
+	// 	// Fallback: 使用单链配置
+	// 	mvcBlockScanner = indexer.NewBlockScannerWithChain(
+	// 		conf.Cfg.Chain.RpcUrl,
+	// 		conf.Cfg.Chain.RpcUser,
+	// 		conf.Cfg.Chain.RpcPass,
+	// 		conf.Cfg.Chain.StartHeight,
+	// 		conf.Cfg.Indexer.ScanInterval,
+	// 		indexer.ChainTypeMVC,
+	// 	)
+	// }
+
+	// if btcConfig != nil {
+	// 	btcBlockScanner = indexer.NewBlockScannerWithChain(
+	// 		btcConfig.RpcUrl,
+	// 		btcConfig.RpcUser,
+	// 		btcConfig.RpcPass,
+	// 		btcConfig.StartHeight,
+	// 		conf.Cfg.Indexer.ScanInterval,
+	// 		indexer.ChainTypeBTC,
+	// 	)
+	// } else {
+	// 	// Fallback: 使用单链配置（假设是 BTC）
+	// 	btcBlockScanner = indexer.NewBlockScannerWithChain(
+	// 		conf.Cfg.Chain.RpcUrl,
+	// 		conf.Cfg.Chain.RpcUser,
+	// 		conf.Cfg.Chain.RpcPass,
+	// 		conf.Cfg.Chain.StartHeight,
+	// 		conf.Cfg.Indexer.ScanInterval,
+	// 		indexer.ChainTypeBTC,
+	// 	)
+	// }
+
+	// // 创建修复服务（需要 MVC 和 BTC 两个扫描器）
+	// fixService := indexer_service.NewFixService(mvcBlockScanner, btcBlockScanner)
+
+	// // 修复用户头像信息（执行一次后可以注释掉）
+	// // log.Println("🔧 Starting FixUserAvatarInfoCollection...")
+	// // if err := fixService.FixUserAvatarInfoCollection(); err != nil {
+	// // 	log.Printf("⚠️  FixUserAvatarInfoCollection failed: %v", err)
+	// // } else {
+	// // 	log.Println("✅ FixUserAvatarInfoCollection completed successfully")
+	// // }
+
+	// // 修复用户名称信息（执行一次后可以注释掉）
+	// log.Println("[FIX]🔧 Starting FixUserNameInfoCollection...")
+	// if err := fixService.FixUserNameInfoCollection(); err != nil {
+	// 	log.Printf("[FIX]⚠️  FixUserNameInfoCollection failed: %v", err)
+	// } else {
+	// 	log.Println("[FIX]✅ FixUserNameInfoCollection completed successfully")
+	// }
+
+	// Create indexer service (multi-chain or single-chain)
+	var indexerService *indexer_service.IndexerService
+	if len(conf.Cfg.Indexer.Chains) > 0 {
+		// Multi-chain mode
+		log.Printf("Initializing in multi-chain mode with %d chains", len(conf.Cfg.Indexer.Chains))
+		indexerService, err = indexer_service.NewMultiChainIndexerService(stor, conf.Cfg.Indexer.Chains)
+		if err != nil {
+			log.Fatalf("Failed to create multi-chain indexer service: %v", err)
+		}
+	} else {
+		// Single-chain mode (backward compatible)
+		log.Println("Initializing in single-chain mode")
+		indexerService, err = indexer_service.NewIndexerService(stor)
+		if err != nil {
+			log.Fatalf("Failed to create indexer service: %v", err)
+		}
 	}
 
 	// Setup indexer service router (pass indexerService for scanner access)
@@ -124,6 +220,9 @@ func initAll() (*indexer_service.IndexerService, *http.Server, func()) {
 	cleanup := func() {
 		if database.DB != nil {
 			database.DB.Close()
+		}
+		if err := database.CloseRedis(); err != nil {
+			log.Printf("Failed to close Redis: %v", err)
 		}
 	}
 

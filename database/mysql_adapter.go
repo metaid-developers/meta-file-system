@@ -136,6 +136,14 @@ func (m *MySQLDatabase) GetIndexerFilesCount() (int64, error) {
 	return count, err
 }
 
+func (m *MySQLDatabase) GetIndexerFilesCountByChain(chainName string) (int64, error) {
+	var count int64
+	err := m.db.Model(&model.IndexerFile{}).
+		Where("chain_name = ? AND status = ? AND state = 0", chainName, model.StatusSuccess).
+		Count(&count).Error
+	return count, err
+}
+
 // IndexerUserAvatar operations
 
 func (m *MySQLDatabase) CreateIndexerUserAvatar(avatar *model.IndexerUserAvatar) error {
@@ -291,6 +299,10 @@ func (m *MySQLDatabase) GetLatestUserAvatarInfo(key string) (*model.UserAvatarIn
 	return nil, ErrNotImplemented
 }
 
+func (m *MySQLDatabase) GetUserAvatarInfoByPinID(pinID string) (*model.UserAvatarInfo, error) {
+	return nil, ErrNotImplemented
+}
+
 func (m *MySQLDatabase) AddUserAvatarInfoHistory(info *model.UserAvatarInfo, metaID string) error {
 	return ErrNotImplemented
 }
@@ -344,6 +356,10 @@ func (m *MySQLDatabase) SaveMetaIdTimestamp(metaID string, timestamp int64) erro
 
 func (m *MySQLDatabase) ListMetaIdsByTimestamp(cursor int64, size int) ([]model.MetaIdTimestamp, int64, bool, error) {
 	return nil, 0, false, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetMetaIDCount() (int64, error) {
+	return 0, ErrNotImplemented
 }
 
 // Close close database connection

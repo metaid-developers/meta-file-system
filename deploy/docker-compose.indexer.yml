@@ -1,13 +1,55 @@
 version: '3.8'
 
 services:
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: meta-file-system-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"  # External port 6380, internal port 6379
+    environment:
+      - TZ=Asia/Shanghai
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    networks:
+      - meta-file-system-network
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'           # Limit to 2 CPU cores
+          memory: 2G          # Limit to 2GB memory
+        reservations:
+          cpus: '0.5'         # Reserve at least 0.5 CPU cores
+          memory: 512M        # Reserve at least 512MB memory
+    # Alternative for non-swarm mode
+    cpus: 2
+    mem_limit: 2g
+    mem_reservation: 512m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
   # Indexer indexing service
   indexer:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.indexer
     container_name: meta-file-system-indexer
-    restart: always
+    restart: unless-stopped
     ports:
       - "${INDEXER_PORT:-7281}:7281"
     environment:
@@ -18,6 +60,22 @@ services:
       - ../../indexer_pebble_data:/app/indexer_pebble_data
     networks:
       - meta-file-system-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'           # Limit to 4 CPU cores
+          memory: 8G          # Limit to 8GB memory
+        reservations:
+          cpus: '2'           # Reserve at least 2 CPU cores
+          memory: 4G          # Reserve at least 4GB memory
+    # Alternative for non-swarm mode (Docker Compose v2 compatibility)
+    cpus: 4
+    mem_limit: 8g
+    mem_reservation: 4g
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:7281/health"]
       interval: 30s
@@ -26,6 +84,8 @@ services:
 
 volumes:
   indexer_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:

@@ -28,6 +28,9 @@ type Config struct {
 
 	// Uploader configuration
 	Uploader UploaderConfig
+
+	// Redis configuration
+	Redis RedisConfig
 }
 
 // DatabaseConfig database configuration
@@ -52,6 +55,8 @@ type StorageConfig struct {
 	Type  string
 	Local LocalStorageConfig
 	OSS   OSSStorageConfig
+	S3    S3StorageConfig
+	MinIO MinIOStorageConfig
 }
 
 // LocalStorageConfig local storage configuration
@@ -68,6 +73,37 @@ type OSSStorageConfig struct {
 	Domain    string
 }
 
+// S3StorageConfig AWS S3 storage configuration
+type S3StorageConfig struct {
+	Region    string
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	Domain    string
+	Endpoint  string // Optional custom endpoint
+}
+
+// MinIOStorageConfig MinIO storage configuration
+type MinIOStorageConfig struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	UseSSL    bool
+	Domain    string
+}
+
+// ChainInstanceConfig single chain instance configuration
+type ChainInstanceConfig struct {
+	Name        string `mapstructure:"name"`         // Chain name: btc, mvc, etc.
+	RpcUrl      string `mapstructure:"rpc_url"`      // RPC URL
+	RpcUser     string `mapstructure:"rpc_user"`     // RPC username
+	RpcPass     string `mapstructure:"rpc_pass"`     // RPC password
+	StartHeight int64  `mapstructure:"start_height"` // Start height for this chain
+	ZmqEnabled  bool   `mapstructure:"zmq_enabled"`  // Enable ZMQ for this chain
+	ZmqAddress  string `mapstructure:"zmq_address"`  // ZMQ server address
+}
+
 // IndexerConfig indexer configuration
 type IndexerConfig struct {
 	ScanInterval       int
@@ -78,6 +114,20 @@ type IndexerConfig struct {
 	SwaggerBaseUrl     string // Swagger API base URL (e.g., "example.com:7281")
 	ZmqEnabled         bool   // Enable ZMQ real-time monitoring
 	ZmqAddress         string // ZMQ server address (e.g., "tcp://127.0.0.1:28332")
+
+	// Multi-chain support
+	Chains              []ChainInstanceConfig // Multi-chain configurations
+	TimeOrderingEnabled bool                  // Enable strict time ordering across chains
+}
+
+// RedisConfig redis configuration
+type RedisConfig struct {
+	Enabled  bool   // Enable Redis cache
+	Host     string // Redis host
+	Port     int    // Redis port
+	Password string // Redis password (optional)
+	DB       int    // Redis database number
+	CacheTTL int    // Cache TTL in seconds (default: 300)
 }
 
 // UploaderConfig uploader configuration
@@ -142,17 +192,34 @@ func InitConfig() error {
 				Bucket:    viper.GetString("storage.oss.bucket"),
 				Domain:    viper.GetString("storage.oss.domain"),
 			},
+			S3: S3StorageConfig{
+				Region:    viper.GetString("storage.s3.region"),
+				AccessKey: viper.GetString("storage.s3.access_key"),
+				SecretKey: viper.GetString("storage.s3.secret_key"),
+				Bucket:    viper.GetString("storage.s3.bucket"),
+				Domain:    viper.GetString("storage.s3.domain"),
+				Endpoint:  viper.GetString("storage.s3.endpoint"),
+			},
+			MinIO: MinIOStorageConfig{
+				Endpoint:  viper.GetString("storage.minio.endpoint"),
+				AccessKey: viper.GetString("storage.minio.access_key"),
+				SecretKey: viper.GetString("storage.minio.secret_key"),
+				Bucket:    viper.GetString("storage.minio.bucket"),
+				UseSSL:    viper.GetBool("storage.minio.use_ssl"),
+				Domain:    viper.GetString("storage.minio.domain"),
+			},
 		},
 
 		Indexer: IndexerConfig{
-			ScanInterval:       viper.GetInt("indexer.scan_interval"),
-			BatchSize:          viper.GetInt("indexer.batch_size"),
-			StartHeight:        viper.GetInt64("indexer.start_height"),
-			MvcInitBlockHeight: viper.GetInt64("indexer.mvc_init_block_height"),
-			BtcInitBlockHeight: viper.GetInt64("indexer.btc_init_block_height"),
-			SwaggerBaseUrl:     viper.GetString("indexer.swagger_base_url"),
-			ZmqEnabled:         viper.GetBool("indexer.zmq_enabled"),
-			ZmqAddress:         viper.GetString("indexer.zmq_address"),
+			ScanInterval:        viper.GetInt("indexer.scan_interval"),
+			BatchSize:           viper.GetInt("indexer.batch_size"),
+			StartHeight:         viper.GetInt64("indexer.start_height"),
+			MvcInitBlockHeight:  viper.GetInt64("indexer.mvc_init_block_height"),
+			BtcInitBlockHeight:  viper.GetInt64("indexer.btc_init_block_height"),
+			SwaggerBaseUrl:      viper.GetString("indexer.swagger_base_url"),
+			ZmqEnabled:          viper.GetBool("indexer.zmq_enabled"),
+			ZmqAddress:          viper.GetString("indexer.zmq_address"),
+			TimeOrderingEnabled: viper.GetBool("indexer.time_ordering_enabled"),
 		},
 
 		Uploader: UploaderConfig{
@@ -160,6 +227,15 @@ func InitConfig() error {
 			FeeRate:        viper.GetInt64("uploader.fee_rate"),
 			ChunkSize:      viper.GetInt64("uploader.chunk_size") * 1024 * 1024, // MB to bytes
 			SwaggerBaseUrl: viper.GetString("uploader.swagger_base_url"),
+		},
+
+		Redis: RedisConfig{
+			Enabled:  viper.GetBool("redis.enabled"),
+			Host:     viper.GetString("redis.host"),
+			Port:     viper.GetInt("redis.port"),
+			Password: viper.GetString("redis.password"),
+			DB:       viper.GetInt("redis.db"),
+			CacheTTL: viper.GetInt("redis.cache_ttl"),
 		},
 	}
 
@@ -205,6 +281,55 @@ func InitConfig() error {
 		Cfg.Uploader.SwaggerBaseUrl = "localhost:" + Cfg.UploaderPort
 	}
 
+	// Load multi-chain configurations if present
+	if viper.IsSet("indexer.chains") {
+		fmt.Println("🔍 Detected indexer.chains in config, loading multi-chain configuration...")
+
+		// Debug: print raw config value
+		rawChains := viper.Get("indexer.chains")
+		fmt.Printf("📋 Raw chains config type: %T, value: %+v\n", rawChains, rawChains)
+
+		var chains []ChainInstanceConfig
+		if err := viper.UnmarshalKey("indexer.chains", &chains); err != nil {
+			fmt.Printf("❌ Warning: failed to parse indexer.chains: %v\n", err)
+
+			// Try alternative parsing method
+			fmt.Println("🔄 Trying alternative parsing method...")
+			chainsInterface := viper.Get("indexer.chains")
+			if chainsList, ok := chainsInterface.([]interface{}); ok {
+				fmt.Printf("📋 Found %d chains in config\n", len(chainsList))
+				for i, chainInterface := range chainsList {
+					if chainMap, ok := chainInterface.(map[string]interface{}); ok {
+						chain := ChainInstanceConfig{
+							Name:        getStringFromMap(chainMap, "name"),
+							RpcUrl:      getStringFromMap(chainMap, "rpc_url"),
+							RpcUser:     getStringFromMap(chainMap, "rpc_user"),
+							RpcPass:     getStringFromMap(chainMap, "rpc_pass"),
+							StartHeight: getInt64FromMap(chainMap, "start_height"),
+							ZmqEnabled:  getBoolFromMap(chainMap, "zmq_enabled"),
+							ZmqAddress:  getStringFromMap(chainMap, "zmq_address"),
+						}
+						chains = append(chains, chain)
+						fmt.Printf("  ✅ Parsed chain %d: %s (RPC: %s)\n", i+1, chain.Name, chain.RpcUrl)
+					}
+				}
+			}
+		}
+
+		if len(chains) > 0 {
+			Cfg.Indexer.Chains = chains
+			fmt.Printf("✅ Loaded %d chain configurations successfully\n", len(chains))
+			for i, chain := range chains {
+				fmt.Printf("  Chain %d: %s (RPC: %s, Start: %d, ZMQ: %v)\n",
+					i+1, chain.Name, chain.RpcUrl, chain.StartHeight, chain.ZmqEnabled)
+			}
+		} else {
+			fmt.Println("⚠️  No chains loaded, falling back to single-chain mode")
+		}
+	} else {
+		fmt.Println("ℹ️  No multi-chain configuration found, using single-chain mode")
+	}
+
 	// Initialize RpcConfigMap (use currently configured chain)
 	RpcConfigMap[Cfg.Net] = RpcConfig{
 		Url:      Cfg.Chain.RpcUrl,
@@ -213,4 +338,37 @@ func InitConfig() error {
 	}
 
 	return nil
+}
+
+// Helper functions for parsing chain config from map
+func getStringFromMap(m map[string]interface{}, key string) string {
+	if val, ok := m[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+func getInt64FromMap(m map[string]interface{}, key string) int64 {
+	if val, ok := m[key]; ok {
+		switch v := val.(type) {
+		case int:
+			return int64(v)
+		case int64:
+			return v
+		case float64:
+			return int64(v)
+		}
+	}
+	return 0
+}
+
+func getBoolFromMap(m map[string]interface{}, key string) bool {
+	if val, ok := m[key]; ok {
+		if b, ok := val.(bool); ok {
+			return b
+		}
+	}
+	return false
 }

@@ -40,13 +40,23 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 
 	// Create sync status service instance
 	syncStatusService := indexer_service.NewSyncStatusService()
-	// Set scanner for getting latest block height
+	// Set scanner or coordinator for getting latest block height
 	if indexerService != nil {
-		syncStatusService.SetBlockScanner(indexerService.GetScanner())
+		if indexerService.IsMultiChain() {
+			// Multi-chain mode: set coordinator
+			syncStatusService.SetMultiChainCoordinator(indexerService.GetCoordinator())
+		} else {
+			// Single-chain mode: set scanner
+			syncStatusService.SetBlockScanner(indexerService.GetScanner())
+		}
 	}
 
 	// Create handler
 	indexerQueryHandler := handler.NewIndexerQueryHandler(indexerFileService, syncStatusService)
+	// Set indexer service for admin operations (like rescan)
+	if indexerService != nil {
+		indexerQueryHandler.SetIndexerService(indexerService)
+	}
 
 	// API v1 route group
 	v1 := r.Group("/api/v1")
@@ -66,37 +76,21 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 			// Get accelerated file content redirect to OSS
 			files.GET("/accelerate/content/:pinId", indexerQueryHandler.GetFastFileContent)
 
+			// Get latest file by first PIN ID
+			files.GET("/latest/:firstPinId", indexerQueryHandler.GetLatestByFirstPinID)
+
+			// Get latest file content by first PIN ID
+			files.GET("/content/latest/:firstPinId", indexerQueryHandler.GetLatestFileContentByFirstPinID)
+
+			// Get latest accelerated file content redirect to OSS by first PIN ID
+			files.GET("/accelerate/content/latest/:firstPinId", indexerQueryHandler.GetLatestFastFileContentByFirstPinID)
+
 			// Get files by creator address
 			files.GET("/creator/:address", indexerQueryHandler.GetByCreatorAddress)
 
 			// Get files by creator MetaID
 			files.GET("/metaid/:metaId", indexerQueryHandler.GetByCreatorMetaID)
 		}
-
-		// Indexer avatar query routes - DEPRECATED (commented out)
-		// avatars := v1.Group("/avatars")
-		// {
-		// 	// Get avatar list (cursor pagination)
-		// 	avatars.GET("", indexerQueryHandler.ListAvatars)
-		//
-		// 	// Get avatar content by PIN ID
-		// 	avatars.GET("/content/:pinId", indexerQueryHandler.GetAvatarContent)
-		//
-		// 	// Get accelerated avatar content redirect to OSS by PIN ID
-		// 	avatars.GET("/accelerate/content/:pinId", indexerQueryHandler.GetFastAvatarContent)
-		//
-		// 	// Get latest avatar by MetaID
-		// 	avatars.GET("/metaid/:metaId", indexerQueryHandler.GetLatestAvatarByMetaID)
-		//
-		// 	// Get accelerated avatar redirect to OSS by MetaID
-		// 	avatars.GET("/accelerate/metaid/:metaId", indexerQueryHandler.GetFastAvatarByMetaID)
-		//
-		// 	// Get latest avatar by address
-		// 	avatars.GET("/address/:address", indexerQueryHandler.GetLatestAvatarByAddress)
-		//
-		// 	// Get accelerated avatar redirect to OSS by address
-		// 	avatars.GET("/accelerate/address/:address", indexerQueryHandler.GetFastAvatarByAddress)
-		// }
 
 		// Indexer user info query routes
 		users := v1.Group("/users")
@@ -110,8 +104,21 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 			// Get user info by address
 			users.GET("/address/:address", indexerQueryHandler.GetUserInfoByAddress)
 
-			// Get avatar content by PIN ID
+			// Get avatar content by MetaID (latest version)
+			users.GET("/metaid/:metaId/avatar", indexerQueryHandler.GetAvatarContentByMetaID)
+
+			// Get avatar content by avatar PIN ID (specific version)
 			users.GET("/avatar/content/:pinId", indexerQueryHandler.GetAvatarContentByPinID)
+
+			// Get accelerated avatar content redirect to OSS by avatar PIN ID
+			users.GET("/avatar/accelerate/:pinId", indexerQueryHandler.GetFastAvatarContentByPinID)
+		}
+
+		// Indexer PIN info query routes
+		pins := v1.Group("/pins")
+		{
+			// Get PIN info by PIN ID from collectionPinInfo
+			pins.GET("/:pinId", indexerQueryHandler.GetPinInfoByPinID)
 		}
 
 		// Sync status route
@@ -119,7 +126,39 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 
 		// Statistics route
 		v1.GET("/stats", indexerQueryHandler.GetStats)
+
+		// Admin routes
+		admin := v1.Group("/admin")
+		{
+			// Rescan blocks
+			// admin.POST("/rescan", indexerQueryHandler.RescanBlocks)
+
+			// Get rescan status
+			admin.GET("/rescan/status", indexerQueryHandler.GetRescanStatus)
+
+			// Stop rescan
+			admin.POST("/rescan/stop", indexerQueryHandler.StopRescan)
+		}
 	}
+
+	api := r.Group("/api")
+	{
+		// MetaID compatible info routes
+		info := api.Group("/info")
+		{
+			// Get user info by MetaID (MetaID format)
+			info.GET("/metaid/:metaid", indexerQueryHandler.GetMetaIDUserInfoByMetaID)
+
+			// Get user info by address (MetaID format)
+			info.GET("/address/:address", indexerQueryHandler.GetMetaIDUserInfoByAddress)
+
+			// Search user info (MetaID format)
+			info.GET("/search", indexerQueryHandler.SearchMetaIDUserInfo)
+		}
+	}
+
+	//avatar
+	r.GET("/content/:pinId", indexerQueryHandler.GetAvatarContentByPinID)
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
