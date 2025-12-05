@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"meta-file-system/common"
-	"strings"
 	"sync"
 	"time"
 
@@ -85,8 +83,7 @@ func (c *ZMQClient) Start() error {
 		return fmt.Errorf("no topics added, please use AddTopic to add topics to listen to")
 	}
 
-	log.Printf("Starting ZMQ client for %s chain: %s", c.chainType, c.address)
-	log.Printf("Listening to topics: %s", strings.Join(c.topics, ", "))
+	log.Printf("[ZMQ] Starting client for %s chain: %s", c.chainType, c.address)
 
 	// Start listening goroutine
 	c.wg.Add(1)
@@ -97,21 +94,19 @@ func (c *ZMQClient) Start() error {
 
 // Stop stops listening
 func (c *ZMQClient) Stop() {
-	log.Println("Stopping ZMQ client...")
+	log.Printf("[ZMQ] Stopping client for %s chain...", c.chainType)
 	c.cancel()
 	c.wg.Wait()
-	log.Println("ZMQ client stopped")
+	log.Printf("[ZMQ] Client stopped for %s chain", c.chainType)
 }
 
 // listen is an internal method for listening to ZMQ messages
 func (c *ZMQClient) listen() {
 	defer c.wg.Done()
 
-	log.Printf("Starting ZMQ client listener: %s", c.address)
 	for {
 		select {
 		case <-c.ctx.Done():
-			log.Println("Received stop signal, ZMQ client is shutting down...")
 			return
 		default:
 			// Create a new socket
@@ -120,8 +115,7 @@ func (c *ZMQClient) listen() {
 
 			// Connect to ZMQ server
 			if err := socket.Dial(c.address); err != nil {
-				log.Printf("Failed to connect to ZMQ server: %v, will retry in %v",
-					err, c.reconnectInterval)
+				log.Printf("[ZMQ] Connection failed: %v, retrying in %v", err, c.reconnectInterval)
 				time.Sleep(c.reconnectInterval)
 				continue
 			}
@@ -129,19 +123,18 @@ func (c *ZMQClient) listen() {
 			// Subscribe to all topics
 			for _, topic := range c.topics {
 				if err := socket.SetOption(zmq4.OptionSubscribe, topic); err != nil {
-					log.Printf("Failed to subscribe to topic %s: %v", topic, err)
+					log.Printf("[ZMQ] Failed to subscribe to topic %s: %v", topic, err)
 					continue
 				}
-				log.Printf("Successfully subscribed to topic: %s", topic)
 			}
 
-			log.Printf("Successfully connected to ZMQ server: %s", c.address)
+			log.Printf("✅ [ZMQ] Connected to %s (chain: %s)", c.address, c.chainType)
 
 			// Receive message loop
 			c.receiveMessages(socket)
 
 			// If receiveMessages returns, the connection is broken or an error occurred, reconnect
-			log.Printf("ZMQ connection lost, will reconnect in %v", c.reconnectInterval)
+			log.Printf("[ZMQ] Connection lost, reconnecting in %v", c.reconnectInterval)
 			time.Sleep(c.reconnectInterval)
 		}
 	}
@@ -157,13 +150,13 @@ func (c *ZMQClient) receiveMessages(socket zmq4.Socket) {
 			// Receive message
 			msg, err := socket.Recv()
 			if err != nil {
-				log.Printf("Failed to receive message: %v", err)
+				log.Printf("[ZMQ] Receive error: %v", err)
 				return
 			}
 
 			// Ensure message has at least two parts: topic and data
 			if len(msg.Frames) < 2 {
-				log.Printf("Received message with incorrect format: %v", msg)
+				// Silently skip malformed messages
 				continue
 			}
 
@@ -173,13 +166,13 @@ func (c *ZMQClient) receiveMessages(socket zmq4.Socket) {
 			// Find corresponding handler
 			handler, ok := c.handlers[topic]
 			if !ok {
-				log.Printf("Received message for unknown topic: %s", topic)
+				// Silently skip unknown topics
 				continue
 			}
 
 			// Call handler to process message
 			if err := handler(topic, msg.Frames[1]); err != nil {
-				log.Printf("Failed to process message [%s]: %v", topic, err)
+				log.Printf("[ZMQ] Handler error [%s]: %v", topic, err)
 			}
 		}
 	}
@@ -198,7 +191,7 @@ func (c *ZMQClient) handleRawTx(topic string, data []byte) error {
 			return fmt.Errorf("failed to deserialize BTC transaction: %w", err)
 		}
 		tx = &btcTx
-		log.Printf("Received BTC transaction from ZMQ: %s", btcTx.TxHash().String())
+		// Removed: log.Printf("Received BTC transaction from ZMQ: %s", btcTx.TxHash().String())
 	} else {
 		// Parse as MVC transaction
 		var mvcTx wire.MsgTx
@@ -206,18 +199,19 @@ func (c *ZMQClient) handleRawTx(topic string, data []byte) error {
 			return fmt.Errorf("failed to deserialize MVC transaction: %w", err)
 		}
 		tx = &mvcTx
-		log.Printf("Received MVC transaction from ZMQ: %s", common.GetMvcTxhashFromRaw(hex.EncodeToString(data)))
+		// Removed: log.Printf("Received MVC transaction from ZMQ: %s", common.GetMvcTxhashFromRaw(hex.EncodeToString(data)))
 	}
 
 	// Parse MetaID data
 	parser := NewMetaIDParser("")
 	metaDataTx, err := parser.ParseAllPINs(tx, c.chainType)
 	if err != nil || metaDataTx == nil {
-		// Not a MetaID transaction, skip
+		// Not a MetaID transaction, skip silently
 		return nil
 	}
 
-	log.Printf("Found MetaID transaction from ZMQ: %s (chain: %s), PIN count: %d",
+	// Only log MetaID transactions (which are the ones we care about)
+	log.Printf("✨ [ZMQ] Found MetaID transaction: %s (chain: %s), PIN count: %d",
 		metaDataTx.TxID, metaDataTx.ChainName, len(metaDataTx.MetaIDData))
 
 	// Call transaction handler if set
