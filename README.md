@@ -8,8 +8,13 @@ On-chain file service based on MetaID protocol, supporting file upload and index
 
 - 📤 **File Upload**: Upload files to blockchain via MetaID protocol
 - 📥 **File Indexing**: Scan and index MetaID files from blockchain
+- 🔗 **Multi-Chain Coordination**: Support BTC and MVC dual-chain indexing with timestamp-ordered processing
+- ⚡ **ZMQ Real-time Monitoring**: Support mempool transaction listening for fast response to on-chain events
+- 👥 **User Info Indexing**: Index network-wide user information (avatar, name, etc.) with Redis caching
+- 🔄 **Full Operation Support**: Support complete lifecycle of create/modify/revoke operations
 - 🌐 **Web Interface**: Provide visual file upload page with Metalet wallet integration
 - 🚀 **OSS Accelerated Links**: Indexer exposes image/video/avatar accelerated access with preview parameters
+- ☁️ **Multiple Storage Backends**: Support local storage, Alibaba Cloud OSS, AWS S3, MinIO
 
 ## Quick Start
 
@@ -266,19 +271,24 @@ http://localhost:7281/swagger/index.html
    - `GET /api/v1/files/accelerate/content/{pinId}`: Return OSS link with optional processing
 
 2. **Creator Lookup**
-   - `GET /api/v1/files/creator/{address}`
-   - `GET /api/v1/files/metaid/{metaId}`
+   - `GET /api/v1/files/creator/{address}`: Query files by address
+   - `GET /api/v1/files/metaid/{metaId}`: Query files by MetaID
 
-3. **Avatar Query**
+3. **User Info Query**
+   - `GET /api/v1/users/info/metaid/{metaId}`: Get user info (name, avatar, etc.)
+   - `GET /api/v1/users/info/address/{address}`: Get user info by address
+   - Supports Redis caching for fast response
+
+4. **Avatar Query**
    - `GET /api/v1/avatars`: Avatar pagination
    - `GET /api/v1/avatars/content/{pinId}`: Binary avatar
    - `GET /api/v1/avatars/accelerate/content/{pinId}`: Avatar OSS link
    - `GET /api/v1/avatars/accelerate/metaid/{metaId}`: Latest avatar by MetaID (OSS link)
    - `GET /api/v1/avatars/accelerate/address/{address}`: Latest avatar by address (OSS link)
 
-4. **Sync & Stats**
-   - `GET /api/v1/status`
-   - `GET /api/v1/stats`
+5. **Sync & Stats**
+   - `GET /api/v1/status`: Multi-chain sync status (supports MVC/BTC)
+   - `GET /api/v1/stats`: Indexing statistics
 
 **Accelerate Parameters**
 
@@ -374,14 +384,18 @@ rds:
   max_idle_conns: 50
 ```
 
-### Blockchain Configuration
+### Redis Configuration (Optional)
+
+For caching user information (avatar, name, etc.) to improve query performance:
 
 ```yaml
-chain:
-  rpc_url: "http://127.0.0.1:9882"
-  rpc_user: "rpcuser"
-  rpc_pass: "rpcpassword"
-  start_height: 0  # Indexing start height
+redis:
+  enabled: true  # Enable Redis cache
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 1
+  cache_ttl: 1800  # Cache expiration time (seconds, default 30 minutes)
 ```
 
 ### Storage Configuration
@@ -405,18 +419,92 @@ storage:
     access_key: "your-access-key"
     secret_key: "your-secret-key"
     bucket: "your-bucket"
-    domain: "https://cdn.your-domain.com" # new: public domain for accelerate links
+    domain: "https://cdn.your-domain.com" # Public domain for accelerate links
+```
+
+#### AWS S3
+
+```yaml
+storage:
+  type: "s3"
+  s3:
+    region: "us-east-1"
+    endpoint: ""  # Optional: custom endpoint (leave empty for AWS S3)
+    access_key: "your-access-key"
+    secret_key: "your-secret-key"
+    bucket: "your-bucket"
+    domain: "https://cdn.your-domain.com" # Public domain for accelerate links
+```
+
+#### MinIO
+
+```yaml
+storage:
+  type: "minio"
+  minio:
+    endpoint: "http://localhost:9000"
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    bucket: "meta-file-system"
+    use_ssl: false
+    domain: "https://minio.your-domain.com" # Public domain for accelerate links
 ```
 
 ### Indexer Configuration
 
+#### Single-Chain Mode (Compatible with old version)
+
 ```yaml
 indexer:
-  enabled: true
+  port: "7281"
   scan_interval: 10  # Scan interval (seconds)
   batch_size: 100    # Batch processing size
   start_height: 0    # Start height (0 = start from max height in database)
+  zmq_enabled: true  # Enable ZMQ real-time monitoring
+  zmq_address: "tcp://127.0.0.1:28332"  # ZMQ server address
+
+# Single-chain blockchain configuration
+chain:
+  rpc_url: "http://127.0.0.1:9882"
+  rpc_user: "rpcuser"
+  rpc_pass: "rpcpassword"
 ```
+
+#### Multi-Chain Coordination Mode (Recommended)
+
+```yaml
+indexer:
+  port: "7281"
+  scan_interval: 10
+  time_ordering_enabled: true  # Enable cross-chain timestamp ordering
+  mvc_init_block_height: 350000  # MVC initial block height
+  btc_init_block_height: 800000  # BTC initial block height
+  
+  # Multi-chain configuration (auto-enables multi-chain mode)
+  chains:
+    - name: "mvc"
+      rpc_url: "http://127.0.0.1:9882"
+      rpc_user: "rpcuser"
+      rpc_pass: "rpcpassword"
+      start_height: 350000
+      zmq_enabled: true  # MVC chain ZMQ monitoring
+      zmq_address: "tcp://127.0.0.1:28332"
+    
+    - name: "btc"
+      rpc_url: "http://127.0.0.1:8332"
+      rpc_user: "btcuser"
+      rpc_pass: "btcpass"
+      start_height: 800000
+      zmq_enabled: true  # BTC chain ZMQ monitoring
+      zmq_address: "tcp://127.0.0.1:28333"
+```
+
+**Multi-Chain Mode Features:**
+- ✅ Index BTC and MVC chains simultaneously
+- ✅ Process cross-chain transactions in timestamp order (optional)
+- ✅ Independent ZMQ real-time monitoring for each chain
+- ✅ Automatic sync status management and resume capability
+- ✅ Prevent single-chain blocking with smart queue scheduling
 
 ### Uploader Configuration
 
@@ -447,9 +535,27 @@ MIT License
 
 ## Version Information
 
-**Current Version: v0.2.0**
+**Current Version: v0.3.0**
 
 ### Changelog
+
+#### v0.3.0 (2025-12-05)
+
+**Indexer Service - Major Update**
+- 🎉 **Multi-Chain Coordination**: Support BTC and MVC dual-chain indexing with timestamp-ordered processing
+- ⚡ **ZMQ Real-time Monitoring**: Support mempool transaction listening, auto-scan mempool before starting monitoring
+- 👥 **User Info Indexing**: Index network-wide user information (avatar, name, bio, etc.)
+- 🔄 **Modify Operation Support**: Full support for file create/modify/revoke lifecycle
+- ☁️ **New Storage Backends**: Support AWS S3 and MinIO (S3-compatible)
+- 💾 **Redis Caching**: User info Redis cache to improve query performance
+- 📊 **Multi-Chain Status**: Independent tracking of sync status for each chain
+- 🛡️ **Smart Queue Scheduling**: Prevent single-chain blocking, optimize memory usage
+
+**Configuration Changes**
+- Added `indexer.chains[]` for multi-chain configuration
+- Added `indexer.time_ordering_enabled` for timestamp ordering
+- Added `storage.s3` and `storage.minio` configurations
+- Added `redis` cache configuration
 
 #### v0.2.0 (2025-11-17)
 

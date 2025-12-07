@@ -8,8 +8,13 @@
 
 - 📤 **文件上链**: 将文件通过 MetaID 协议上传到区块链
 - 📥 **文件索引**: 从区块链扫描和索引 MetaID 文件
+- 🔗 **多链协同索引**: 同时支持 BTC 和 MVC 双链索引，时间戳有序处理
+- ⚡ **ZMQ 实时监控**: 支持 mempool 交易实时监听，快速响应链上事件
+- 👥 **用户信息索引**: 索引全网用户信息（头像、昵称等），支持 Redis 缓存加速
+- 🔄 **完整操作支持**: 支持 create/modify/revoke 全生命周期操作
 - 🌐 **Web 界面**: 提供可视化的文件上传页面，集成 Metalet 钱包
 - 🚀 **OSS 加速直链**: Indexer 支持图片/视频/头像的加速访问与预览参数
+- ☁️ **多存储后端**: 支持本地存储、阿里云 OSS、AWS S3、MinIO
 
 ## 快速开始
 
@@ -265,19 +270,24 @@ http://localhost:7281/swagger/index.html
    - `GET /api/v1/files/accelerate/content/{pinId}`：返回 OSS 直链，支持图片/视频处理
 
 2. **创作者检索**
-   - `GET /api/v1/files/creator/{address}`
-   - `GET /api/v1/files/metaid/{metaId}`
+   - `GET /api/v1/files/creator/{address}`：按地址查询文件
+   - `GET /api/v1/files/metaid/{metaId}`：按 MetaID 查询文件
 
-3. **头像查询**
+3. **用户信息查询**
+   - `GET /api/v1/users/info/metaid/{metaId}`：获取用户信息（昵称、头像等）
+   - `GET /api/v1/users/info/address/{address}`：按地址获取用户信息
+   - 支持 Redis 缓存，快速响应
+
+4. **头像查询**
    - `GET /api/v1/avatars`：头像分页
    - `GET /api/v1/avatars/content/{pinId}`：返回头像二进制
    - `GET /api/v1/avatars/accelerate/content/{pinId}`：头像 OSS 直链
    - `GET /api/v1/avatars/accelerate/metaid/{metaId}`：根据 MetaID 获取最新头像直链
    - `GET /api/v1/avatars/accelerate/address/{address}`：根据地址获取最新头像直链
 
-4. **同步状态与统计**
-   - `GET /api/v1/status`
-   - `GET /api/v1/stats`
+5. **同步状态与统计**
+   - `GET /api/v1/status`：多链同步状态（支持 MVC/BTC）
+   - `GET /api/v1/stats`：索引统计信息
 
 **加速直链参数：**
 
@@ -373,14 +383,18 @@ rds:
   max_idle_conns: 50
 ```
 
-### 区块链配置
+### Redis 配置（可选）
+
+用于缓存用户信息（头像、昵称等），提升查询性能：
 
 ```yaml
-chain:
-  rpc_url: "http://127.0.0.1:9882"
-  rpc_user: "rpcuser"
-  rpc_pass: "rpcpassword"
-  start_height: 0  # 索引起始高度
+redis:
+  enabled: true  # 启用 Redis 缓存
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 1
+  cache_ttl: 1800  # 缓存过期时间（秒，默认 30 分钟）
 ```
 
 ### 存储配置
@@ -404,18 +418,92 @@ storage:
     access_key: "your-access-key"
     secret_key: "your-secret-key"
     bucket: "your-bucket"
-    domain: "https://cdn.your-domain.com" # 新增：加速直链所用外网域名
+    domain: "https://cdn.your-domain.com" # 加速直链所用外网域名
+```
+
+#### AWS S3
+
+```yaml
+storage:
+  type: "s3"
+  s3:
+    region: "us-east-1"
+    endpoint: ""  # 可选：自定义端点（AWS S3 留空）
+    access_key: "your-access-key"
+    secret_key: "your-secret-key"
+    bucket: "your-bucket"
+    domain: "https://cdn.your-domain.com" # 加速直链所用外网域名
+```
+
+#### MinIO
+
+```yaml
+storage:
+  type: "minio"
+  minio:
+    endpoint: "http://localhost:9000"
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    bucket: "meta-file-system"
+    use_ssl: false
+    domain: "https://minio.your-domain.com" # 加速直链所用外网域名
 ```
 
 ### 索引器配置
 
+#### 单链模式（兼容旧版）
+
 ```yaml
 indexer:
-  enabled: true
+  port: "7281"
   scan_interval: 10  # 扫描间隔（秒）
   batch_size: 100    # 批量处理大小
   start_height: 0    # 起始高度（0为从数据库最大高度开始）
+  zmq_enabled: true  # 启用 ZMQ 实时监控
+  zmq_address: "tcp://127.0.0.1:28332"  # ZMQ 服务器地址
+
+# 单链区块链配置
+chain:
+  rpc_url: "http://127.0.0.1:9882"
+  rpc_user: "rpcuser"
+  rpc_pass: "rpcpassword"
 ```
+
+#### 多链协同模式（推荐）
+
+```yaml
+indexer:
+  port: "7281"
+  scan_interval: 10
+  time_ordering_enabled: true  # 启用跨链时间戳有序处理
+  mvc_init_block_height: 350000  # MVC 初始区块高度
+  btc_init_block_height: 800000  # BTC 初始区块高度
+  
+  # 多链配置（配置后自动启用多链模式）
+  chains:
+    - name: "mvc"
+      rpc_url: "http://127.0.0.1:9882"
+      rpc_user: "rpcuser"
+      rpc_pass: "rpcpassword"
+      start_height: 350000
+      zmq_enabled: true  # MVC 链 ZMQ 监控
+      zmq_address: "tcp://127.0.0.1:28332"
+    
+    - name: "btc"
+      rpc_url: "http://127.0.0.1:8332"
+      rpc_user: "btcuser"
+      rpc_pass: "btcpass"
+      start_height: 800000
+      zmq_enabled: true  # BTC 链 ZMQ 监控
+      zmq_address: "tcp://127.0.0.1:28333"
+```
+
+**多链模式特性：**
+- ✅ 同时索引 BTC 和 MVC 两条链
+- ✅ 按时间戳有序处理跨链交易（可选）
+- ✅ 每条链独立 ZMQ 实时监控
+- ✅ 自动同步状态管理和断点续传
+- ✅ 防止单链阻塞，智能队列调度
 
 ### 上传器配置
 
@@ -446,9 +534,27 @@ MIT License
 
 ## 版本信息
 
-**当前版本：v0.2.0**
+**当前版本：v0.3.0**
 
 ### 更新日志
+
+#### v0.3.0 (2025-12-05)
+
+**Indexer 服务 - 重大更新**
+- 🎉 **多链协同索引**：同时支持 BTC 和 MVC 双链索引，时间戳有序处理
+- ⚡ **ZMQ 实时监控**：支持 mempool 交易实时监听，自动扫描 mempool 后启动监控
+- 👥 **用户信息索引**：索引全网用户信息（头像、昵称、简介等）
+- 🔄 **Modify 操作支持**：完整支持文件的 create/modify/revoke 生命周期
+- ☁️ **新增存储后端**：支持 AWS S3 和 MinIO（兼容 S3 协议）
+- 💾 **Redis 缓存**：用户信息 Redis 缓存，提升查询性能
+- 📊 **多链状态管理**：独立跟踪每条链的同步状态和进度
+- 🛡️ **队列智能调度**：防止单链阻塞，优化内存使用
+
+**配置变更**
+- 新增 `indexer.chains[]` 多链配置
+- 新增 `indexer.time_ordering_enabled` 时间排序开关
+- 新增 `storage.s3` 和 `storage.minio` 配置
+- 新增 `redis` 缓存配置
 
 #### v0.2.0 (2025-11-17)
 
