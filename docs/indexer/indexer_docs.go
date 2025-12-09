@@ -927,6 +927,50 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "/thumbnail/{pinId}": {
+            "get": {
+                "description": "Redirect to OSS URL for avatar thumbnail (128x128) by avatar PIN ID using OSS built-in thumbnail processing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get avatar thumbnail (redirect to OSS)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Avatar PIN ID",
+                        "name": "pinId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Redirect to OSS URL with thumbnail processing",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "Query user info list with cursor pagination",

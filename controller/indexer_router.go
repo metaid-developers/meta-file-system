@@ -159,6 +159,7 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 
 	//avatar
 	r.GET("/content/:pinId", indexerQueryHandler.GetAvatarContentByPinID)
+	r.GET("/thumbnail/:pinId", indexerQueryHandler.GetAvatarThumbnailByPinID)
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {

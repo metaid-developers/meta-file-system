@@ -748,6 +748,40 @@ func (h *IndexerQueryHandler) GetFastAvatarContentByPinID(c *gin.Context) {
 	c.Redirect(307, ossURL)
 }
 
+// GetAvatarThumbnailByPinID get avatar thumbnail redirect to OSS by avatar PIN ID
+// @Summary      Get avatar thumbnail (redirect to OSS)
+// @Description  Redirect to OSS URL for avatar thumbnail (128x128) by avatar PIN ID using OSS built-in thumbnail processing
+// @Tags         Indexer User Info
+// @Accept       json
+// @Produce      json
+// @Param        pinId  path  string  true  "Avatar PIN ID"
+// @Success      307    {string}  string  "Redirect to OSS URL with thumbnail processing"
+// @Failure      404    {object}  respond.Response
+// @Failure      500    {object}  respond.Response
+// @Router       /thumbnail/{pinId} [get]
+func (h *IndexerQueryHandler) GetAvatarThumbnailByPinID(c *gin.Context) {
+	pinID := c.Param("pinId")
+	if pinID == "" {
+		respond.InvalidParam(c, "pinId is required")
+		return
+	}
+
+	// Get OSS URL for avatar thumbnail (fixed processType as "thumbnail")
+	ossURL, contentType, fileName, fileType, err := h.indexerFileService.GetFastAvatarOSSURLByPinID(pinID, "thumbnail")
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	// Set response headers
+	c.Header("Content-Type", contentType)
+	c.Header("Content-Disposition", "inline; filename=\""+fileName+"\"")
+	c.Header("X-File-Type", fileType)
+
+	// Redirect to OSS URL with thumbnail processing
+	c.Redirect(307, ossURL)
+}
+
 // GetLatestFastFileContentByFirstPinID get latest accelerated file content redirect to OSS by first PIN ID
 // @Summary      Get latest accelerated file content (redirect to OSS)
 // @Description  Redirect to OSS URL for latest file content by first PIN ID, supports preview/thumbnail/video processing

@@ -910,6 +910,36 @@ paths:
       summary: Get sync status
       tags:
       - Indexer Status
+  /thumbnail/{pinId}:
+    get:
+      consumes:
+      - application/json
+      description: Redirect to OSS URL for avatar thumbnail (128x128) by avatar PIN
+        ID using OSS built-in thumbnail processing
+      parameters:
+      - description: Avatar PIN ID
+        in: path
+        name: pinId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "307":
+          description: Redirect to OSS URL with thumbnail processing
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get avatar thumbnail (redirect to OSS)
+      tags:
+      - Indexer User Info
   /users:
     get:
       consumes:
