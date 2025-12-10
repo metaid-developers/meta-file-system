@@ -333,6 +333,117 @@ definitions:
         description: 时间戳
         type: integer
     type: object
+  model.UserAvatarInfo:
+    properties:
+      avatar:
+        description: 头像路径
+        type: string
+      avatarUrl:
+        description: 头像 URL
+        type: string
+      blockHeight:
+        description: 区块高度
+        type: integer
+      chainName:
+        description: 链名称
+        type: string
+      contentType:
+        description: Content type (e.g., image/jpeg)
+        type: string
+      fileExtension:
+        description: File extension, e.g. .jpg, .png, .mp4, .mp3, .doc, .pdf, etc.
+        type: string
+      fileHash:
+        description: File Hash SHA256
+        type: string
+      fileMd5:
+        description: File MD5 hash
+        type: string
+      fileSize:
+        description: File size (bytes)
+        type: integer
+      fileType:
+        description: File type (image/video/audio/document/other)
+        type: string
+      firstPath:
+        description: 第一个 PIN 的路径
+        type: string
+      firstPinId:
+        description: 第一个 PIN ID
+        type: string
+      pinId:
+        description: PIN ID
+        type: string
+      timestamp:
+        description: 时间戳
+        type: integer
+    type: object
+  model.UserChatPublicKeyInfo:
+    properties:
+      blockHeight:
+        description: 区块高度
+        type: integer
+      chainName:
+        description: 链名称
+        type: string
+      chatPublicKey:
+        description: 聊天公钥
+        type: string
+      firstPath:
+        description: 第一个 PIN 的路径
+        type: string
+      firstPinId:
+        description: 第一个 PIN ID
+        type: string
+      pinId:
+        description: PIN ID
+        type: string
+      timestamp:
+        description: 时间戳
+        type: integer
+    type: object
+  model.UserInfoHistory:
+    properties:
+      avatarHistory:
+        description: 用户头像历史记录
+        items:
+          $ref: '#/definitions/model.UserAvatarInfo'
+        type: array
+      chatPublicKeyHistory:
+        description: 用户聊天公钥历史记录
+        items:
+          $ref: '#/definitions/model.UserChatPublicKeyInfo'
+        type: array
+      nameHistory:
+        description: 用户名称历史记录
+        items:
+          $ref: '#/definitions/model.UserNameInfo'
+        type: array
+    type: object
+  model.UserNameInfo:
+    properties:
+      blockHeight:
+        description: 区块高度
+        type: integer
+      chainName:
+        description: 链名称
+        type: string
+      firstPath:
+        description: 第一个 PIN 的路径
+        type: string
+      firstPinId:
+        description: 第一个 PIN ID
+        type: string
+      name:
+        description: 用户名称
+        type: string
+      pinId:
+        description: PIN ID
+        type: string
+      timestamp:
+        description: 时间戳
+        type: integer
+    type: object
 host: localhost:7281
 info:
   contact:
@@ -1063,6 +1174,41 @@ paths:
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
       summary: Get avatar content by PIN ID
+      tags:
+      - Indexer User Info
+  /users/history/{key}:
+    get:
+      consumes:
+      - application/json
+      description: Get all user info history (name, avatar, chat public key) by MetaID
+        or Address
+      parameters:
+      - description: MetaID or Address
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.UserInfoHistory'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get user info history
       tags:
       - Indexer User Info
   /users/metaid/{metaId}:

@@ -55,3 +55,10 @@ type UserChatPublicKeyInfo struct {
 	BlockHeight   int64  `json:"blockHeight"`   // 区块高度
 	Timestamp     int64  `json:"timestamp"`     // 时间戳
 }
+
+// UserInfoHistory 用户信息历史记录（包含三种历史记录）
+type UserInfoHistory struct {
+	NameHistory          []UserNameInfo          `json:"nameHistory"`          // 用户名称历史记录
+	AvatarHistory        []UserAvatarInfo        `json:"avatarHistory"`        // 用户头像历史记录
+	ChatPublicKeyHistory []UserChatPublicKeyInfo `json:"chatPublicKeyHistory"` // 用户聊天公钥历史记录
+}

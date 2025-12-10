@@ -327,6 +327,10 @@ func (m *MySQLDatabase) GetUserChatPublicKeyHistory(key string) ([]model.UserCha
 	return nil, ErrNotImplemented
 }
 
+func (m *MySQLDatabase) GetUserInfoHistoryByKey(key string) (*model.UserInfoHistory, error) {
+	return nil, ErrNotImplemented
+}
+
 // PinInfo operations - not implemented for MySQL yet
 func (m *MySQLDatabase) CreateOrUpdatePinInfo(pinInfo *model.IndexerPinInfo) error {
 	return ErrNotImplemented

@@ -1384,6 +1384,49 @@ func (p *PebbleDatabase) GetUserChatPublicKeyHistory(key string) ([]model.UserCh
 	return history, nil
 }
 
+// GetUserInfoHistoryByKey get all user info history (name, avatar, chat public key) by MetaID or Address
+func (p *PebbleDatabase) GetUserInfoHistoryByKey(key string) (*model.UserInfoHistory, error) {
+	result := &model.UserInfoHistory{
+		NameHistory:          []model.UserNameInfo{},
+		AvatarHistory:        []model.UserAvatarInfo{},
+		ChatPublicKeyHistory: []model.UserChatPublicKeyInfo{},
+	}
+
+	// Get name history
+	nameHistory, err := p.GetUserNameInfoHistory(key)
+	if err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("failed to get name history: %w", err)
+	}
+	if err == nil {
+		result.NameHistory = nameHistory
+	}
+
+	// Get avatar history
+	avatarHistory, err := p.GetUserAvatarInfoHistory(key)
+	if err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("failed to get avatar history: %w", err)
+	}
+	if err == nil {
+		result.AvatarHistory = avatarHistory
+	}
+
+	// Get chat public key history
+	chatPublicKeyHistory, err := p.GetUserChatPublicKeyHistory(key)
+	if err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("failed to get chat public key history: %w", err)
+	}
+	if err == nil {
+		result.ChatPublicKeyHistory = chatPublicKeyHistory
+	}
+
+	// If all three are empty, return ErrNotFound
+	if len(result.NameHistory) == 0 && len(result.AvatarHistory) == 0 && len(result.ChatPublicKeyHistory) == 0 {
+		return nil, ErrNotFound
+	}
+
+	return result, nil
+}
+
 // GetLatestFileInfoByFirstPinID get latest file info by first PIN ID
 func (p *PebbleDatabase) GetLatestFileInfoByFirstPinID(firstPinID string) (*model.IndexerFile, error) {
 	db := p.collections[collectionLatestFileInfo]

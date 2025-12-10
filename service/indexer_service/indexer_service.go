@@ -1505,9 +1505,10 @@ func (s *IndexerService) resolvePathAndFirstPinID(path string) (string, string, 
 		if len(parts) == 2 {
 			refPinID = parts[1]
 		}
-	} else {
-		isValidOperation = false
 	}
+	//  else {
+	// 	isValidOperation = false
+	// }
 
 	// If no reference found, return original path and empty values
 	if refPinID == "" {

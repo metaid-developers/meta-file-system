@@ -635,6 +635,33 @@ func (h *IndexerQueryHandler) ListUserInfo(c *gin.Context) {
 	respond.Success(c, respond.ToUserInfoListResponse(users, nextCursor, hasMore, total))
 }
 
+// GetUserInfoHistory get user info history by MetaID or Address
+// @Summary      Get user info history
+// @Description  Get all user info history (name, avatar, chat public key) by MetaID or Address
+// @Tags         Indexer User Info
+// @Accept       json
+// @Produce      json
+// @Param        key  path  string  true  "MetaID or Address"
+// @Success      200  {object}  respond.Response{data=model.UserInfoHistory}
+// @Failure      404  {object}  respond.Response
+// @Failure      500  {object}  respond.Response
+// @Router       /users/history/{key} [get]
+func (h *IndexerQueryHandler) GetUserInfoHistory(c *gin.Context) {
+	key := c.Param("key")
+	if key == "" {
+		respond.InvalidParam(c, "key is required")
+		return
+	}
+
+	history, err := h.indexerFileService.GetUserInfoHistoryByKey(key)
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	respond.Success(c, history)
+}
+
 // GetAvatarContentByMetaID get avatar content by MetaID
 // @Summary      Get avatar content by MetaID
 // @Description  Get avatar content by user MetaID, returns content from storage or redirects to OSS

@@ -56,6 +56,8 @@ type Database interface {
 	GetLatestUserChatPublicKeyInfo(key string) (*model.UserChatPublicKeyInfo, error)
 	AddUserChatPublicKeyHistory(info *model.UserChatPublicKeyInfo, metaID string) error
 	GetUserChatPublicKeyHistory(key string) ([]model.UserChatPublicKeyInfo, error)
+	// Get all user info history by MetaID or Address
+	GetUserInfoHistoryByKey(key string) (*model.UserInfoHistory, error)
 
 	// PinInfo operations
 	CreateOrUpdatePinInfo(pinInfo *model.IndexerPinInfo) error

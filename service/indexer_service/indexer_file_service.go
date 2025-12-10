@@ -403,6 +403,23 @@ func (s *IndexerFileService) GetUserInfoByAddress(address string) (*model.Indexe
 	return userInfo, nil
 }
 
+// GetUserInfoHistoryByKey get all user info history (name, avatar, chat public key) by MetaID or Address
+func (s *IndexerFileService) GetUserInfoHistoryByKey(key string) (*model.UserInfoHistory, error) {
+	if key == "" {
+		return nil, errors.New("key is required")
+	}
+
+	history, err := database.DB.GetUserInfoHistoryByKey(key)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, fmt.Errorf("user info history not found for key: %s", key)
+		}
+		return nil, fmt.Errorf("failed to get user info history: %w", err)
+	}
+
+	return history, nil
+}
+
 // SearchUserInfo fuzzy search user info by keyword and keytype
 // keytype: "metaid" (fuzzy match metaid) or "name" (fuzzy match name)
 // limit: maximum number of results to return

@@ -376,11 +376,19 @@ Content-Type: application/json
 
 ### 数据库配置
 
+系统支持两种数据库类型用于索引器：
+- **PebbleDB**（默认，推荐）：嵌入式键值数据库，无需外部依赖
+- **MySQL**：传统关系型数据库
+
+上传器服务始终使用 MySQL。
+
 ```yaml
-rds:
-  dsn: "user:password@tcp(host:3306)/database?charset=utf8mb4&parseTime=True"
-  max_open_conns: 1000
-  max_idle_conns: 50
+database:
+  indexer_type: "pebble"  # 索引器数据库类型："mysql" 或 "pebble"（默认："pebble"）
+  dsn: "user:password@tcp(host:3306)/database?charset=utf8mb4&parseTime=True&loc=Local&timeout=5s&readTimeout=30s"  # MySQL 连接字符串（上传器必需，索引器使用 pebble 时可选）
+  max_open_conns: 1000  # 最大打开连接数（仅 MySQL）
+  max_idle_conns: 50    # 最大空闲连接数（仅 MySQL）
+  data_dir: "./data/pebble"  # PebbleDB 数据目录（当 indexer_type="pebble" 时必需）
 ```
 
 ### Redis 配置（可选）
@@ -455,10 +463,11 @@ storage:
 
 ```yaml
 indexer:
-  port: "7281"
+  port: "7281"  # 索引器服务端口
   scan_interval: 10  # 扫描间隔（秒）
   batch_size: 100    # 批量处理大小
   start_height: 0    # 起始高度（0为从数据库最大高度开始）
+  swagger_base_url: "localhost:7281"  # Swagger API 基础 URL
   zmq_enabled: true  # 启用 ZMQ 实时监控
   zmq_address: "tcp://127.0.0.1:28332"  # ZMQ 服务器地址
 
@@ -473,13 +482,18 @@ chain:
 
 ```yaml
 indexer:
-  port: "7281"
-  scan_interval: 10
-  time_ordering_enabled: true  # 启用跨链时间戳有序处理
-  mvc_init_block_height: 350000  # MVC 初始区块高度
-  btc_init_block_height: 800000  # BTC 初始区块高度
+  port: "7281"  # 索引器服务端口
+  scan_interval: 10  # 扫描间隔（秒）
+  batch_size: 100    # 批量处理大小
+  start_height: 0    # 起始高度（0 = 使用链特定初始高度或数据库最大高度）
+  mvc_init_block_height: 350000  # MVC 初始区块高度（当 start_height=0 且数据库无数据时使用）
+  btc_init_block_height: 800000  # BTC 初始区块高度（当 start_height=0 且数据库无数据时使用）
+  swagger_base_url: "localhost:7281"  # Swagger API 基础 URL
+  zmq_enabled: false  # 全局 ZMQ 设置（可在每条链中覆盖）
+  zmq_address: "tcp://127.0.0.1:28332"  # 全局 ZMQ 地址（可在每条链中覆盖）
+  time_ordering_enabled: true  # 启用跨链严格时间戳排序
   
-  # 多链配置（配置后自动启用多链模式）
+  # 多链配置（配置 chains[] 后自动启用多链模式）
   chains:
     - name: "mvc"
       rpc_url: "http://127.0.0.1:9882"
@@ -509,9 +523,12 @@ indexer:
 
 ```yaml
 uploader:
+  port: "7282"  # 上传器服务端口
   enabled: true
-  max_file_size: 10  # 最大文件大小（10MB）
-  fee_rate: 1              # 默认费率
+  max_file_size: 100  # 最大文件大小（MB）
+  chunk_size: 100  # 分块上传的块大小（KB）
+  fee_rate: 1  # 默认费率（每字节聪数）
+  swagger_base_url: "localhost:7282"  # Swagger API 基础 URL
 ```
 
 ## 开发

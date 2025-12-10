@@ -377,11 +377,19 @@ Response:
 
 ### Database Configuration
 
+The system supports two database types for the indexer:
+- **PebbleDB** (default, recommended): Embedded key-value database, no external dependencies
+- **MySQL**: Traditional relational database
+
+The uploader service always uses MySQL.
+
 ```yaml
-rds:
-  dsn: "user:password@tcp(host:3306)/database?charset=utf8mb4&parseTime=True"
-  max_open_conns: 1000
-  max_idle_conns: 50
+database:
+  indexer_type: "pebble"  # Indexer database type: "mysql" or "pebble" (default: "pebble")
+  dsn: "user:password@tcp(host:3306)/database?charset=utf8mb4&parseTime=True&loc=Local&timeout=5s&readTimeout=30s"  # MySQL connection string (required for uploader, optional for indexer if using pebble)
+  max_open_conns: 1000  # Maximum open connections (MySQL only)
+  max_idle_conns: 50    # Maximum idle connections (MySQL only)
+  data_dir: "./data/pebble"  # PebbleDB data directory (required when indexer_type="pebble")
 ```
 
 ### Redis Configuration (Optional)
@@ -456,10 +464,11 @@ storage:
 
 ```yaml
 indexer:
-  port: "7281"
+  port: "7281"  # Indexer service port
   scan_interval: 10  # Scan interval (seconds)
   batch_size: 100    # Batch processing size
   start_height: 0    # Start height (0 = start from max height in database)
+  swagger_base_url: "localhost:7281"  # Swagger API base URL
   zmq_enabled: true  # Enable ZMQ real-time monitoring
   zmq_address: "tcp://127.0.0.1:28332"  # ZMQ server address
 
@@ -474,13 +483,18 @@ chain:
 
 ```yaml
 indexer:
-  port: "7281"
-  scan_interval: 10
-  time_ordering_enabled: true  # Enable cross-chain timestamp ordering
-  mvc_init_block_height: 350000  # MVC initial block height
-  btc_init_block_height: 800000  # BTC initial block height
+  port: "7281"  # Indexer service port
+  scan_interval: 10  # Scan interval (seconds)
+  batch_size: 100    # Batch processing size
+  start_height: 0    # Start height (0 = use chain-specific init height or database max height)
+  mvc_init_block_height: 350000  # MVC initial block height (used when start_height=0 and no data in DB)
+  btc_init_block_height: 800000  # BTC initial block height (used when start_height=0 and no data in DB)
+  swagger_base_url: "localhost:7281"  # Swagger API base URL
+  zmq_enabled: false  # Global ZMQ setting (can be overridden per chain)
+  zmq_address: "tcp://127.0.0.1:28332"  # Global ZMQ address (can be overridden per chain)
+  time_ordering_enabled: true  # Enable strict time ordering across chains
   
-  # Multi-chain configuration (auto-enables multi-chain mode)
+  # Multi-chain configuration (auto-enables multi-chain mode when chains[] is configured)
   chains:
     - name: "mvc"
       rpc_url: "http://127.0.0.1:9882"
@@ -510,9 +524,12 @@ indexer:
 
 ```yaml
 uploader:
+  port: "7282"  # Uploader service port
   enabled: true
-  max_file_size: 10  # Max file size (10MB)
-  fee_rate: 1              # Default fee rate
+  max_file_size: 100  # Max file size (MB)
+  chunk_size: 100  # Chunk size for chunked upload (KB)
+  fee_rate: 1  # Default fee rate (satoshi per byte)
+  swagger_base_url: "localhost:7282"  # Swagger API base URL
 ```
 
 ## Development

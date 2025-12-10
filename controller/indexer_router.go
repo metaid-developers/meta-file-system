@@ -112,6 +112,9 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 
 			// Get accelerated avatar content redirect to OSS by avatar PIN ID
 			users.GET("/avatar/accelerate/:pinId", indexerQueryHandler.GetFastAvatarContentByPinID)
+
+			// Get user info history by MetaID or Address
+			users.GET("/history/:key", indexerQueryHandler.GetUserInfoHistory)
 		}
 
 		// Indexer PIN info query routes
@@ -131,7 +134,7 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 		admin := v1.Group("/admin")
 		{
 			// Rescan blocks
-			// admin.POST("/rescan", indexerQueryHandler.RescanBlocks)
+			admin.POST("/rescan", indexerQueryHandler.RescanBlocks)
 
 			// Get rescan status
 			admin.GET("/rescan/status", indexerQueryHandler.GetRescanStatus)
