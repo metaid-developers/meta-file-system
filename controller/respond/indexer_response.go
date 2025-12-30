@@ -314,6 +314,7 @@ func ToUserInfoListResponse(users []*model.IndexerUserInfo, nextCursor int64, ha
 
 // MetaIDUserInfo MetaID user info response (compatible with external API format)
 type MetaIDUserInfo struct {
+	GlobalMetaId string `json:"globalMetaId" example:"idaddress..."`
 	Metaid       string `json:"metaid" example:"abc123def456..."`
 	Name         string `json:"name" example:"John Doe"`
 	Address      string `json:"address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
@@ -326,9 +327,10 @@ type MetaIDUserInfo struct {
 // ToMetaIDUserInfo convert IndexerUserInfo to MetaIDUserInfo
 func ToMetaIDUserInfo(userInfo *model.IndexerUserInfo) *MetaIDUserInfo {
 	return &MetaIDUserInfo{
-		Metaid:  userInfo.MetaId,
-		Name:    userInfo.Name,
-		Address: userInfo.Address,
+		GlobalMetaId: userInfo.GlobalMetaId,
+		Metaid:       userInfo.MetaId,
+		Name:         userInfo.Name,
+		Address:      userInfo.Address,
 		// Avatar:       userInfo.Avatar,
 		Avatar:       "/content/" + userInfo.AvatarPinId,
 		AvatarId:     userInfo.AvatarPinId,

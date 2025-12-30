@@ -13,6 +13,7 @@ import (
 	"meta-file-system/database"
 	"meta-file-system/model"
 	"meta-file-system/model/dao"
+	common_service "meta-file-system/service/common_service"
 	"meta-file-system/storage"
 
 	"gorm.io/gorm"
@@ -301,8 +302,12 @@ func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerU
 	cacheKey := "user:metaid:" + metaID
 	var cachedUser model.IndexerUserInfo
 	if err := database.GetCache(cacheKey, &cachedUser); err == nil {
-		// Cache hit
-		return &cachedUser, nil
+		if cachedUser.GlobalMetaId != "" {
+			// Cache hit
+			return &cachedUser, nil
+		}
+
+		// return &cachedUser, nil
 	}
 
 	// Cache miss, query from database
@@ -332,8 +337,9 @@ func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerU
 
 	// Build user info
 	userInfo := &model.IndexerUserInfo{
-		MetaId:  metaID,
-		Address: address,
+		GlobalMetaId: common_service.ConvertToGlobalMetaId(address),
+		MetaId:       metaID,
+		Address:      address,
 	}
 
 	if nameInfo != nil {
@@ -381,18 +387,22 @@ func (s *IndexerFileService) GetUserInfoByAddress(address string) (*model.Indexe
 	var cachedUser model.IndexerUserInfo
 	if err := database.GetCache(cacheKey, &cachedUser); err == nil {
 		// Cache hit
-		return &cachedUser, nil
+		if cachedUser.GlobalMetaId != "" {
+			return &cachedUser, nil
+		}
 	}
 
-	// Cache miss, query from database
+	// Cache miss, query from databases
 	// Calculate MetaID from address (SHA256)
 	metaID := calculateMetaIDFromAddress(address)
+	globalMetaId := common_service.ConvertToGlobalMetaId(address)
 
 	userInfo, err := s.GetUserInfoByMetaID(metaID)
 	if err != nil {
 		return nil, err
 	}
 
+	userInfo.GlobalMetaId = globalMetaId
 	userInfo.Address = address
 
 	// Set cache
@@ -497,6 +507,10 @@ func (s *IndexerFileService) fuzzySearchByMetaID(keyword string, limit int) ([]*
 			log.Printf("⚠️  Failed to get user info for MetaID %s: %v", metaID, err)
 			continue
 		}
+		if userInfo.GlobalMetaId == "" && userInfo.Address != "" {
+			userInfo.GlobalMetaId = common_service.ConvertToGlobalMetaId(userInfo.Address)
+		}
+
 		users = append(users, userInfo)
 	}
 

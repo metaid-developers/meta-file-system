@@ -2,6 +2,7 @@ package model
 
 // IndexerUserInfo 用户信息模型
 type IndexerUserInfo struct {
+	GlobalMetaId       string `json:"globalMetaId"`       // 全局 MetaID
 	MetaId             string `json:"metaId"`             // 用户 MetaID
 	Address            string `json:"address"`            // 用户地址
 	Name               string `json:"name"`               // 用户名称
