@@ -13,7 +13,7 @@ import (
 	"github.com/bitcoinsv/bsvutil"
 	"golang.org/x/crypto/ripemd160"
 
-	"manindexer/idaddress"
+	"meta-file-system/service/common_service/idaddress"
 )
 
 // KeyPair 密钥对

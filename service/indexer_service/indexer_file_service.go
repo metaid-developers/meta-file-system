@@ -297,12 +297,12 @@ func (s *IndexerFileService) GetFilesCountByChains() (map[string]int64, error) {
 // ============================================================
 
 // GetUserInfoByMetaID get user information by MetaID
-func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerUserInfo, error) {
+func (s *IndexerFileService) GetUserInfoByGlobalMetaID(globalMetaId, metaid string) (*model.IndexerUserInfo, error) {
 	// Try to get from cache first
-	cacheKey := "user:metaid:" + metaID
+	cacheKey := "user:globalmetaid:" + globalMetaId
 	var cachedUser model.IndexerUserInfo
 	if err := database.GetCache(cacheKey, &cachedUser); err == nil {
-		if cachedUser.GlobalMetaId != "" {
+		if cachedUser.GlobalMetaId != "" && (cachedUser.Address != "" && strings.HasPrefix(cachedUser.MetaId, "1")) {
 			// Cache hit
 			return &cachedUser, nil
 		}
@@ -312,33 +312,62 @@ func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerU
 
 	// Cache miss, query from database
 	// Get latest user name
-	nameInfo, err := database.DB.GetLatestUserNameInfo(metaID)
+	nameInfo, err := database.DB.GetLatestUserNameInfoByGlobalMetaId(globalMetaId)
 	if err != nil && !errors.Is(err, database.ErrNotFound) {
 		return nil, fmt.Errorf("failed to get user name info: %w", err)
 	}
 
 	// Get latest user avatar
-	avatarInfo, err := database.DB.GetLatestUserAvatarInfo(metaID)
+	avatarInfo, err := database.DB.GetLatestUserAvatarInfoByGlobalMetaId(globalMetaId)
 	if err != nil && !errors.Is(err, database.ErrNotFound) {
 		return nil, fmt.Errorf("failed to get user avatar info: %w", err)
 	}
 
 	// Get latest user chat public key
-	chatPubKeyInfo, err := database.DB.GetLatestUserChatPublicKeyInfo(metaID)
+	chatPubKeyInfo, err := database.DB.GetLatestUserChatPublicKeyInfoByGlobalMetaId(globalMetaId)
 	if err != nil && !errors.Is(err, database.ErrNotFound) {
 		return nil, fmt.Errorf("failed to get user chat public key info: %w", err)
 	}
 
 	//get meta id address
-	address, err := database.DB.GetAddressByMetaID(metaID)
-	if err != nil && !errors.Is(err, database.ErrNotFound) {
-		return nil, fmt.Errorf("failed to get meta id address: %w", err)
+	var address string
+	var finalMetaId string
+	if metaid == "" {
+		// If metaid is empty, get from GlobalMetaIdAddress and use the first item
+		globalMetaIdAddress, err := database.DB.GetGlobalMetaIdAddress(globalMetaId)
+		if err != nil && !errors.Is(err, database.ErrNotFound) {
+			return nil, fmt.Errorf("failed to get global meta id address: %w", err)
+		}
+		if globalMetaIdAddress != nil && len(globalMetaIdAddress.Items) > 0 {
+			// Priority: prefer item with MetaId starting with "1", otherwise use the first item
+			var selectedItem *model.MetaIdAddressItem
+			for i := range globalMetaIdAddress.Items {
+				fmt.Printf("[GlobalMetaId:%s]: Item[%d]:  MetaId: %s, address: %s\n", globalMetaId, i, globalMetaIdAddress.Items[i].MetaId, globalMetaIdAddress.Items[i].Address)
+				if strings.HasPrefix(globalMetaIdAddress.Items[i].MetaId, "1") {
+					selectedItem = &globalMetaIdAddress.Items[i]
+					break
+				}
+			}
+			// If no item starting with "1" found, use the first item
+			if selectedItem == nil {
+				selectedItem = &globalMetaIdAddress.Items[0]
+			}
+			finalMetaId = selectedItem.MetaId
+			address = selectedItem.Address
+		}
+	} else {
+		// Use provided metaid
+		finalMetaId = metaid
+		address, err = database.DB.GetAddressByMetaID(metaid)
+		if err != nil && !errors.Is(err, database.ErrNotFound) {
+			return nil, fmt.Errorf("failed to get meta id address: %w", err)
+		}
 	}
 
 	// Build user info
 	userInfo := &model.IndexerUserInfo{
-		GlobalMetaId: common_service.ConvertToGlobalMetaId(address),
-		MetaId:       metaID,
+		GlobalMetaId: globalMetaId,
+		MetaId:       finalMetaId,
 		Address:      address,
 	}
 
@@ -374,36 +403,160 @@ func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerU
 
 	// Set cache
 	if err := database.SetCache(cacheKey, userInfo); err != nil {
-		log.Printf("⚠️  Failed to set cache for MetaID %s: %v", metaID, err)
+		log.Printf("⚠️  Failed to set cache for GlobalMetaID %s: %v", globalMetaId, err)
 	}
 
 	return userInfo, nil
 }
 
+func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerUserInfo, error) {
+	// Try to get from cache first
+	cacheKey := "user:metaid:" + metaID
+	var cachedUser model.IndexerUserInfo
+	if err := database.GetCache(cacheKey, &cachedUser); err == nil {
+		if cachedUser.GlobalMetaId != "" && cachedUser.Address != "" {
+			// Cache hit
+			return &cachedUser, nil
+		}
+
+		// return &cachedUser, nil
+	}
+
+	address, err := database.DB.GetAddressByMetaID(metaID)
+	if err != nil && !errors.Is(err, database.ErrNotFound) {
+		return nil, fmt.Errorf("failed to get meta id address: %w", err)
+	}
+
+	globalMetaId := common_service.ConvertToGlobalMetaId(address)
+	userInfo, err := s.GetUserInfoByGlobalMetaID(globalMetaId, metaID)
+	if err != nil {
+		return nil, err
+	}
+	if userInfo.Address == "" {
+		userInfo.Address = address
+	}
+
+	if err := database.SetCache(cacheKey, userInfo); err != nil {
+		log.Printf("⚠️  Failed to set cache for address %s: %v", address, err)
+	}
+
+	return userInfo, nil
+}
+
+// GetUserInfoByMetaID get user information by MetaID
+// func (s *IndexerFileService) GetUserInfoByMetaID(metaID string) (*model.IndexerUserInfo, error) {
+// // Try to get from cache first
+// cacheKey := "user:metaid:" + metaID
+// var cachedUser model.IndexerUserInfo
+// if err := database.GetCache(cacheKey, &cachedUser); err == nil {
+// 	if cachedUser.GlobalMetaId != "" {
+// 		// Cache hit
+// 		return &cachedUser, nil
+// 	}
+
+// 	// return &cachedUser, nil
+// }
+
+// 	// Cache miss, query from database
+// 	// Get latest user name
+// 	nameInfo, err := database.DB.GetLatestUserNameInfo(metaID)
+// 	if err != nil && !errors.Is(err, database.ErrNotFound) {
+// 		return nil, fmt.Errorf("failed to get user name info: %w", err)
+// 	}
+
+// 	// Get latest user avatar
+// 	avatarInfo, err := database.DB.GetLatestUserAvatarInfo(metaID)
+// 	if err != nil && !errors.Is(err, database.ErrNotFound) {
+// 		return nil, fmt.Errorf("failed to get user avatar info: %w", err)
+// 	}
+
+// 	// Get latest user chat public key
+// 	chatPubKeyInfo, err := database.DB.GetLatestUserChatPublicKeyInfo(metaID)
+// 	if err != nil && !errors.Is(err, database.ErrNotFound) {
+// 		return nil, fmt.Errorf("failed to get user chat public key info: %w", err)
+// 	}
+
+// 	//get meta id address
+// address, err := database.DB.GetAddressByMetaID(metaID)
+// if err != nil && !errors.Is(err, database.ErrNotFound) {
+// 	return nil, fmt.Errorf("failed to get meta id address: %w", err)
+// }
+
+// 	// Build user info
+// 	userInfo := &model.IndexerUserInfo{
+// 		GlobalMetaId: common_service.ConvertToGlobalMetaId(address),
+// 		MetaId:       metaID,
+// 		Address:      address,
+// 	}
+
+// 	if nameInfo != nil {
+// 		userInfo.Name = nameInfo.Name
+// 		userInfo.NamePinId = nameInfo.PinID
+// 		userInfo.ChainName = nameInfo.ChainName
+// 		userInfo.BlockHeight = nameInfo.BlockHeight
+// 		userInfo.Timestamp = nameInfo.Timestamp
+// 	}
+
+// 	if avatarInfo != nil {
+// 		userInfo.Avatar = avatarInfo.AvatarUrl
+// 		userInfo.AvatarPinId = avatarInfo.PinID
+// 		// Use avatar's timestamp if it's later
+// 		if avatarInfo.Timestamp < userInfo.Timestamp {
+// 			userInfo.Timestamp = avatarInfo.Timestamp
+// 			userInfo.BlockHeight = avatarInfo.BlockHeight
+// 			userInfo.ChainName = avatarInfo.ChainName
+// 		}
+// 	}
+
+// 	if chatPubKeyInfo != nil {
+// 		userInfo.ChatPublicKey = chatPubKeyInfo.ChatPublicKey
+// 		userInfo.ChatPublicKeyPinId = chatPubKeyInfo.PinID
+// 		// Use chat public key's timestamp if it's later
+// 		if chatPubKeyInfo.Timestamp < userInfo.Timestamp {
+// 			userInfo.Timestamp = chatPubKeyInfo.Timestamp
+// 			userInfo.BlockHeight = chatPubKeyInfo.BlockHeight
+// 			userInfo.ChainName = chatPubKeyInfo.ChainName
+// 		}
+// 	}
+
+// 	// Set cache
+// 	if err := database.SetCache(cacheKey, userInfo); err != nil {
+// 		log.Printf("⚠️  Failed to set cache for MetaID %s: %v", metaID, err)
+// 	}
+
+// 	return userInfo, nil
+// }
+
 // GetUserInfoByAddress get user information by address
 func (s *IndexerFileService) GetUserInfoByAddress(address string) (*model.IndexerUserInfo, error) {
+
+	globalMetaId := common_service.ConvertToGlobalMetaId(address)
+
 	// Try to get from cache first
-	cacheKey := "user:address:" + address
+	// cacheKey := "user:address:" + address
+	cacheKey := "user:globalmetaid:" + globalMetaId
 	var cachedUser model.IndexerUserInfo
 	if err := database.GetCache(cacheKey, &cachedUser); err == nil {
 		// Cache hit
-		if cachedUser.GlobalMetaId != "" {
+		if cachedUser.GlobalMetaId != "" && cachedUser.Address != "" {
 			return &cachedUser, nil
 		}
 	}
 
 	// Cache miss, query from databases
 	// Calculate MetaID from address (SHA256)
-	metaID := calculateMetaIDFromAddress(address)
-	globalMetaId := common_service.ConvertToGlobalMetaId(address)
+	// metaID := calculateMetaIDFromAddress(address)
 
-	userInfo, err := s.GetUserInfoByMetaID(metaID)
+	// userInfo, err := s.GetUserInfoByMetaID(metaID)
+	userInfo, err := s.GetUserInfoByGlobalMetaID(globalMetaId, "")
 	if err != nil {
 		return nil, err
 	}
 
-	userInfo.GlobalMetaId = globalMetaId
-	userInfo.Address = address
+	// userInfo.GlobalMetaId = globalMetaId
+	if userInfo.Address == "" {
+		userInfo.Address = address
+	}
 
 	// Set cache
 	if err := database.SetCache(cacheKey, userInfo); err != nil {

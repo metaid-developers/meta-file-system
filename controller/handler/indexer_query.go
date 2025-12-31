@@ -559,6 +559,33 @@ func (h *IndexerQueryHandler) GetMetaIDUserInfoByAddress(c *gin.Context) {
 	respond.SuccessWithCode(c, 1, respond.ToMetaIDUserInfo(userInfo))
 }
 
+// GetMetaIDUserInfoByGlobalMetaID get MetaID format user info by Global MetaID
+// @Summary      Get MetaID user info by Global MetaID
+// @Description  Query user information in MetaID format by address
+// @Tags         Indexer User Info
+// @Accept       json
+// @Produce      json
+// @Param        globalMetaID  path  string  true  "Global MetaID"
+// @Success      200      {object}  respond.Response{data=respond.MetaIDUserInfo}
+// @Failure      404      {object}  respond.Response
+// @Router       /info/globalmetaid/{globalMetaID} [get]
+func (h *IndexerQueryHandler) GetMetaIDUserInfoByGlobalMetaID(c *gin.Context) {
+	globalMetaID := c.Param("globalMetaID")
+	if globalMetaID == "" {
+		respond.InvalidParam(c, "globalMetaID is required")
+		return
+	}
+
+	userInfo, err := h.indexerFileService.GetUserInfoByGlobalMetaID(globalMetaID, "")
+	if err != nil {
+		respond.NotFound(c, err.Error())
+		return
+	}
+
+	// Convert to MetaIDUserInfo format
+	respond.SuccessWithCode(c, 1, respond.ToMetaIDUserInfo(userInfo))
+}
+
 // SearchMetaIDUserInfo search MetaID format user info (fuzzy search)
 // @Summary      Search MetaID user info (fuzzy)
 // @Description  Fuzzy search user information by keyword and keytype (metaid or name)

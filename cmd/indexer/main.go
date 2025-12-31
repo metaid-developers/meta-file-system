@@ -126,7 +126,7 @@ func initAll() (*indexer_service.IndexerService, *http.Server, func()) {
 	// 	}
 	// }
 
-	// // 如果没有多链配置，使用单链配置作为 fallback
+	// // // 如果没有多链配置，使用单链配置作为 fallback
 	// var mvcBlockScanner, btcBlockScanner *indexer.BlockScanner
 	// if mvcConfig != nil {
 	// 	mvcBlockScanner = indexer.NewBlockScannerWithChain(
@@ -170,7 +170,7 @@ func initAll() (*indexer_service.IndexerService, *http.Server, func()) {
 	// 	)
 	// }
 
-	// // 创建修复服务（需要 MVC 和 BTC 两个扫描器）
+	// // // 创建修复服务（需要 MVC 和 BTC 两个扫描器）
 	// fixService := indexer_service.NewFixService(mvcBlockScanner, btcBlockScanner)
 
 	// // 修复用户头像信息（执行一次后可以注释掉）
@@ -187,6 +187,22 @@ func initAll() (*indexer_service.IndexerService, *http.Server, func()) {
 	// 	log.Printf("[FIX]⚠️  FixUserNameInfoCollection failed: %v", err)
 	// } else {
 	// 	log.Println("[FIX]✅ FixUserNameInfoCollection completed successfully")
+	// }
+
+	// 修复用户信息（执行一次后可以注释掉）
+	// log.Println("[FIX]🔧 Starting FixGlobalMetaIdAddressCollection...")
+
+	// if err := fixService.FixGlobalMetaIdAddressCollection(); err != nil {
+	// 	log.Printf("[FIX]⚠️  FixGlobalMetaIdAddressCollection failed: %v", err)
+	// } else {
+	// 	log.Println("[FIX]✅ FixGlobalMetaIdAddressCollection completed successfully")
+	// }
+
+	// log.Println("[FIX]🔧 Starting FixUserInfoCollection...")
+	// if err := fixService.FixUserInfoByGlobalMetaIdCollection(); err != nil {
+	// 	log.Printf("[FIX]⚠️  FixUserInfoCollection failed: %v", err)
+	// } else {
+	// 	log.Println("[FIX]✅ FixUserInfoCollection completed successfully")
 	// }
 
 	// Create indexer service (multi-chain or single-chain)

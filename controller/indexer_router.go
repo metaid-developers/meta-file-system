@@ -155,6 +155,9 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 			// Get user info by address (MetaID format)
 			info.GET("/address/:address", indexerQueryHandler.GetMetaIDUserInfoByAddress)
 
+			// Get user info by Global MetaID (MetaID format)
+			info.GET("/globalmetaid/:globalMetaID", indexerQueryHandler.GetMetaIDUserInfoByGlobalMetaID)
+
 			// Search user info (MetaID format)
 			info.GET("/search", indexerQueryHandler.SearchMetaIDUserInfo)
 		}

@@ -327,6 +327,57 @@ func (m *MySQLDatabase) GetUserChatPublicKeyHistory(key string) ([]model.UserCha
 	return nil, ErrNotImplemented
 }
 
+// User Name by GlobalMetaId operations - not implemented for MySQL yet
+func (m *MySQLDatabase) CreateOrUpdateLatestUserNameInfoByGlobalMetaId(info *model.UserNameInfo, globalMetaId string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetLatestUserNameInfoByGlobalMetaId(globalMetaId string) (*model.UserNameInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddUserNameInfoHistoryByGlobalMetaId(info *model.UserNameInfo, globalMetaId string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetUserNameInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserNameInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+// User Avatar by GlobalMetaId operations - not implemented for MySQL yet
+func (m *MySQLDatabase) CreateOrUpdateLatestUserAvatarInfoByGlobalMetaId(info *model.UserAvatarInfo, globalMetaId string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetLatestUserAvatarInfoByGlobalMetaId(globalMetaId string) (*model.UserAvatarInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddUserAvatarInfoHistoryByGlobalMetaId(info *model.UserAvatarInfo, globalMetaId string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetUserAvatarInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserAvatarInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+// User Chat Public Key by GlobalMetaId operations - not implemented for MySQL yet
+func (m *MySQLDatabase) CreateOrUpdateLatestUserChatPublicKeyInfoByGlobalMetaId(info *model.UserChatPublicKeyInfo, globalMetaId string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetLatestUserChatPublicKeyInfoByGlobalMetaId(globalMetaId string) (*model.UserChatPublicKeyInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddUserChatPublicKeyHistoryByGlobalMetaId(info *model.UserChatPublicKeyInfo, globalMetaId string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetUserChatPublicKeyHistoryByGlobalMetaId(globalMetaId string) ([]model.UserChatPublicKeyInfo, error) {
+	return nil, ErrNotImplemented
+}
+
 func (m *MySQLDatabase) GetUserInfoHistoryByKey(key string) (*model.UserInfoHistory, error) {
 	return nil, ErrNotImplemented
 }
@@ -351,6 +402,14 @@ func (m *MySQLDatabase) GetAddressByMetaID(metaID string) (string, error) {
 
 func (m *MySQLDatabase) GetMetaIDByAddress(address string) (string, error) {
 	return "", ErrNotImplemented
+}
+
+func (m *MySQLDatabase) SaveGlobalMetaIdAddress(globalMetaId, metaID, address string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetGlobalMetaIdAddress(globalMetaId string) (*model.GlobalMetaIdAddress, error) {
+	return nil, ErrNotImplemented
 }
 
 // MetaIdTimestamp operations - not implemented for MySQL yet

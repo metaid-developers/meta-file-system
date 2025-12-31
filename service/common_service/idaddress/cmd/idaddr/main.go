@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"manindexer/idaddress"
+	"meta-file-system/service/common_service/idaddress"
 )
 
 func main() {

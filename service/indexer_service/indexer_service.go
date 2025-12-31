@@ -23,6 +23,7 @@ import (
 	"meta-file-system/indexer"
 	"meta-file-system/model"
 	"meta-file-system/model/dao"
+	"meta-file-system/service/common_service"
 	"meta-file-system/service/common_service/metaid_protocols"
 	"meta-file-system/storage"
 
@@ -1102,6 +1103,14 @@ func (s *IndexerService) processUserNameContent(metaData *indexer.MetaIDData, fi
 		log.Printf("Failed to save MetaID-Address mapping: %v", err)
 	}
 
+	// Save GlobalMetaIdAddress mapping
+	globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
+	if globalMetaId != "" {
+		if err := database.DB.SaveGlobalMetaIdAddress(globalMetaId, creatorMetaID, creatorAddress); err != nil {
+			log.Printf("Failed to save GlobalMetaIdAddress mapping: %v", err)
+		}
+	}
+
 	// Save MetaID-Timestamp mapping (only earliest timestamp)
 	if err := database.DB.SaveMetaIdTimestamp(creatorMetaID, timestamp); err != nil {
 		log.Printf("Failed to save MetaID-Timestamp mapping: %v", err)
@@ -1131,6 +1140,19 @@ func (s *IndexerService) processUserNameContent(metaData *indexer.MetaIDData, fi
 		log.Printf("Failed to add user name info to history: %v", err)
 	}
 
+	// Save to GlobalMetaId collections
+	if globalMetaId != "" {
+		// Save to database - latest info by GlobalMetaId
+		if err := database.DB.CreateOrUpdateLatestUserNameInfoByGlobalMetaId(userNameInfo, globalMetaId); err != nil {
+			log.Printf("Failed to save user name info to GlobalMetaId collection: %v", err)
+		}
+
+		// Save to database - history by GlobalMetaId
+		if err := database.DB.AddUserNameInfoHistoryByGlobalMetaId(userNameInfo, globalMetaId); err != nil {
+			log.Printf("Failed to add user name info to GlobalMetaId history: %v", err)
+		}
+	}
+
 	log.Printf("User name indexed successfully: PIN=%s, Name=%s, MetaID=%s, Address=%s",
 		metaData.PinID, userName, creatorMetaID, creatorAddress)
 
@@ -1158,6 +1180,14 @@ func (s *IndexerService) processUserAvatarInfoContent(metaData *indexer.MetaIDDa
 	// Save MetaID-Address mapping for bidirectional lookup
 	if err := database.DB.SaveMetaIdAddress(creatorMetaID, creatorAddress); err != nil {
 		log.Printf("Failed to save MetaID-Address mapping: %v", err)
+	}
+
+	// Save GlobalMetaIdAddress mapping
+	globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
+	if globalMetaId != "" {
+		if err := database.DB.SaveGlobalMetaIdAddress(globalMetaId, creatorMetaID, creatorAddress); err != nil {
+			log.Printf("Failed to save GlobalMetaIdAddress mapping: %v", err)
+		}
 	}
 
 	// Save MetaID-Timestamp mapping (only earliest timestamp)
@@ -1231,6 +1261,19 @@ func (s *IndexerService) processUserAvatarInfoContent(metaData *indexer.MetaIDDa
 		log.Printf("Failed to add user avatar info to history: %v", err)
 	}
 
+	// Save to GlobalMetaId collections
+	if globalMetaId != "" {
+		// Save to database - latest info by GlobalMetaId
+		if err := database.DB.CreateOrUpdateLatestUserAvatarInfoByGlobalMetaId(userAvatarInfo, globalMetaId); err != nil {
+			log.Printf("Failed to save user avatar info to GlobalMetaId collection: %v", err)
+		}
+
+		// Save to database - history by GlobalMetaId
+		if err := database.DB.AddUserAvatarInfoHistoryByGlobalMetaId(userAvatarInfo, globalMetaId); err != nil {
+			log.Printf("Failed to add user avatar info to GlobalMetaId history: %v", err)
+		}
+	}
+
 	log.Printf("User avatar info indexed successfully: PIN=%s, Avatar=%s, URL=%s, Type=%s, Ext=%s, Size=%d, MetaID=%s, Address=%s",
 		metaData.PinID, storagePath, avatarUrl, fileType, fileExtension, len(metaData.Content), creatorMetaID, creatorAddress)
 
@@ -1260,6 +1303,14 @@ func (s *IndexerService) processUserChatPublicKeyContent(metaData *indexer.MetaI
 		log.Printf("Failed to save MetaID-Address mapping: %v", err)
 	}
 
+	// Save GlobalMetaIdAddress mapping
+	globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
+	if globalMetaId != "" {
+		if err := database.DB.SaveGlobalMetaIdAddress(globalMetaId, creatorMetaID, creatorAddress); err != nil {
+			log.Printf("Failed to save GlobalMetaIdAddress mapping: %v", err)
+		}
+	}
+
 	// Save MetaID-Timestamp mapping (only earliest timestamp)
 	if err := database.DB.SaveMetaIdTimestamp(creatorMetaID, timestamp); err != nil {
 		log.Printf("Failed to save MetaID-Timestamp mapping: %v", err)
@@ -1287,6 +1338,19 @@ func (s *IndexerService) processUserChatPublicKeyContent(metaData *indexer.MetaI
 	// Save to database - history
 	if err := database.DB.AddUserChatPublicKeyHistory(userChatPublicKeyInfo, creatorMetaID); err != nil {
 		log.Printf("Failed to add user chat public key info to history: %v", err)
+	}
+
+	// Save to GlobalMetaId collections
+	if globalMetaId != "" {
+		// Save to database - latest info by GlobalMetaId
+		if err := database.DB.CreateOrUpdateLatestUserChatPublicKeyInfoByGlobalMetaId(userChatPublicKeyInfo, globalMetaId); err != nil {
+			log.Printf("Failed to save user chat public key info to GlobalMetaId collection: %v", err)
+		}
+
+		// Save to database - history by GlobalMetaId
+		if err := database.DB.AddUserChatPublicKeyHistoryByGlobalMetaId(userChatPublicKeyInfo, globalMetaId); err != nil {
+			log.Printf("Failed to add user chat public key info to GlobalMetaId history: %v", err)
+		}
 	}
 
 	log.Printf("User chat public key indexed successfully: PIN=%s, ChatPublicKey=%s, MetaID=%s, Address=%s",

@@ -56,6 +56,21 @@ type Database interface {
 	GetLatestUserChatPublicKeyInfo(key string) (*model.UserChatPublicKeyInfo, error)
 	AddUserChatPublicKeyHistory(info *model.UserChatPublicKeyInfo, metaID string) error
 	GetUserChatPublicKeyHistory(key string) ([]model.UserChatPublicKeyInfo, error)
+	// User Name by GlobalMetaId
+	CreateOrUpdateLatestUserNameInfoByGlobalMetaId(info *model.UserNameInfo, globalMetaId string) error
+	GetLatestUserNameInfoByGlobalMetaId(globalMetaId string) (*model.UserNameInfo, error)
+	AddUserNameInfoHistoryByGlobalMetaId(info *model.UserNameInfo, globalMetaId string) error
+	GetUserNameInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserNameInfo, error)
+	// User Avatar by GlobalMetaId
+	CreateOrUpdateLatestUserAvatarInfoByGlobalMetaId(info *model.UserAvatarInfo, globalMetaId string) error
+	GetLatestUserAvatarInfoByGlobalMetaId(globalMetaId string) (*model.UserAvatarInfo, error)
+	AddUserAvatarInfoHistoryByGlobalMetaId(info *model.UserAvatarInfo, globalMetaId string) error
+	GetUserAvatarInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserAvatarInfo, error)
+	// User Chat Public Key by GlobalMetaId
+	CreateOrUpdateLatestUserChatPublicKeyInfoByGlobalMetaId(info *model.UserChatPublicKeyInfo, globalMetaId string) error
+	GetLatestUserChatPublicKeyInfoByGlobalMetaId(globalMetaId string) (*model.UserChatPublicKeyInfo, error)
+	AddUserChatPublicKeyHistoryByGlobalMetaId(info *model.UserChatPublicKeyInfo, globalMetaId string) error
+	GetUserChatPublicKeyHistoryByGlobalMetaId(globalMetaId string) ([]model.UserChatPublicKeyInfo, error)
 	// Get all user info history by MetaID or Address
 	GetUserInfoHistoryByKey(key string) (*model.UserInfoHistory, error)
 
@@ -67,6 +82,10 @@ type Database interface {
 	SaveMetaIdAddress(metaID, address string) error
 	GetAddressByMetaID(metaID string) (string, error)
 	GetMetaIDByAddress(address string) (string, error)
+
+	// GlobalMetaIdAddress operations
+	SaveGlobalMetaIdAddress(globalMetaId, metaID, address string) error
+	GetGlobalMetaIdAddress(globalMetaId string) (*model.GlobalMetaIdAddress, error)
 
 	// MetaIdTimestamp operations
 	SaveMetaIdTimestamp(metaID string, timestamp int64) error

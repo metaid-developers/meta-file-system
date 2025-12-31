@@ -92,7 +92,9 @@ func TestBase58CheckEncode(t *testing.T) {
 
 func TestConvertFromBitcoin(t *testing.T) {
 	// 已知的Bitcoin地址
-	bitcoinAddr := "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+	// bitcoinAddr := "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+	bitcoinAddr := "195gtuVbW9DsKPnSZLrt9kdJrQmvrAt7e3"
+	// bitcoinAddr := "DDDnSASEoZ89rPy3HvrShWnujYWEABGhUB"
 
 	idAddr, err := ConvertFromBitcoin(bitcoinAddr)
 	if err != nil {
