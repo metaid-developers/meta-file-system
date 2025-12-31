@@ -8,7 +8,7 @@ On-chain file service based on MetaID protocol, supporting file upload and index
 
 - 📤 **File Upload**: Upload files to blockchain via MetaID protocol
 - 📥 **File Indexing**: Scan and index MetaID files from blockchain
-- 🔗 **Multi-Chain Coordination**: Support BTC and MVC dual-chain indexing with timestamp-ordered processing
+- 🔗 **Multi-Chain Coordination**: Support BTC, MVC, and DOGE multi-chain indexing with timestamp-ordered processing
 - ⚡ **ZMQ Real-time Monitoring**: Support mempool transaction listening for fast response to on-chain events
 - 👥 **User Info Indexing**: Index network-wide user information (avatar, name, etc.) with Redis caching
 - 🔄 **Full Operation Support**: Support complete lifecycle of create/modify/revoke operations
@@ -287,7 +287,7 @@ http://localhost:7281/swagger/index.html
    - `GET /api/v1/avatars/accelerate/address/{address}`: Latest avatar by address (OSS link)
 
 5. **Sync & Stats**
-   - `GET /api/v1/status`: Multi-chain sync status (supports MVC/BTC)
+   - `GET /api/v1/status`: Multi-chain sync status (supports MVC/BTC/DOGE)
    - `GET /api/v1/stats`: Indexing statistics
 
 **Accelerate Parameters**
@@ -489,6 +489,7 @@ indexer:
   start_height: 0    # Start height (0 = use chain-specific init height or database max height)
   mvc_init_block_height: 350000  # MVC initial block height (used when start_height=0 and no data in DB)
   btc_init_block_height: 800000  # BTC initial block height (used when start_height=0 and no data in DB)
+  doge_init_block_height: 4000000  # DOGE initial block height (used when start_height=0 and no data in DB)
   swagger_base_url: "localhost:7281"  # Swagger API base URL
   zmq_enabled: false  # Global ZMQ setting (can be overridden per chain)
   zmq_address: "tcp://127.0.0.1:28332"  # Global ZMQ address (can be overridden per chain)
@@ -511,14 +512,23 @@ indexer:
       start_height: 800000
       zmq_enabled: true  # BTC chain ZMQ monitoring
       zmq_address: "tcp://127.0.0.1:28333"
+    
+    - name: "doge"
+      rpc_url: "http://127.0.0.1:22555"
+      rpc_user: "dogeuser"
+      rpc_pass: "dogepass"
+      start_height: 4000000
+      zmq_enabled: true  # DOGE chain ZMQ monitoring
+      zmq_address: "tcp://127.0.0.1:28334"
 ```
 
 **Multi-Chain Mode Features:**
-- ✅ Index BTC and MVC chains simultaneously
+- ✅ Index BTC, MVC, and DOGE chains simultaneously
 - ✅ Process cross-chain transactions in timestamp order (optional)
 - ✅ Independent ZMQ real-time monitoring for each chain
 - ✅ Automatic sync status management and resume capability
 - ✅ Prevent single-chain blocking with smart queue scheduling
+- ✅ GlobalMetaID support for cross-chain user identification
 
 ### Uploader Configuration
 
@@ -552,9 +562,21 @@ MIT License
 
 ## Version Information
 
-**Current Version: v0.3.0**
+**Current Version: v0.4.0**
 
 ### Changelog
+
+#### v0.4.0 (2025-12-31)
+
+**Indexer Service - DOGE Chain Support**
+- 🎉 **DOGE Chain Indexing**: Added full support for Dogecoin (DOGE) chain indexing alongside BTC and MVC
+- 🌐 **GlobalMetaID Support**: Added GlobalMetaID calculation and storage for cross-chain user identification
+- 🔧 **DOGE Block Parsing**: Implemented verbose RPC-based block fetching for DOGE to avoid compatibility issues
+- 🎨 **UI Enhancements**: Updated web interface to support DOGE chain display with distinct styling
+
+**Configuration Changes**
+- Added `indexer.doge_init_block_height` configuration option
+- Extended multi-chain configuration to support DOGE chain
 
 #### v0.3.0 (2025-12-05)
 

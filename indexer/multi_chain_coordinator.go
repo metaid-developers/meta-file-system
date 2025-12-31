@@ -294,7 +294,7 @@ func (c *MultiChainCoordinator) scanBlocksForChain(chainName string, scanner *Bl
 
 						// Extract timestamp based on chain type
 						var timestamp int64
-						if scanner.chainType == ChainTypeBTC {
+						if scanner.chainType == ChainTypeBTC || scanner.chainType == ChainTypeDOGE {
 							if btcBlock, ok := msgBlock.(*btcwire.MsgBlock); ok {
 								timestamp = btcBlock.Header.Timestamp.UnixMilli()
 							}

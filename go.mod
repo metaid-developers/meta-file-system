@@ -14,6 +14,7 @@ require (
 	github.com/bitcoinsv/bsvutil v0.0.0-20181216182056-1d77cf353ea9
 	github.com/btcsuite/btcd v0.24.2
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
+	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/cockroachdb/pebble v1.1.2
@@ -22,7 +23,7 @@ require (
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/godaddy-x/freego v1.0.174
 	github.com/imroc/req v0.3.2
-	github.com/metaid-developers/metaid-script-decoder v1.0.8
+	github.com/metaid-developers/metaid-script-decoder v1.1.0
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/schollz/progressbar/v3 v3.14.1
 	github.com/spf13/viper v1.18.2
@@ -55,7 +56,6 @@ require (
 	github.com/aws/smithy-go v1.22.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bitcoinsv/bsvlog v0.0.0-20181216181007-cb81b076bf2e // indirect
-	github.com/btcsuite/btcd/btcutil v1.1.5 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.14.1 // indirect

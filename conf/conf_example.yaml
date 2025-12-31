@@ -18,6 +18,7 @@ indexer:
   start_height: 0  # If 0, will use chain-specific init height or database max height
   mvc_init_block_height: 350000  # MVC chain initial block height (used when start_height=0 and no data in DB)
   btc_init_block_height: 800000  # BTC chain initial block height (used when start_height=0 and no data in DB)
+  doge_init_block_height: 4000000  # DOGE chain initial block height (used when start_height=0 and no data in DB)
   swagger_base_url: "localhost:7281"  # Swagger API base URL (shown in Swagger UI)
   zmq_enabled: false  # Enable ZMQ real-time monitoring
   zmq_address: "tcp://127.0.0.1:28332"  # ZMQ server address (for BTC/MVC node)
@@ -39,6 +40,13 @@ indexer:
       start_height: 800000
       zmq_enabled: true
       zmq_address: "tcp://127.0.0.1:28333"
+    - name: "doge"
+      rpc_url: "http://127.0.0.1:22555"
+      rpc_user: "dogeuser"
+      rpc_pass: "dogepass"
+      start_height: 4000000
+      zmq_enabled: true
+      zmq_address: "tcp://127.0.0.1:28334"
 
 # Uploader configuration
 uploader:

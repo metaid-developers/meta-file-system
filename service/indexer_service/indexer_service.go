@@ -105,6 +105,8 @@ func NewIndexerServiceWithChain(storage storage.Storage, chainType indexer.Chain
 			configStartHeight = conf.Cfg.Indexer.MvcInitBlockHeight
 		} else if chainType == indexer.ChainTypeBTC {
 			configStartHeight = conf.Cfg.Indexer.BtcInitBlockHeight
+		} else if chainType == indexer.ChainTypeDOGE {
+			configStartHeight = conf.Cfg.Indexer.DogeInitBlockHeight
 		}
 	}
 
@@ -212,6 +214,8 @@ func (s *IndexerService) addChainScanner(chainConfig conf.ChainInstanceConfig) e
 		chainType = indexer.ChainTypeBTC
 	case "mvc":
 		chainType = indexer.ChainTypeMVC
+	case "doge":
+		chainType = indexer.ChainTypeDOGE
 	default:
 		return fmt.Errorf("unsupported chain type: %s", chainConfig.Name)
 	}
@@ -318,6 +322,8 @@ func (s *IndexerService) handleBlockEvent(event *indexer.BlockEvent) error {
 		chainType = indexer.ChainTypeBTC
 	case "mvc":
 		chainType = indexer.ChainTypeMVC
+	case "doge":
+		chainType = indexer.ChainTypeDOGE
 	default:
 		return fmt.Errorf("unsupported chain type: %s", event.ChainName)
 	}
@@ -326,10 +332,14 @@ func (s *IndexerService) handleBlockEvent(event *indexer.BlockEvent) error {
 	parser := indexer.NewMetaIDParser("")
 
 	// Process transactions based on chain type
-	if chainType == indexer.ChainTypeBTC {
+	if chainType == indexer.ChainTypeBTC || chainType == indexer.ChainTypeDOGE {
 		btcBlock, ok := event.Block.(*btcwire.MsgBlock)
 		if !ok {
-			return fmt.Errorf("invalid BTC block type")
+			chainName := "BTC"
+			if chainType == indexer.ChainTypeDOGE {
+				chainName = "DOGE"
+			}
+			return fmt.Errorf("invalid %s block type", chainName)
 		}
 		//判断event.Timestamp的位数是否13位，不是的话，则认为是10位，则需要乘以1000
 		if len(strconv.FormatInt(event.Timestamp, 10)) != 13 {

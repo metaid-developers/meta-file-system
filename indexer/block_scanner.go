@@ -12,6 +12,7 @@ import (
 	"meta-file-system/tool"
 
 	"github.com/bitcoinsv/bsvd/wire"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	btcwire "github.com/btcsuite/btcd/wire"
 	"github.com/schollz/progressbar/v3"
 )
@@ -23,7 +24,7 @@ type BlockScanner struct {
 	rpcPassword string
 	startHeight int64
 	interval    time.Duration
-	chainType   ChainType // Chain type: btc or mvc
+	chainType   ChainType // Chain type: btc, mvc, or doge
 	progressBar *progressbar.ProgressBar
 	zmqClient   *ZMQClient    // ZMQ client for real-time transaction monitoring
 	zmqEnabled  bool          // Whether ZMQ is enabled
@@ -197,6 +198,251 @@ func (s *BlockScanner) GetRawTransaction(txid string) (string, error) {
 	return txHex, nil
 }
 
+// BlockVerboseResult represents the result of getblock RPC with verbosity=2
+type BlockVerboseResult struct {
+	Hash         string   `json:"hash"`
+	Version      int32    `json:"version"`
+	PreviousHash string   `json:"previousblockhash"`
+	MerkleRoot   string   `json:"merkleroot"`
+	Time         int64    `json:"time"`
+	Bits         string   `json:"bits"`
+	Nonce        uint32   `json:"nonce"`
+	Tx           []string `json:"tx"`
+}
+
+// TxVerboseResult represents the result of getrawtransaction RPC with verbosity=1
+type TxVerboseResult struct {
+	TxID     string          `json:"txid"`
+	Hex      string          `json:"hex"`
+	Version  int32           `json:"version"`
+	LockTime uint32          `json:"locktime"`
+	Vin      []TxVerboseVin  `json:"vin"`
+	Vout     []TxVerboseVout `json:"vout"`
+}
+
+// TxVerboseVin represents a transaction input in verbose format
+type TxVerboseVin struct {
+	TxID      string              `json:"txid"`
+	Vout      uint32              `json:"vout"`
+	ScriptSig *TxVerboseScriptSig `json:"scriptSig,omitempty"`
+	Sequence  uint32              `json:"sequence"`
+	Coinbase  string              `json:"coinbase,omitempty"`
+}
+
+// TxVerboseScriptSig represents scriptSig in verbose format
+type TxVerboseScriptSig struct {
+	Asm string `json:"asm"`
+	Hex string `json:"hex"`
+}
+
+// TxVerboseVout represents a transaction output in verbose format
+type TxVerboseVout struct {
+	Value        float64               `json:"value"`
+	N            uint32                `json:"n"`
+	ScriptPubKey TxVerboseScriptPubKey `json:"scriptPubKey"`
+}
+
+// TxVerboseScriptPubKey represents scriptPubKey in verbose format
+type TxVerboseScriptPubKey struct {
+	Asm       string   `json:"asm"`
+	Hex       string   `json:"hex"`
+	ReqSigs   int      `json:"reqSigs,omitempty"`
+	Type      string   `json:"type"`
+	Addresses []string `json:"addresses,omitempty"`
+}
+
+// GetBlockVerbose get block with verbosity=1 (returns transaction IDs only)
+func (s *BlockScanner) GetBlockVerbose(blockhash string) (*BlockVerboseResult, error) {
+	request := RPCRequest{
+		Jsonrpc: "1.0",
+		ID:      "getblock",
+		Method:  "getblock",
+		Params:  []interface{}{blockhash, 1}, // verbosity=1 returns transaction IDs
+	}
+
+	response, err := s.rpcCall(request)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.Error != nil {
+		return nil, fmt.Errorf("rpc error: %s", response.Error.Message)
+	}
+
+	// Parse JSON response
+	resultJSON, err := json.Marshal(response.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	var blockVerbose BlockVerboseResult
+	if err := json.Unmarshal(resultJSON, &blockVerbose); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal block verbose result: %w", err)
+	}
+
+	return &blockVerbose, nil
+}
+
+// GetRawTransactionVerbose get raw transaction with verbosity=1
+func (s *BlockScanner) GetRawTransactionVerbose(txid string) (*TxVerboseResult, error) {
+	request := RPCRequest{
+		Jsonrpc: "1.0",
+		ID:      "getrawtransaction",
+		Method:  "getrawtransaction",
+		Params:  []interface{}{txid, 1}, // verbosity=1 returns decoded transaction
+	}
+
+	response, err := s.rpcCall(request)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.Error != nil {
+		return nil, fmt.Errorf("rpc error: %s", response.Error.Message)
+	}
+
+	// Parse JSON response
+	resultJSON, err := json.Marshal(response.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	var txVerbose TxVerboseResult
+	if err := json.Unmarshal(resultJSON, &txVerbose); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transaction verbose result: %w", err)
+	}
+
+	return &txVerbose, nil
+}
+
+// parseHexUint32 parses a hex string to uint32
+func parseHexUint32(hexStr string) (uint32, error) {
+	var result uint32
+	_, err := fmt.Sscanf(hexStr, "%x", &result)
+	return result, err
+}
+
+// mustParseChainhash parses a hex string to chainhash.Hash, panics on error
+func mustParseChainhash(hexStr string) chainhash.Hash {
+	hash, err := chainhash.NewHashFromStr(hexStr)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse chainhash %s: %v", hexStr, err))
+	}
+	return *hash
+}
+
+// parseDOGETxFromVerbose parses a DOGE transaction from verbose format
+func parseDOGETxFromVerbose(txVerbose *TxVerboseResult) (*btcwire.MsgTx, error) {
+	tx := btcwire.NewMsgTx(btcwire.TxVersion)
+	tx.Version = txVerbose.Version
+	tx.LockTime = txVerbose.LockTime
+
+	// Parse inputs
+	for _, vin := range txVerbose.Vin {
+		var txIn *btcwire.TxIn
+
+		if vin.Coinbase != "" {
+			// Coinbase transaction
+			coinbaseScript, err := hex.DecodeString(vin.Coinbase)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode coinbase script: %w", err)
+			}
+			// Coinbase uses nil OutPoint
+			txIn = btcwire.NewTxIn(&btcwire.OutPoint{}, coinbaseScript, nil)
+		} else {
+			// Regular transaction input
+			txHash, err := chainhash.NewHashFromStr(vin.TxID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse txid: %w", err)
+			}
+			outPoint := btcwire.OutPoint{
+				Hash:  *txHash,
+				Index: vin.Vout,
+			}
+
+			var scriptSig []byte
+			if vin.ScriptSig != nil {
+				scriptSig, err = hex.DecodeString(vin.ScriptSig.Hex)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode scriptSig: %w", err)
+				}
+			}
+
+			txIn = btcwire.NewTxIn(&outPoint, scriptSig, nil)
+		}
+
+		txIn.Sequence = vin.Sequence
+		tx.AddTxIn(txIn)
+	}
+
+	// Parse outputs
+	for _, vout := range txVerbose.Vout {
+		scriptPubKey, err := hex.DecodeString(vout.ScriptPubKey.Hex)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode scriptPubKey: %w", err)
+		}
+
+		// Convert value from float64 to int64 (satoshis)
+		// DOGE uses 8 decimal places like BTC
+		value := int64(vout.Value * 1e8)
+
+		txOut := btcwire.NewTxOut(value, scriptPubKey)
+		tx.AddTxOut(txOut)
+	}
+
+	return tx, nil
+}
+
+// getDOGEBlockByRPC manually fetches block and individual transactions using verbose RPC to avoid parsing issues
+func (s *BlockScanner) getDOGEBlockByRPC(blockhash string) (*btcwire.MsgBlock, error) {
+	// Get block verbose first to get tx list and header info
+	blockVerbose, err := s.GetBlockVerbose(blockhash)
+	if err != nil {
+		return nil, fmt.Errorf("GetBlockVerbose failed: %w", err)
+	}
+
+	// Parse bits
+	bits, err := parseHexUint32(blockVerbose.Bits)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse bits: %w", err)
+	}
+
+	// Build MsgBlock
+	msgBlock := &btcwire.MsgBlock{
+		Header: btcwire.BlockHeader{
+			Version:    blockVerbose.Version,
+			PrevBlock:  mustParseChainhash(blockVerbose.PreviousHash),
+			MerkleRoot: mustParseChainhash(blockVerbose.MerkleRoot),
+			Timestamp:  time.Unix(blockVerbose.Time, 0),
+			Bits:       bits,
+			Nonce:      blockVerbose.Nonce,
+		},
+		Transactions: make([]*btcwire.MsgTx, 0, len(blockVerbose.Tx)),
+	}
+
+	// Get each transaction individually by txid using verbose format
+	for _, txid := range blockVerbose.Tx {
+		txhash, err := chainhash.NewHashFromStr(txid)
+		if err != nil {
+			continue
+		}
+
+		txVerbose, err := s.GetRawTransactionVerbose(txhash.String())
+		if err != nil {
+			continue
+		}
+
+		tx, err := parseDOGETxFromVerbose(txVerbose)
+		if err != nil {
+			log.Printf("[DOGE] Failed to parse transaction %s: %v", txid, err)
+			continue
+		}
+		msgBlock.Transactions = append(msgBlock.Transactions, tx)
+	}
+
+	return msgBlock, nil
+}
+
 // GetRawMempool get all transaction IDs in mempool
 func (s *BlockScanner) GetRawMempool() ([]string, error) {
 	request := RPCRequest{
@@ -268,10 +514,14 @@ func (s *BlockScanner) ScanMempool(handler func(tx interface{}, metaDataTx *Meta
 
 		// Deserialize transaction based on chain type
 		var tx interface{}
-		if s.chainType == ChainTypeBTC {
+		if s.chainType == ChainTypeBTC || s.chainType == ChainTypeDOGE {
 			var btcTx btcwire.MsgTx
+			chainName := "BTC"
+			if s.chainType == ChainTypeDOGE {
+				chainName = "DOGE"
+			}
 			if err := btcTx.Deserialize(bytes.NewReader(txBytes)); err != nil {
-				log.Printf("[%s] Failed to deserialize BTC transaction: %v", s.chainType, err)
+				log.Printf("[%s] Failed to deserialize %s transaction: %v", s.chainType, chainName, err)
 				continue
 			}
 			tx = &btcTx
@@ -313,7 +563,7 @@ func (s *BlockScanner) ScanMempool(handler func(tx interface{}, metaDataTx *Meta
 }
 
 // GetBlockMsg get block message (MsgBlock) with all transactions
-// Returns interface{} which can be *wire.MsgBlock (MVC) or *btcwire.MsgBlock (BTC)
+// Returns interface{} which can be *wire.MsgBlock (MVC) or *btcwire.MsgBlock (BTC/DOGE)
 func (s *BlockScanner) GetBlockMsg(height int64) (interface{}, int, error) {
 	// Get block hash
 	blockhash, err := s.GetBlockhash(height)
@@ -334,7 +584,15 @@ func (s *BlockScanner) GetBlockMsg(height int64) (interface{}, int, error) {
 	}
 
 	// Deserialize based on chain type
-	if s.chainType == ChainTypeBTC {
+	if s.chainType == ChainTypeDOGE {
+		// DOGE: Use verbose RPC method to avoid deserialization issues
+		msgBlock, err := s.getDOGEBlockByRPC(blockhash)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to get DOGE block by RPC: %w", err)
+		}
+		txCount := len(msgBlock.Transactions)
+		return msgBlock, txCount, nil
+	} else if s.chainType == ChainTypeBTC {
 		// Parse as BTC block
 		var msgBlock btcwire.MsgBlock
 		if err := msgBlock.Deserialize(bytes.NewReader(blockBytes)); err != nil {
@@ -372,18 +630,22 @@ func (s *BlockScanner) ScanBlock(height int64, handler func(tx interface{}, meta
 	// Note: parser := NewMetaIDParser("") removed to reduce memory allocation
 
 	// Process transactions based on chain type
-	if s.chainType == ChainTypeBTC {
-		// BTC block
+	if s.chainType == ChainTypeBTC || s.chainType == ChainTypeDOGE {
+		// BTC/DOGE block
 		btcBlock, ok := msgBlockInterface.(*btcwire.MsgBlock)
 		if !ok {
-			return 0, errors.New("invalid BTC block type")
+			chainName := "BTC"
+			if s.chainType == ChainTypeDOGE {
+				chainName = "DOGE"
+			}
+			return 0, fmt.Errorf("invalid %s block type", chainName)
 		}
 		timestamp := btcBlock.Header.Timestamp.UnixMilli()
 
 		// Traverse transactions
 		for _, tx := range btcBlock.Transactions {
 			// Parse MetaID data using shared parser
-			metaDataTx, err := s.parser.ParseAllPINs(tx, ChainTypeBTC)
+			metaDataTx, err := s.parser.ParseAllPINs(tx, s.chainType)
 			if err != nil {
 				// not MetaID transaction, skip
 				continue
@@ -395,8 +657,12 @@ func (s *BlockScanner) ScanBlock(height int64, handler func(tx interface{}, meta
 			metaidPinCount += len(metaDataTx.MetaIDData)
 
 			// Call handler
+			chainName := "BTC"
+			if s.chainType == ChainTypeDOGE {
+				chainName = "DOGE"
+			}
 			if err := handler(tx, metaDataTx, height, timestamp); err != nil {
-				log.Printf("Failed to handle BTC transaction %s: %v", metaDataTx.TxID, err)
+				log.Printf("Failed to handle %s transaction %s: %v", chainName, metaDataTx.TxID, err)
 			} else {
 				processedCount++
 			}

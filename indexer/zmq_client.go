@@ -184,14 +184,18 @@ func (c *ZMQClient) handleRawTx(topic string, data []byte) error {
 	var tx interface{}
 	var err error
 
-	if c.chainType == ChainTypeBTC {
-		// Parse as BTC transaction
+	if c.chainType == ChainTypeBTC || c.chainType == ChainTypeDOGE {
+		// Parse as BTC/DOGE transaction
 		var btcTx btcwire.MsgTx
+		chainName := "BTC"
+		if c.chainType == ChainTypeDOGE {
+			chainName = "DOGE"
+		}
 		if err = btcTx.Deserialize(bytes.NewReader(data)); err != nil {
-			return fmt.Errorf("failed to deserialize BTC transaction: %w", err)
+			return fmt.Errorf("failed to deserialize %s transaction: %w", chainName, err)
 		}
 		tx = &btcTx
-		// Removed: log.Printf("Received BTC transaction from ZMQ: %s", btcTx.TxHash().String())
+		// Removed: log.Printf("Received %s transaction from ZMQ: %s", chainName, btcTx.TxHash().String())
 	} else {
 		// Parse as MVC transaction
 		var mvcTx wire.MsgTx

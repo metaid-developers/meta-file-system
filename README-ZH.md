@@ -8,7 +8,7 @@
 
 - 📤 **文件上链**: 将文件通过 MetaID 协议上传到区块链
 - 📥 **文件索引**: 从区块链扫描和索引 MetaID 文件
-- 🔗 **多链协同索引**: 同时支持 BTC 和 MVC 双链索引，时间戳有序处理
+- 🔗 **多链协同索引**: 同时支持 BTC、MVC 和 DOGE 多链索引，时间戳有序处理
 - ⚡ **ZMQ 实时监控**: 支持 mempool 交易实时监听，快速响应链上事件
 - 👥 **用户信息索引**: 索引全网用户信息（头像、昵称等），支持 Redis 缓存加速
 - 🔄 **完整操作支持**: 支持 create/modify/revoke 全生命周期操作
@@ -286,7 +286,7 @@ http://localhost:7281/swagger/index.html
    - `GET /api/v1/avatars/accelerate/address/{address}`：根据地址获取最新头像直链
 
 5. **同步状态与统计**
-   - `GET /api/v1/status`：多链同步状态（支持 MVC/BTC）
+   - `GET /api/v1/status`：多链同步状态（支持 MVC/BTC/DOGE）
    - `GET /api/v1/stats`：索引统计信息
 
 **加速直链参数：**
@@ -488,6 +488,7 @@ indexer:
   start_height: 0    # 起始高度（0 = 使用链特定初始高度或数据库最大高度）
   mvc_init_block_height: 350000  # MVC 初始区块高度（当 start_height=0 且数据库无数据时使用）
   btc_init_block_height: 800000  # BTC 初始区块高度（当 start_height=0 且数据库无数据时使用）
+  doge_init_block_height: 4000000  # DOGE 初始区块高度（当 start_height=0 且数据库无数据时使用）
   swagger_base_url: "localhost:7281"  # Swagger API 基础 URL
   zmq_enabled: false  # 全局 ZMQ 设置（可在每条链中覆盖）
   zmq_address: "tcp://127.0.0.1:28332"  # 全局 ZMQ 地址（可在每条链中覆盖）
@@ -510,14 +511,23 @@ indexer:
       start_height: 800000
       zmq_enabled: true  # BTC 链 ZMQ 监控
       zmq_address: "tcp://127.0.0.1:28333"
+    
+    - name: "doge"
+      rpc_url: "http://127.0.0.1:22555"
+      rpc_user: "dogeuser"
+      rpc_pass: "dogepass"
+      start_height: 4000000
+      zmq_enabled: true  # DOGE 链 ZMQ 监控
+      zmq_address: "tcp://127.0.0.1:28334"
 ```
 
 **多链模式特性：**
-- ✅ 同时索引 BTC 和 MVC 两条链
+- ✅ 同时索引 BTC、MVC 和 DOGE 多条链
 - ✅ 按时间戳有序处理跨链交易（可选）
 - ✅ 每条链独立 ZMQ 实时监控
 - ✅ 自动同步状态管理和断点续传
 - ✅ 防止单链阻塞，智能队列调度
+- ✅ GlobalMetaID 支持跨链用户身份识别
 
 ### 上传器配置
 
@@ -551,9 +561,21 @@ MIT License
 
 ## 版本信息
 
-**当前版本：v0.3.0**
+**当前版本：v0.4.0**
 
 ### 更新日志
+
+#### v0.4.0 (2025-12-31)
+
+**Indexer 服务 - DOGE 链支持**
+- 🎉 **DOGE 链索引**：新增对 Dogecoin (DOGE) 链的完整索引支持，与 BTC 和 MVC 并列
+- 🌐 **GlobalMetaID 支持**：新增 GlobalMetaID 计算和存储，支持跨链用户身份识别
+- 🔧 **DOGE 区块解析**：实现了基于 verbose RPC 的 DOGE 区块获取方法，避免兼容性问题
+- 🎨 **界面优化**：更新 Web 界面以支持 DOGE 链显示，使用独特的样式标识
+
+**配置变更**
+- 新增 `indexer.doge_init_block_height` 配置选项
+- 扩展多链配置以支持 DOGE 链
 
 #### v0.3.0 (2025-12-05)
 

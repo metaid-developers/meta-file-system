@@ -616,7 +616,12 @@ function createFileCard(file) {
     const card = document.createElement('div');
     card.className = 'file-card';
     
-    const chainBadgeClass = file.chain_name === 'btc' ? 'badge-btc' : 'badge-mvc';
+    let chainBadgeClass = 'badge-mvc';
+    if (file.chain_name === 'btc') {
+        chainBadgeClass = 'badge-btc';
+    } else if (file.chain_name === 'doge') {
+        chainBadgeClass = 'badge-doge';
+    }
     const chainName = file.chain_name.toUpperCase();
     
     const fileSize = formatFileSize(file.file_size);
@@ -1041,7 +1046,12 @@ function createUserCard(user) {
     const card = document.createElement('div');
     card.className = 'user-card';
     
-    const chainBadgeClass = user.chainName === 'btc' ? 'badge-btc' : 'badge-mvc';
+    let chainBadgeClass = 'badge-mvc';
+    if (user.chainName === 'btc') {
+        chainBadgeClass = 'badge-btc';
+    } else if (user.chainName === 'doge') {
+        chainBadgeClass = 'badge-doge';
+    }
     const chainName = (user.chainName || 'mvc').toUpperCase();
     
     // Avatar URL
@@ -1055,6 +1065,11 @@ function createUserCard(user) {
     // Short MetaID for display
     const shortMetaId = user.metaId 
         ? `${user.metaId.substring(0, 8)}...${user.metaId.substring(user.metaId.length - 8)}`
+        : '';
+    
+    // Short GlobalMetaID for display
+    const shortGlobalMetaId = user.globalMetaId 
+        ? `${user.globalMetaId.substring(0, 8)}...${user.globalMetaId.substring(user.globalMetaId.length - 8)}`
         : '';
     
     const timestamp = user.timestamp ? new Date(user.timestamp).toLocaleString() : '-';
@@ -1075,6 +1090,11 @@ function createUserCard(user) {
             <div class="user-metaid" title="${user.metaId || ''}">
                 MetaID: ${shortMetaId}
             </div>
+            ${user.globalMetaId ? `
+            <div class="user-metaid" title="${user.globalMetaId}" style="font-size: 12px; color: #333; margin-top: 4px; font-weight: 500;">
+                GlobalMetaID: ${shortGlobalMetaId}
+            </div>
+            ` : ''}
             <div class="user-meta-info">
                 <span class="file-badge ${chainBadgeClass}">${chainName}</span>
                 <span>📅 ${timestamp}</span>
@@ -1085,6 +1105,11 @@ function createUserCard(user) {
             <button class="btn btn-primary btn-small copy-metaid-btn" data-metaid="${user.metaId || ''}" title="Copy MetaID">
                 📋 Copy MetaID
             </button>
+            ${user.globalMetaId ? `
+            <button class="btn btn-primary btn-small copy-globalmetaid-btn" data-globalmetaid="${user.globalMetaId}" title="Copy GlobalMetaID">
+                📋 Copy GlobalMetaID
+            </button>
+            ` : ''}
             ${user.address ? `
             <button class="btn btn-primary btn-small copy-address-btn" data-address="${user.address}" title="Copy Address">
                 📋 Copy Address
@@ -1110,6 +1135,16 @@ function createUserCard(user) {
             const address = this.getAttribute('data-address');
             if (address) {
                 copyToClipboard(address);
+            }
+        });
+    }
+    
+    const copyGlobalMetaIdBtn = card.querySelector('.copy-globalmetaid-btn');
+    if (copyGlobalMetaIdBtn) {
+        copyGlobalMetaIdBtn.addEventListener('click', function() {
+            const globalMetaId = this.getAttribute('data-globalmetaid');
+            if (globalMetaId) {
+                copyToClipboard(globalMetaId);
             }
         });
     }

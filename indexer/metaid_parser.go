@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/metaid-developers/metaid-script-decoder/decoder"
 	"github.com/metaid-developers/metaid-script-decoder/decoder/btc"
+	"github.com/metaid-developers/metaid-script-decoder/decoder/doge"
 	"github.com/metaid-developers/metaid-script-decoder/decoder/mvc"
 )
 
@@ -22,13 +23,14 @@ import (
 type ChainType string
 
 const (
-	ChainTypeBTC ChainType = "btc"
-	ChainTypeMVC ChainType = "mvc"
+	ChainTypeBTC  ChainType = "btc"
+	ChainTypeMVC  ChainType = "mvc"
+	ChainTypeDOGE ChainType = "doge"
 )
 
 type MetaIDDataTx struct {
 	TxID       string // Transaction ID
-	ChainName  string // Chain name: btc, mvc
+	ChainName  string // Chain name: btc, mvc, doge
 	MetaIDData []*MetaIDData
 }
 
@@ -50,13 +52,14 @@ type MetaIDData struct {
 	CreatorInputTxVinLocation string // Creator input transaction vin location PreTxId:vin
 	CreatorAddress            string // Creator address
 	OwnerAddress              string // Owner address
-	ChainName                 string // Chain name: btc, mvc
+	ChainName                 string // Chain name: btc, mvc, doge
 }
 
 // MetaIDParser MetaID protocol parser
 type MetaIDParser struct {
 	btcParser    decoder.ChainParser
 	mvcParser    decoder.ChainParser
+	dogeParser   decoder.ChainParser
 	config       *decoder.ParserConfig
 	blockScanner *BlockScanner // RPC client for fetching transactions
 }
@@ -71,9 +74,10 @@ func NewMetaIDParser(protocolID string) *MetaIDParser {
 	}
 
 	return &MetaIDParser{
-		btcParser: btc.NewBTCParser(config),
-		mvcParser: mvc.NewMVCParser(config),
-		config:    config,
+		btcParser:  btc.NewBTCParser(config),
+		mvcParser:  mvc.NewMVCParser(config),
+		dogeParser: doge.NewDOGEParser(config),
+		config:     config,
 	}
 }
 
@@ -200,6 +204,21 @@ func (p *MetaIDParser) ParseAllPINs(tx interface{}, chainType ChainType) (*MetaI
 		txBytes = buf.Bytes()
 		txID = btcTx.TxHash().String()
 		address = extractBTCCreatorAddress(btcTx)
+	} else if chainType == ChainTypeDOGE {
+		// Expect DOGE transaction (same format as BTC)
+		dogeTx, ok := tx.(*btcwire.MsgTx)
+		if !ok {
+			return nil, errors.New("invalid transaction type: expected *btcwire.MsgTx for DOGE chain")
+		}
+
+		// Serialize DOGE transaction
+		var buf bytes.Buffer
+		if err = dogeTx.Serialize(&buf); err != nil {
+			return nil, fmt.Errorf("failed to serialize DOGE transaction: %w", err)
+		}
+		txBytes = buf.Bytes()
+		txID = dogeTx.TxHash().String()
+		address = extractBTCCreatorAddress(dogeTx)
 	} else {
 		// Expect MVC transaction
 		mvcTx, ok := tx.(*wire.MsgTx)
@@ -226,6 +245,12 @@ func (p *MetaIDParser) ParseAllPINs(tx interface{}, chainType ChainType) (*MetaI
 		pins, err = p.btcParser.ParseTransaction(txBytes, &chaincfg.MainNetParams)
 		if err == nil && len(pins) > 0 {
 			chainName = "btc"
+		}
+	} else if chainType == ChainTypeDOGE {
+		// Try DOGE parser first
+		pins, err = p.dogeParser.ParseTransaction(txBytes, &chaincfg.MainNetParams)
+		if err == nil && len(pins) > 0 {
+			chainName = "doge"
 		}
 	} else {
 		// Try MVC parser first
@@ -313,7 +338,7 @@ func TxToHex(tx *wire.MsgTx) (string, error) {
 
 // FindCreatorAddressFromCreatorInputLocation find creator address from CreatorInputLocation
 // For MVC: uses creatorInputLocation format "txid:vout"
-// For BTC: uses creatorInputTxVinLocation format "txid:vin", traces back two levels to find the address
+// For BTC/DOGE: uses creatorInputTxVinLocation format "txid:vin", traces back two levels to find the address
 func (p *MetaIDParser) FindCreatorAddressFromCreatorInputLocation(creatorInputLocation string, creatorInputTxVinLocation string, chainType ChainType) (string, error) {
 	if p.blockScanner == nil {
 		return "", errors.New("blockScanner not set, cannot fetch transaction from node")
@@ -367,9 +392,13 @@ func (p *MetaIDParser) FindCreatorAddressFromCreatorInputLocation(creatorInputLo
 		return address, nil
 	}
 
-	// BTC chain: use creatorInputTxVinLocation and trace back two levels
+	// BTC/DOGE chain: use creatorInputTxVinLocation and trace back two levels
 	if creatorInputTxVinLocation == "" {
-		return "", errors.New("creatorInputTxVinLocation is empty for BTC chain")
+		chainName := "BTC"
+		if chainType == ChainTypeDOGE {
+			chainName = "DOGE"
+		}
+		return "", fmt.Errorf("creatorInputTxVinLocation is empty for %s chain", chainName)
 	}
 
 	// Parse CreatorInputTxVinLocation: "txid:vin"
@@ -392,8 +421,12 @@ func (p *MetaIDParser) FindCreatorAddressFromCreatorInputLocation(creatorInputLo
 	}
 
 	var tx1 btcwire.MsgTx
+	chainName := "BTC"
+	if chainType == ChainTypeDOGE {
+		chainName = "DOGE"
+	}
 	if err := tx1.Deserialize(bytes.NewReader(tx1Bytes)); err != nil {
-		return "", fmt.Errorf("failed to deserialize BTC transaction: %w", err)
+		return "", fmt.Errorf("failed to deserialize %s transaction: %w", chainName, err)
 	}
 
 	// Step 2: Get the first input's previous transaction (preTxId)
@@ -416,7 +449,7 @@ func (p *MetaIDParser) FindCreatorAddressFromCreatorInputLocation(creatorInputLo
 
 	var preTx btcwire.MsgTx
 	if err := preTx.Deserialize(bytes.NewReader(preTxBytes)); err != nil {
-		return "", fmt.Errorf("failed to deserialize previous BTC transaction: %w", err)
+		return "", fmt.Errorf("failed to deserialize previous %s transaction: %w", chainName, err)
 	}
 
 	// Step 4: Get the first input's previous transaction from preTx
@@ -440,13 +473,13 @@ func (p *MetaIDParser) FindCreatorAddressFromCreatorInputLocation(creatorInputLo
 
 	var preTx2 btcwire.MsgTx
 	if err := preTx2.Deserialize(bytes.NewReader(preTx2Bytes)); err != nil {
-		return "", fmt.Errorf("failed to deserialize previous previous BTC transaction: %w", err)
+		return "", fmt.Errorf("failed to deserialize previous previous %s transaction: %w", chainName, err)
 	}
 
 	// Step 6: Extract address from the output
 	address, err := extractAddressFromBTCInput(&preTx2, int(preVout2))
 	if err != nil {
-		return "", fmt.Errorf("failed to extract address from BTC output: %w", err)
+		return "", fmt.Errorf("failed to extract address from %s output: %w", chainName, err)
 	}
 
 	return address, nil

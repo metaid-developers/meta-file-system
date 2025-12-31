@@ -106,14 +106,15 @@ type ChainInstanceConfig struct {
 
 // IndexerConfig indexer configuration
 type IndexerConfig struct {
-	ScanInterval       int
-	BatchSize          int
-	StartHeight        int64
-	MvcInitBlockHeight int64  // MVC chain initial block height to start scanning from
-	BtcInitBlockHeight int64  // BTC chain initial block height to start scanning from
-	SwaggerBaseUrl     string // Swagger API base URL (e.g., "example.com:7281")
-	ZmqEnabled         bool   // Enable ZMQ real-time monitoring
-	ZmqAddress         string // ZMQ server address (e.g., "tcp://127.0.0.1:28332")
+	ScanInterval        int
+	BatchSize           int
+	StartHeight         int64
+	MvcInitBlockHeight  int64  // MVC chain initial block height to start scanning from
+	BtcInitBlockHeight  int64  // BTC chain initial block height to start scanning from
+	DogeInitBlockHeight int64  // DOGE chain initial block height to start scanning from
+	SwaggerBaseUrl      string // Swagger API base URL (e.g., "example.com:7281")
+	ZmqEnabled          bool   // Enable ZMQ real-time monitoring
+	ZmqAddress          string // ZMQ server address (e.g., "tcp://127.0.0.1:28332")
 
 	// Multi-chain support
 	Chains              []ChainInstanceConfig // Multi-chain configurations
@@ -216,6 +217,7 @@ func InitConfig() error {
 			StartHeight:         viper.GetInt64("indexer.start_height"),
 			MvcInitBlockHeight:  viper.GetInt64("indexer.mvc_init_block_height"),
 			BtcInitBlockHeight:  viper.GetInt64("indexer.btc_init_block_height"),
+			DogeInitBlockHeight: viper.GetInt64("indexer.doge_init_block_height"),
 			SwaggerBaseUrl:      viper.GetString("indexer.swagger_base_url"),
 			ZmqEnabled:          viper.GetBool("indexer.zmq_enabled"),
 			ZmqAddress:          viper.GetString("indexer.zmq_address"),
