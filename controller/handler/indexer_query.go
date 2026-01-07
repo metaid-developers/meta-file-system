@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"meta-file-system/controller/respond"
+	"meta-file-system/service/common_service"
 	"meta-file-system/service/indexer_service"
 
 	"github.com/gin-gonic/gin"
@@ -514,11 +515,21 @@ func (h *IndexerQueryHandler) GetUserInfoByAddress(c *gin.Context) {
 // @Param        metaid  path  string  true  "MetaID"
 // @Success      200     {object}  respond.Response{data=respond.MetaIDUserInfo}
 // @Failure      404     {object}  respond.Response
-// @Router       /info/metaid/{metaid} [get]
+// @Router       /info/metaid/{metaidOrGlobalMetaId} [get]
 func (h *IndexerQueryHandler) GetMetaIDUserInfoByMetaID(c *gin.Context) {
-	metaID := c.Param("metaid")
+	metaID := c.Param("metaidOrGlobalMetaId")
 	if metaID == "" {
 		respond.InvalidParam(c, "metaid is required")
+		return
+	}
+
+	if common_service.IsGlobalMetaId(metaID) {
+		userInfo, err := h.indexerFileService.GetUserInfoByGlobalMetaID(metaID, "")
+		if err != nil {
+			respond.NotFound(c, err.Error())
+			return
+		}
+		respond.SuccessWithCode(c, 1, respond.ToMetaIDUserInfo(userInfo))
 		return
 	}
 

@@ -679,7 +679,57 @@ const docTemplateindexer = `{
                 }
             }
         },
-        "/info/metaid/{metaid}": {
+        "/info/globalmetaid/{globalMetaID}": {
+            "get": {
+                "description": "Query user information in MetaID format by address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer User Info"
+                ],
+                "summary": "Get MetaID user info by Global MetaID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Global MetaID",
+                        "name": "globalMetaID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.MetaIDUserInfo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/info/metaid/{metaidOrGlobalMetaId}": {
             "get": {
                 "description": "Query user information in MetaID format by MetaID",
                 "consumes": [
@@ -1542,6 +1592,10 @@ const docTemplateindexer = `{
                     "type": "string",
                     "example": "def456i0"
                 },
+                "globalMetaId": {
+                    "type": "string",
+                    "example": "idaddress..."
+                },
                 "metaid": {
                     "type": "string",
                     "example": "abc123def456..."
@@ -1754,6 +1808,10 @@ const docTemplateindexer = `{
                 },
                 "chatPublicKeyPinId": {
                     "description": "聊天公钥 PIN ID",
+                    "type": "string"
+                },
+                "globalMetaId": {
+                    "description": "全局 MetaID",
                     "type": "string"
                 },
                 "metaId": {

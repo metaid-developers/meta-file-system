@@ -163,6 +163,9 @@ definitions:
       chatpubkeyId:
         example: def456i0
         type: string
+      globalMetaId:
+        example: idaddress...
+        type: string
       metaid:
         example: abc123def456...
         type: string
@@ -319,6 +322,9 @@ definitions:
         type: string
       chatPublicKeyPinId:
         description: 聊天公钥 PIN ID
+        type: string
+      globalMetaId:
+        description: 全局 MetaID
         type: string
       metaId:
         description: 用户 MetaID
@@ -870,7 +876,37 @@ paths:
       summary: Get MetaID user info by address
       tags:
       - Indexer User Info
-  /info/metaid/{metaid}:
+  /info/globalmetaid/{globalMetaID}:
+    get:
+      consumes:
+      - application/json
+      description: Query user information in MetaID format by address
+      parameters:
+      - description: Global MetaID
+        in: path
+        name: globalMetaID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.MetaIDUserInfo'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get MetaID user info by Global MetaID
+      tags:
+      - Indexer User Info
+  /info/metaid/{metaidOrGlobalMetaId}:
     get:
       consumes:
       - application/json

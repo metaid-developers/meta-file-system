@@ -6,6 +6,11 @@ import (
 	"meta-file-system/service/common_service/idaddress"
 )
 
+// IsGlobalMetaId 判断是否是全局统一的 IDAddress 格式
+func IsGlobalMetaId(metaID string) bool {
+	return ValidateGlobalMetaId(metaID)
+}
+
 // ConvertToGlobalMetaId 将区块链地址转换为全局统一的 IDAddress 格式
 // 支持 Bitcoin、Dogecoin 等多链地址
 func ConvertToGlobalMetaId(address string) string {
