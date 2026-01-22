@@ -317,6 +317,7 @@ type MetaIDUserInfo struct {
 	GlobalMetaId string `json:"globalMetaId" example:"idaddress..."`
 	Metaid       string `json:"metaid" example:"abc123def456..."`
 	Name         string `json:"name" example:"John Doe"`
+	NameId       string `json:"nameId" example:"abc123def456i0"`
 	Address      string `json:"address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
 	Avatar       string `json:"avatar" example:"https://oss.example.com/avatar.jpg"`
 	AvatarId     string `json:"avatarId" example:"xyz789i0"`
@@ -330,6 +331,7 @@ func ToMetaIDUserInfo(userInfo *model.IndexerUserInfo) *MetaIDUserInfo {
 		GlobalMetaId: userInfo.GlobalMetaId,
 		Metaid:       userInfo.MetaId,
 		Name:         userInfo.Name,
+		NameId:       userInfo.NamePinId,
 		Address:      userInfo.Address,
 		// Avatar:       userInfo.Avatar,
 		Avatar:       "/content/" + userInfo.AvatarPinId,
