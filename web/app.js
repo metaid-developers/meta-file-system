@@ -777,6 +777,33 @@ function initEventListeners() {
     } else {
         console.error('❌ uploadBtn element not found!');
     }
+
+    // Chain select - update fee rate label and placeholder
+    const chainSelect = document.getElementById('chainSelect');
+    const feeRateLabel = document.getElementById('feeRateLabel');
+    const feeRateInput = document.getElementById('feeRateInput');
+    function updateFeeRateLabelForChain() {
+        const chain = chainSelect ? chainSelect.value : 'mvc';
+        if (feeRateLabel) {
+            feeRateLabel.textContent = chain === 'doge'
+                ? 'Fee Rate (satoshis/KB)'
+                : 'Fee Rate (satoshis/byte)';
+        }
+        if (feeRateInput) {
+            feeRateInput.placeholder = chain === 'doge'
+                ? 'e.g. 200000 (0.002 DOGE/KB)'
+                : 'Enter fee rate, recommended 1-10';
+            if (chain === 'doge' && (Number(feeRateInput.value) || 0) < 1000) {
+                feeRateInput.value = '200000';
+            } else if (chain === 'mvc' && (Number(feeRateInput.value) || 0) >= 100000) {
+                feeRateInput.value = '1';
+            }
+        }
+    }
+    if (chainSelect) {
+        chainSelect.addEventListener('change', updateFeeRateLabelForChain);
+        updateFeeRateLabelForChain();
+    }
     
     // Refresh balance button
     const refreshBalanceBtn = document.getElementById('refreshBalanceBtn');
@@ -1130,6 +1157,13 @@ function formatSatoshis(satoshis) {
     return `${space.toFixed(8)} SPACE (${satoshis.toLocaleString()} sats)`;
 }
 
+// format satoshis with chain-aware unit (DOGE vs SPACE)
+function formatSatoshisForChain(satoshis, chain) {
+    const amount = satoshis / 100000000;
+    const unit = (chain || '').toLowerCase() === 'doge' ? 'DOGE' : 'SPACE';
+    return `${amount.toFixed(8)} ${unit} (${satoshis.toLocaleString()} sats)`;
+}
+
 // calculate MetaID（address SHA256 hash）
 async function calculateMetaID(address) {
     try {
@@ -1452,21 +1486,32 @@ async function runChunkedUploadFlow({ asynchronous = true } = {}) {
         const indexPreTxSize = preTxBaseSize + preTxInputSize;
         const indexPreTxBuildFee = Math.ceil(indexPreTxSize * feeRate);
 
+        const chain = document.getElementById('chainSelect') ? document.getElementById('chainSelect').value : 'mvc';
+        const feeRatePerByte = chain === 'doge' ? (feeRate / 1024) : feeRate;
+
         // Calculate total required amount for merge transaction
-        const chunkPreTxOutputAmount = estimateResult.chunkPreTxFee + chunkPreTxBuildFee;
-        const indexPreTxOutputAmount = estimateResult.indexPreTxFee + indexPreTxBuildFee;
+        const chunkPreTxOutputAmount = estimateResult.chunkPreTxFee + Math.ceil(chunkPreTxSize * feeRatePerByte);
+        let indexPreTxOutputAmount = estimateResult.indexPreTxFee + Math.ceil(indexPreTxSize * feeRatePerByte);
+        // if (chain === 'doge') {
+        //     indexPreTxOutputAmount = 0;
+        // }
 
         // Estimate merge transaction fee
         const mergeTxBaseSize = 200;
         const mergeTxInputSize = 150;
         const mergeTxOutputSize = 34;
-        const estimatedMergeTxInputs = 2; // Assume 2 inputs
-        const mergeTxSize = mergeTxBaseSize + (mergeTxInputSize * estimatedMergeTxInputs) + (mergeTxOutputSize * 2); // 2 outputs
-        const mergeTxFee = Math.ceil(mergeTxSize * feeRate);
+        const estimatedMergeTxInputs = 2;
+        const mergeTxSize = mergeTxBaseSize + (mergeTxInputSize * estimatedMergeTxInputs) + (mergeTxOutputSize * 2);
+        const mergeTxFee = Math.ceil(mergeTxSize * feeRatePerByte);
 
         const totalRequiredAmount = chunkPreTxOutputAmount + indexPreTxOutputAmount + mergeTxFee;
 
-        const allUtxos = await getWalletUTXOs(totalRequiredAmount);
+        let allUtxos = { utxos: [], totalAmount: 0 };
+        if (chain !== 'doge') {
+            allUtxos = await getWalletUTXOs(totalRequiredAmount);
+        } else {
+            addLog('DOGE: doge.completeTx will select UTXOs automatically', 'info');
+        }
         addLog(`✅ Got ${allUtxos.utxos.length} UTXO(s), total: ${allUtxos.totalAmount} satoshis`, 'success');
         addLog(`💰 Chunk PreTx output: ${formatSatoshis(chunkPreTxOutputAmount)}`, 'info');
         addLog(`💰 Index PreTx output: ${formatSatoshis(indexPreTxOutputAmount)}`, 'info');
@@ -1481,7 +1526,8 @@ async function runChunkedUploadFlow({ asynchronous = true } = {}) {
             allUtxos,
             chunkPreTxOutputAmount,
             indexPreTxOutputAmount,
-            mergeTxFee
+            mergeTxFee,
+            chain
         );
 
         addLog(`✅ Merge transaction built: ${mergeResult.mergeTxId}`, 'success');
@@ -1503,21 +1549,26 @@ async function runChunkedUploadFlow({ asynchronous = true } = {}) {
             }],
             totalAmount: chunkPreTxOutputAmount
         };
-        const chunkPreTxHex = await buildChunkFundingPreTx(chunkPreTxUtxo, estimateResult.chunkPreTxFee);
+        const chunkPreTxHex = await buildChunkFundingPreTx(chunkPreTxUtxo, estimateResult.chunkPreTxFee, chain);
         addLog(`✅ Chunk funding pre-tx signed`, 'success');
 
-        // Build index pre-tx using merge tx output
-        const indexPreTxUtxo = {
-            utxos: [{
-                txId: mergeResult.mergeTxId,
-                outputIndex: mergeResult.indexPreTxOutputIndex,
-                script: mergeResult.indexPreTxScript,
-                satoshis: indexPreTxOutputAmount
-            }],
-            totalAmount: indexPreTxOutputAmount
-        };
-        const indexPreTxHex = await buildIndexPreTx(indexPreTxUtxo, estimateResult.indexPreTxFee);
-        addLog(`✅ Index pre-tx signed`, 'success');
+        // Build index pre-tx using merge tx output (skip for DOGE - index funded by chunk change)
+        let indexPreTxHex = '';
+        if (chain !== 'doge') {
+            const indexPreTxUtxo = {
+                utxos: [{
+                    txId: mergeResult.mergeTxId,
+                    outputIndex: mergeResult.indexPreTxOutputIndex,
+                    script: mergeResult.indexPreTxScript,
+                    satoshis: indexPreTxOutputAmount
+                }],
+                totalAmount: indexPreTxOutputAmount
+            };
+            indexPreTxHex = await buildIndexPreTx(indexPreTxUtxo, estimateResult.indexPreTxFee, chain);
+            addLog(`✅ Index pre-tx signed`, 'success');
+        } else {
+            addLog(`✅ Skipping index pre-tx (DOGE: index funded by chunk change)`, 'info');
+        }
 
         if (asynchronous) {
             updateProgress(50, 'Step 7/8: Creating async chunk upload task...');
@@ -1959,10 +2010,12 @@ async function estimateChunkedUploadFee(fileContentBase64, storageKey) {
         const path = document.getElementById('pathInput').value;
         const contentType = buildContentType(selectedFile);
         
+        const chain = document.getElementById('chainSelect') ? document.getElementById('chainSelect').value : 'mvc';
         const requestBody = {
             fileName: selectedFile.name,
             path: path,
             contentType: contentType,
+            chain: chain,
             feeRate: Number(document.getElementById('feeRateInput').value) || 1
         };
         
@@ -2037,6 +2090,9 @@ function showChunkedUploadConfirmation(estimateResult) {
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         `;
         
+        const chain = estimateResult.chain || (document.getElementById('chainSelect') && document.getElementById('chainSelect').value) || 'mvc';
+        const fmt = (s) => formatSatoshisForChain(s, chain);
+        
         dialog.innerHTML = `
             <h2 style="margin-top: 0; color: #333;">📦 Chunked Upload Confirmation</h2>
             <div style="margin: 20px 0;">
@@ -2052,10 +2108,10 @@ function showChunkedUploadConfirmation(estimateResult) {
                 <div style="margin: 10px 0;">
                     <strong>💰 Fee Information:</strong>
                     <ul style="margin: 5px 0; padding-left: 20px;">
-                        <li>Chunk Funding Fee: ${formatSatoshis(estimateResult.chunkPreTxFee)}</li>
-                        <li>Index Transaction Fee: ${formatSatoshis(estimateResult.indexPreTxFee)}</li>
-                        <li>Total Fee: ${formatSatoshis(estimateResult.totalFee)}</li>
-                        <li>Per Chunk Fee: ${formatSatoshis(estimateResult.perChunkFee)}</li>
+                        <li>Chunk Funding Fee: ${fmt(estimateResult.chunkPreTxFee)}</li>
+                        <li>Index Transaction Fee: ${fmt(estimateResult.indexPreTxFee)}</li>
+                        <li>Total Fee: ${fmt(estimateResult.totalFee)}</li>
+                        <li>Per Chunk Fee: ${fmt(estimateResult.perChunkFee)}</li>
                     </ul>
                 </div>
                 <div style="margin: 10px 0; padding: 10px; background: #fff3cd; border-radius: 6px; border: 1px solid #ffc107;">
@@ -2118,11 +2174,185 @@ function showChunkedUploadConfirmation(estimateResult) {
     });
 }
 
-// Build merge transaction for chunked upload (creates two outputs for chunkPreTx and indexPreTx)
-async function buildChunkedUploadMergeTx(utxoData, chunkPreTxOutputAmount, indexPreTxOutputAmount, mergeTxFee) {
+// Build DOGE partial merge tx hex (outputs only) for doge.completeTx
+// Uses bitcoinjs-lib-browser (bitcoinjs.min.js) for proper tx serialization
+function buildDogePartialMergeTxHex(dogeAddress, chunkPreTxOutputAmount, indexPreTxOutputAmount) {
+    addLog('[buildDogePartialMergeTxHex] Start', 'info');
+    addLog(`[buildDogePartialMergeTxHex] dogeAddress=${dogeAddress}, chunkAmount=${chunkPreTxOutputAmount}, indexAmount=${indexPreTxOutputAmount}`, 'info');
+
+    const bitcoinjs = window.bitcoinjs;
+    if (!bitcoinjs || !bitcoinjs.Transaction || !bitcoinjs.payments || !bitcoinjs.address) {
+        addLog('[buildDogePartialMergeTxHex] ERROR: bitcoinjs not loaded', 'error');
+        throw new Error('bitcoinjs.min.js not loaded (required for DOGE). Run: npm run copy-libs');
+    }
+    addLog('[buildDogePartialMergeTxHex] bitcoinjs OK', 'info');
+
+    const amount1 = Math.floor(Number(chunkPreTxOutputAmount));
+    const amount2 = Math.floor(Number(indexPreTxOutputAmount));
+    addLog(`[buildDogePartialMergeTxHex] amount1=${amount1}, amount2=${amount2}`, 'info');
+    if (amount1 <= 0 || !Number.isFinite(amount1)) {
+        addLog('[buildDogePartialMergeTxHex] ERROR: Invalid chunkPreTxOutputAmount', 'error');
+        throw new Error('Invalid chunkPreTxOutputAmount');
+    }
+
+    addLog('[buildDogePartialMergeTxHex] Decoding address...', 'info');
+    const decoded = bitcoinjs.address.fromBase58Check(dogeAddress);
+    addLog(`[buildDogePartialMergeTxHex] decoded version=${decoded.version}, hashLen=${decoded.hash.length}`, 'info');
+    if (decoded.hash.length !== 20) {
+        addLog(`[buildDogePartialMergeTxHex] ERROR: Invalid DOGE address hashLen=${decoded.hash.length}`, 'error');
+        throw new Error('Invalid DOGE address');
+    }
+
+    addLog('[buildDogePartialMergeTxHex] Building p2pkh output...', 'info');
+    const { output: p2pkhOutput } = bitcoinjs.payments.p2pkh({ hash: decoded.hash });
+    addLog(`[buildDogePartialMergeTxHex] p2pkh script len=${p2pkhOutput.length}, hex=${p2pkhOutput.toString('hex').substring(0, 50)}...`, 'info');
+
+    addLog('[buildDogePartialMergeTxHex] Creating Transaction...', 'info');
+    const tx = new bitcoinjs.Transaction();
+    tx.version = 2;
+    tx.addOutput(p2pkhOutput, amount1);
+    if (amount2 > 0) {
+        tx.addOutput(p2pkhOutput, amount2);
+    }
+    const hex = tx.toHex();
+    addLog(`[buildDogePartialMergeTxHex] Done: hexLen=${hex.length}, ins=${tx.ins.length}, outs=${tx.outs.length}`, 'info');
+    addLog(`[buildDogePartialMergeTxHex] hex head=${hex.substring(0, 40)}... tail=${hex.substring(hex.length - 20)}`, 'info');
+    return hex;
+}
+
+// Build merge tx for DOGE using doge.completeTx
+async function buildChunkedUploadMergeTxDoge(chunkPreTxOutputAmount, indexPreTxOutputAmount) {
+    const metaidwallet = window.metaidwallet;
+    if (!metaidwallet || typeof metaidwallet.getGlobalMetaid !== 'function') {
+        throw new Error('metaidwallet.getGlobalMetaid not available');
+    }
+    if (!metaidwallet.doge || typeof metaidwallet.doge.completeTx !== 'function') {
+        throw new Error('metaidwallet.doge.completeTx not available');
+    }
+
+    const globalMetaId = await metaidwallet.getGlobalMetaid();
+    const dogeAddress = globalMetaId && globalMetaId.doge && globalMetaId.doge.address;
+    if (!dogeAddress) {
+        throw new Error('DOGE address not found. Please ensure wallet supports DOGE.');
+    }
+
+    addLog('[buildChunkedUploadMergeTxDoge] Building partial tx hex...', 'info');
+    const partialTxHex = buildDogePartialMergeTxHex(dogeAddress, chunkPreTxOutputAmount, indexPreTxOutputAmount);
+    addLog(`[buildChunkedUploadMergeTxDoge] partialTxHex len=${partialTxHex.length}`, 'info');
+    const feeRate = Number(document.getElementById('feeRateInput').value) || 200000;
+    addLog(`[buildChunkedUploadMergeTxDoge] feeRate=${feeRate}`, 'info');
+    console.log('partialTxHex', partialTxHex);
+
+    addLog('📡 Calling doge.completeTx to merge UTXOs...', 'info');
+    let result;
     try {
-        addLog('Building merge transaction for chunked upload...', 'info');
-        
+        result = await metaidwallet.doge.completeTx({
+            txHex: partialTxHex,
+            feeRate: feeRate,
+            options: { noBroadcast: false }
+        });
+        addLog('[buildChunkedUploadMergeTxDoge] completeTx returned OK', 'info');
+    } catch (e) {
+        addLog(`[buildChunkedUploadMergeTxDoge] completeTx FAILED: ${e.message}`, 'error');
+        console.error('[buildChunkedUploadMergeTxDoge] completeTx error:', e);
+        throw e;
+    }
+
+    if (!result || !result.rawTx || !result.txId) {
+        throw new Error('doge.completeTx returned invalid result');
+    }
+
+    const signedMergeTxHex = result.rawTx;
+    const mergeTxId = result.txId;
+    addLog('✅ DOGE merge transaction created and signed', 'success');
+
+    const bitcoinjs = window.bitcoinjs;
+    if (!bitcoinjs || !bitcoinjs.Transaction || !bitcoinjs.Transaction.fromHex) {
+        throw new Error('bitcoinjs.min.js not loaded (required for DOGE)');
+    }
+    addLog('[buildChunkedUploadMergeTxDoge] Parsing signed tx with bitcoinjs.Transaction.fromHex...', 'info');
+    let parsedMergeTx;
+    try {
+        parsedMergeTx = bitcoinjs.Transaction.fromHex(signedMergeTxHex);
+        addLog('[buildChunkedUploadMergeTxDoge] bitcoinjs.Transaction parse OK', 'info');
+    } catch (e) {
+        addLog(`[buildChunkedUploadMergeTxDoge] bitcoinjs.Transaction parse FAILED: ${e.message}`, 'error');
+        addLog(`[buildChunkedUploadMergeTxDoge] signedTxHex len=${signedMergeTxHex.length}, head=${signedMergeTxHex.substring(0, 40)}...`, 'error');
+        console.error('[buildChunkedUploadMergeTxDoge] bitcoinjs.Transaction error:', e);
+        throw e;
+    }
+
+    // bitcoinjs uses .outs and .value (not .outputs / .satoshis)
+    const outs = parsedMergeTx.outs;
+    const scriptToHex = (script) => (Buffer.isBuffer(script) ? script.toString('hex') : (script && script.toString ? script.toString('hex') : ''));
+
+    let chunkPreTxOutputIndex = -1;
+    let indexPreTxOutputIndex = -1;
+    let chunkPreTxScript = null;
+    let indexPreTxScript = null;
+    const amountTolerance = 1000;
+
+    for (let i = 0; i < outs.length; i++) {
+        const output = outs[i];
+        const outputScript = scriptToHex(output.script);
+        const outputAmount = output.value;
+        if (chunkPreTxOutputIndex === -1 && Math.abs(outputAmount - chunkPreTxOutputAmount) <= amountTolerance) {
+            chunkPreTxOutputIndex = i;
+            chunkPreTxScript = outputScript;
+        } else if (indexPreTxOutputIndex === -1 && Math.abs(outputAmount - indexPreTxOutputAmount) <= amountTolerance) {
+            indexPreTxOutputIndex = i;
+            indexPreTxScript = outputScript;
+        }
+    }
+
+    const needIndexOutput = indexPreTxOutputAmount > 0;
+    if (chunkPreTxOutputIndex === -1 || (needIndexOutput && indexPreTxOutputIndex === -1)) {
+        const foundOutputs = [];
+        for (let i = 0; i < outs.length; i++) {
+            const output = outs[i];
+            const amt = output.value;
+            if (amt >= 1000 && (Math.abs(amt - chunkPreTxOutputAmount) <= amountTolerance || (needIndexOutput && Math.abs(amt - indexPreTxOutputAmount) <= amountTolerance))) {
+                foundOutputs.push({ index: i, script: scriptToHex(output.script), amount: amt });
+            }
+        }
+        const required = needIndexOutput ? 2 : 1;
+        if (foundOutputs.length >= required) {
+            const byAmount = (a, b) => (Math.abs(a.amount - chunkPreTxOutputAmount) <= Math.abs(b.amount - chunkPreTxOutputAmount) ? -1 : 1);
+            foundOutputs.sort(byAmount);
+            chunkPreTxOutputIndex = foundOutputs[0].index;
+            chunkPreTxScript = foundOutputs[0].script;
+            if (needIndexOutput) {
+                indexPreTxOutputIndex = foundOutputs[1].index;
+                indexPreTxScript = foundOutputs[1].script;
+            } else {
+                indexPreTxOutputIndex = 0;
+                indexPreTxScript = chunkPreTxScript;
+            }
+        } else {
+            throw new Error('Could not find merge tx outputs for chunk/index');
+        }
+    }
+
+    return {
+        mergeTxId: mergeTxId,
+        mergeTxHex: signedMergeTxHex,
+        chunkPreTxOutputIndex: chunkPreTxOutputIndex,
+        indexPreTxOutputIndex: indexPreTxOutputIndex,
+        chunkPreTxScript: chunkPreTxScript,
+        indexPreTxScript: indexPreTxScript
+    };
+}
+
+// Build merge transaction for chunked upload (creates two outputs for chunkPreTx and indexPreTx)
+async function buildChunkedUploadMergeTx(utxoData, chunkPreTxOutputAmount, indexPreTxOutputAmount, mergeTxFee, chain) {
+    try {
+        chain = chain || (document.getElementById('chainSelect') && document.getElementById('chainSelect').value) || 'mvc';
+        addLog(`Building merge transaction for chunked upload (${chain})...`, 'info');
+
+        if (chain === 'doge') {
+            return await buildChunkedUploadMergeTxDoge(chunkPreTxOutputAmount, indexPreTxOutputAmount);
+        }
+
         const metaContract = window.metaContract;
         if (!metaContract) {
             throw new Error('meta-contract library not loaded');
@@ -2280,9 +2510,18 @@ async function buildChunkedUploadMergeTx(utxoData, chunkPreTxOutputAmount, index
 }
 
 // Build chunk funding pre-tx (multiple outputs to assistent address)
-async function buildChunkFundingPreTx(utxoData, totalChunkFee) {
+async function buildChunkFundingPreTx(utxoData, totalChunkFee, chain) {
     try {
+        chain = chain || 'mvc';
         addLog('Building chunk funding pre-transaction...', 'info');
+
+        let signAddress = currentAddress;
+        if (chain === 'doge' && window.metaidwallet && typeof window.metaidwallet.getGlobalMetaid === 'function') {
+            const globalMetaId = await window.metaidwallet.getGlobalMetaid();
+            if (globalMetaId && globalMetaId.doge && globalMetaId.doge.address) {
+                signAddress = globalMetaId.doge.address;
+            }
+        }
         
         // Build a transaction with inputs signed with signNull
         // Backend will add multiple outputs to assistent address
@@ -2295,7 +2534,7 @@ async function buildChunkFundingPreTx(utxoData, totalChunkFee) {
         
         // Create transaction with inputs only (no outputs - backend will add them)
         const tx = new mvc.Transaction();
-        tx.version = 10;
+        tx.version = chain === 'doge' ? 2 : 10;
         
         // Add inputs from UTXOs
         for (const utxo of utxoData.utxos) {
@@ -2319,7 +2558,7 @@ async function buildChunkFundingPreTx(utxoData, totalChunkFee) {
             const signResult = await wallet.signTransaction({
                 transaction: {
                     txHex: tx.toString(),
-                    address: currentAddress,
+                    address: signAddress,
                     inputIndex: i,
                     scriptHex: utxo.script,
                     satoshis: utxo.satoshis,
@@ -2348,7 +2587,7 @@ async function buildChunkFundingPreTx(utxoData, totalChunkFee) {
 }
 
 // Build index pre-tx
-async function buildIndexPreTx(utxoData, indexFee) {
+async function buildIndexPreTx(utxoData, indexFee, chain) {
     try {
         addLog('Building index pre-transaction...', 'info');
         
@@ -2485,6 +2724,7 @@ async function createChunkedUploadTask(fileContentBase64, storageKey, chunkPreTx
         const contentType = buildContentType(selectedFile);
         const metaId = await calculateMetaID(currentAddress);
 
+        const chain = document.getElementById('chainSelect') ? document.getElementById('chainSelect').value : 'mvc';
         const requestBody = {
             metaId: metaId,
             address: currentAddress,
@@ -2492,8 +2732,9 @@ async function createChunkedUploadTask(fileContentBase64, storageKey, chunkPreTx
             path: path,
             operation: document.getElementById('operationSelect').value || 'create',
             contentType: contentType,
+            chain: chain,
             chunkPreTxHex: chunkPreTxHex,
-            indexPreTxHex: indexPreTxHex,
+            indexPreTxHex: chain === 'doge' ? '' : indexPreTxHex,
             mergeTxHex: mergeTxHex,
             feeRate: Number(document.getElementById('feeRateInput').value) || 1
         };

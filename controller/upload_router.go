@@ -56,8 +56,8 @@ func SetupUploadRouter(stor storage.Storage) (*gin.Engine, *upload_service.Uploa
 		v1.POST("/files/direct-upload", uploadHandler.DirectUpload)                    // One-step upload (recommended)
 		v1.POST("/files/estimate-chunked-upload", uploadHandler.EstimateChunkedUpload) // Estimate chunked upload fee
 		v1.POST("/files/chunked-upload", uploadHandler.ChunkedUpload)                  // Chunked file upload
-		v1.POST("/files/chunked-upload-task", uploadHandler.ChunkedUploadForTask)      // Async chunked file upload (create task)
-		v1.GET("/files/task/:taskId", uploadHandler.GetTaskProgress)                   // Get task progress
+		v1.POST("/files/chunked-upload-task", uploadHandler.ChunkedUploadForTask) // Async chunked file upload (create task, chain: mvc/doge)
+		v1.GET("/files/task/:taskId", uploadHandler.GetTaskProgress)              // Get task progress
 		v1.GET("/files/tasks", uploadHandler.ListUploadTasks)                          // List tasks by address
 
 		// Multipart upload (for large files with resume support)

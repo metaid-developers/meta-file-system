@@ -134,6 +134,9 @@ func NewIndexerServiceWithChain(storage storage.Storage, chainType indexer.Chain
 		conf.Cfg.Indexer.ScanInterval,
 		chainType,
 	)
+	if conf.Cfg.Indexer.LargeBlockSizeMB > 0 {
+		scanner.SetLargeBlockThreshold(int64(conf.Cfg.Indexer.LargeBlockSizeMB) * 1024 * 1024)
+	}
 
 	// Enable ZMQ if configured
 	if conf.Cfg.Indexer.ZmqEnabled && conf.Cfg.Indexer.ZmqAddress != "" {
@@ -252,6 +255,9 @@ func (s *IndexerService) addChainScanner(chainConfig conf.ChainInstanceConfig) e
 		conf.Cfg.Indexer.ScanInterval,
 		chainType,
 	)
+	if conf.Cfg.Indexer.LargeBlockSizeMB > 0 {
+		scanner.SetLargeBlockThreshold(int64(conf.Cfg.Indexer.LargeBlockSizeMB) * 1024 * 1024)
+	}
 
 	// Enable ZMQ if configured
 	if chainConfig.ZmqEnabled && chainConfig.ZmqAddress != "" {
@@ -328,10 +334,38 @@ func (s *IndexerService) handleBlockEvent(event *indexer.BlockEvent) error {
 		return fmt.Errorf("unsupported chain type: %s", event.ChainName)
 	}
 
-	// Parse MetaID transactions from the block
 	parser := indexer.NewMetaIDParser("")
 
-	// Process transactions based on chain type
+	// Large block path: Block is *LazyBlock, fetch each tx by txid via TxFetcher
+	if lazy, ok := event.Block.(*indexer.LazyBlock); ok {
+		timestamp := event.Timestamp
+		if len(strconv.FormatInt(timestamp, 10)) != 13 {
+			timestamp = timestamp * 1000
+		}
+		if event.TxFetcher == nil {
+			return fmt.Errorf("LazyBlock event missing TxFetcher")
+		}
+		for _, txid := range lazy.TxIDs {
+			tx, err := event.TxFetcher(txid)
+			if err != nil {
+				log.Printf("[%s] Failed to fetch tx %s in block %d: %v", event.ChainName, txid, event.Height, err)
+				continue
+			}
+			metaDataTx, err := parser.ParseAllPINs(tx, chainType)
+			if err != nil || metaDataTx == nil {
+				continue
+			}
+			if err := s.handleTransaction(tx, metaDataTx, event.Height, timestamp); err != nil {
+				log.Printf("[%s] Failed to handle transaction %s: %v", event.ChainName, metaDataTx.TxID, err)
+			}
+		}
+		if err := s.syncStatusDAO.UpdateCurrentSyncHeight(event.ChainName, event.Height); err != nil {
+			return fmt.Errorf("failed to update sync height: %w", err)
+		}
+		return nil
+	}
+
+	// Process transactions based on chain type (full block in memory)
 	if chainType == indexer.ChainTypeBTC || chainType == indexer.ChainTypeDOGE {
 		btcBlock, ok := event.Block.(*btcwire.MsgBlock)
 		if !ok {

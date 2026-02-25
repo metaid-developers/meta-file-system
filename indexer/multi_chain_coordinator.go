@@ -292,9 +292,11 @@ func (c *MultiChainCoordinator) scanBlocksForChain(chainName string, scanner *Bl
 							continue
 						}
 
-						// Extract timestamp based on chain type
+						// Extract timestamp based on chain type (or LazyBlock for large blocks)
 						var timestamp int64
-						if scanner.chainType == ChainTypeBTC || scanner.chainType == ChainTypeDOGE {
+						if lazy, ok := msgBlock.(*LazyBlock); ok {
+							timestamp = lazy.Timestamp
+						} else if scanner.chainType == ChainTypeBTC || scanner.chainType == ChainTypeDOGE {
 							if btcBlock, ok := msgBlock.(*btcwire.MsgBlock); ok {
 								timestamp = btcBlock.Header.Timestamp.UnixMilli()
 							}
@@ -311,6 +313,11 @@ func (c *MultiChainCoordinator) scanBlocksForChain(chainName string, scanner *Bl
 							Timestamp: timestamp,
 							Block:     msgBlock,
 							TxCount:   txCount,
+						}
+						if _, ok := msgBlock.(*LazyBlock); ok {
+							event.TxFetcher = func(txid string) (interface{}, error) {
+								return scanner.GetAndDeserializeTx(txid)
+							}
 						}
 
 						// Send event to channel (will block if full - good backpressure)

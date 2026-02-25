@@ -116,6 +116,9 @@ type IndexerConfig struct {
 	ZmqEnabled          bool   // Enable ZMQ real-time monitoring
 	ZmqAddress          string // ZMQ server address (e.g., "tcp://127.0.0.1:28332")
 
+	// LargeBlockSizeMB: blocks larger than this (MB) are loaded tx-by-tx to avoid OOM. 0 = use default (50)
+	LargeBlockSizeMB int
+
 	// Multi-chain support
 	Chains              []ChainInstanceConfig // Multi-chain configurations
 	TimeOrderingEnabled bool                  // Enable strict time ordering across chains
@@ -131,12 +134,25 @@ type RedisConfig struct {
 	CacheTTL int    // Cache TTL in seconds (default: 300)
 }
 
+// UploaderChainConfig single chain configuration for uploader (RPC + per-chain params)
+type UploaderChainConfig struct {
+	Name           string `mapstructure:"name"`             // Chain name: mvc, doge, etc.
+	RpcUrl         string `mapstructure:"rpc_url"`          // RPC URL
+	RpcUser        string `mapstructure:"rpc_user"`         // RPC username
+	RpcPass        string `mapstructure:"rpc_pass"`         // RPC password
+	MaxFileSize    int64  `mapstructure:"max_file_size"`    // Max file size in MB, 0 = use global default
+	ChunkSize      int64  `mapstructure:"chunk_size"`       // Chunk size in MB, 0 = use global default
+	ChunkSizeBytes int64  `mapstructure:"chunk_size_bytes"` // Chunk size in bytes (for DOGE etc), 0 = use ChunkSize or chain default
+	FeeRate        int64  `mapstructure:"fee_rate"`         // Fee rate: MVC sat/byte, DOGE sat/KB, 0 = use global default
+}
+
 // UploaderConfig uploader configuration
 type UploaderConfig struct {
-	MaxFileSize    int64
-	FeeRate        int64
-	ChunkSize      int64
-	SwaggerBaseUrl string // Swagger API base URL (e.g., "example.com:7282")
+	MaxFileSize    int64                  // Global default (MB), used when chain does not specify
+	FeeRate        int64                  // Global default
+	ChunkSize      int64                  // Global default (MB)
+	SwaggerBaseUrl string                 // Swagger API base URL (e.g., "example.com:7282")
+	Chains         []UploaderChainConfig  // Per-chain config (RPC + params), RpcConfigMap populated from here
 }
 
 // RpcConfig RPC configuration
@@ -221,6 +237,7 @@ func InitConfig() error {
 			SwaggerBaseUrl:      viper.GetString("indexer.swagger_base_url"),
 			ZmqEnabled:          viper.GetBool("indexer.zmq_enabled"),
 			ZmqAddress:          viper.GetString("indexer.zmq_address"),
+			LargeBlockSizeMB:    viper.GetInt("indexer.large_block_size_mb"),
 			TimeOrderingEnabled: viper.GetBool("indexer.time_ordering_enabled"),
 		},
 
@@ -229,6 +246,7 @@ func InitConfig() error {
 			FeeRate:        viper.GetInt64("uploader.fee_rate"),
 			ChunkSize:      viper.GetInt64("uploader.chunk_size") * 1024 * 1024, // MB to bytes
 			SwaggerBaseUrl: viper.GetString("uploader.swagger_base_url"),
+			Chains:         nil, // populated below from uploader.chains
 		},
 
 		Redis: RedisConfig{
@@ -275,6 +293,9 @@ func InitConfig() error {
 	}
 	if Cfg.Database.MaxIdleConns == 0 {
 		Cfg.Database.MaxIdleConns = 10
+	}
+	if Cfg.Indexer.LargeBlockSizeMB <= 0 {
+		Cfg.Indexer.LargeBlockSizeMB = 50 // 50MB default
 	}
 	if Cfg.Indexer.SwaggerBaseUrl == "" {
 		Cfg.Indexer.SwaggerBaseUrl = "localhost:" + Cfg.IndexerPort
@@ -332,11 +353,77 @@ func InitConfig() error {
 		fmt.Println("ℹ️  No multi-chain configuration found, using single-chain mode")
 	}
 
-	// Initialize RpcConfigMap (use currently configured chain)
-	RpcConfigMap[Cfg.Net] = RpcConfig{
-		Url:      Cfg.Chain.RpcUrl,
-		Username: Cfg.Chain.RpcUser,
-		Password: Cfg.Chain.RpcPass,
+	// Initialize RpcConfigMap from uploader.chains (not indexer)
+	// Parse uploader.chains (structured config with RPC + per-chain params)
+	if viper.IsSet("uploader.chains") {
+		fmt.Println("🔍 Loading uploader.chains configuration...")
+		var uploaderChains []UploaderChainConfig
+		if err := viper.UnmarshalKey("uploader.chains", &uploaderChains); err != nil {
+			fmt.Printf("❌ Warning: failed to parse uploader.chains: %v\n", err)
+			// Try alternative parsing
+			chainsInterface := viper.Get("uploader.chains")
+			if chainsList, ok := chainsInterface.([]interface{}); ok {
+				for i, ch := range chainsList {
+					if m, ok := ch.(map[string]interface{}); ok {
+						c := UploaderChainConfig{
+							Name:           getStringFromMap(m, "name"),
+							RpcUrl:         getStringFromMap(m, "rpc_url"),
+							RpcUser:        getStringFromMap(m, "rpc_user"),
+							RpcPass:        getStringFromMap(m, "rpc_pass"),
+							MaxFileSize:    getInt64FromMap(m, "max_file_size"),
+							ChunkSize:      getInt64FromMap(m, "chunk_size"),
+							ChunkSizeBytes: getInt64FromMap(m, "chunk_size_bytes"),
+							FeeRate:        getInt64FromMap(m, "fee_rate"),
+						}
+						if c.Name != "" && c.RpcUrl != "" {
+							uploaderChains = append(uploaderChains, c)
+							fmt.Printf("  ✅ Parsed uploader chain %d: %s (RPC: %s)\n", i+1, c.Name, c.RpcUrl)
+						}
+					}
+				}
+			}
+		}
+		if len(uploaderChains) > 0 {
+			Cfg.Uploader.Chains = uploaderChains
+			for _, c := range uploaderChains {
+				RpcConfigMap[c.Name] = RpcConfig{Url: c.RpcUrl, Username: c.RpcUser, Password: c.RpcPass}
+				fmt.Printf("  RpcConfigMap[%s] configured for broadcast (from uploader.chains)\n", c.Name)
+			}
+			// Legacy: map Cfg.Net (livenet/testnet) to first chain's RPC
+			RpcConfigMap[Cfg.Net] = RpcConfig{Url: uploaderChains[0].RpcUrl, Username: uploaderChains[0].RpcUser, Password: uploaderChains[0].RpcPass}
+		}
+	}
+	// Fallback: if uploader.chains empty, use top-level chain for single-chain mode
+	if len(Cfg.Uploader.Chains) == 0 {
+		fmt.Println("ℹ️  No uploader.chains, using single-chain mode from chain config")
+		RpcConfigMap[Cfg.Net] = RpcConfig{
+			Url:      Cfg.Chain.RpcUrl,
+			Username: Cfg.Chain.RpcUser,
+			Password: Cfg.Chain.RpcPass,
+		}
+		// Add mvc as default chain name when net is livenet/testnet
+		chainName := Cfg.Net
+		if chainName == "livenet" || chainName == "testnet" {
+			chainName = "mvc"
+		}
+		Cfg.Uploader.Chains = []UploaderChainConfig{{
+			Name:           chainName,
+			RpcUrl:         Cfg.Chain.RpcUrl,
+			RpcUser:        Cfg.Chain.RpcUser,
+			RpcPass:        Cfg.Chain.RpcPass,
+			MaxFileSize:    0,
+			ChunkSize:      0,
+			ChunkSizeBytes: 0,
+			FeeRate:        0,
+		}}
+		RpcConfigMap[chainName] = RpcConfig{Url: Cfg.Chain.RpcUrl, Username: Cfg.Chain.RpcUser, Password: Cfg.Chain.RpcPass}
+	}
+	if len(Cfg.Uploader.Chains) > 0 {
+		names := make([]string, 0, len(Cfg.Uploader.Chains))
+		for _, c := range Cfg.Uploader.Chains {
+			names = append(names, c.Name)
+		}
+		fmt.Printf("  Uploader supported chains: %v\n", names)
 	}
 
 	return nil
@@ -373,4 +460,76 @@ func getBoolFromMap(m map[string]interface{}, key string) bool {
 		}
 	}
 	return false
+}
+
+// GetUploaderChainConfig returns the uploader chain config for the given chain name
+func GetUploaderChainConfig(chain string) *UploaderChainConfig {
+	if chain == "" || Cfg == nil {
+		return nil
+	}
+	for i := range Cfg.Uploader.Chains {
+		if Cfg.Uploader.Chains[i].Name == chain {
+			return &Cfg.Uploader.Chains[i]
+		}
+	}
+	return nil
+}
+
+// GetUploaderChainParam returns maxFileSize (bytes), chunkSize (bytes), feeRate for the given chain
+func GetUploaderChainParam(chain string) (maxFileSize, chunkSize, feeRate int64) {
+	if Cfg == nil {
+		return 0, 0, 0
+	}
+	defMax := Cfg.Uploader.MaxFileSize
+	defChunk := Cfg.Uploader.ChunkSize
+	defFee := Cfg.Uploader.FeeRate
+	c := GetUploaderChainConfig(chain)
+	if c == nil {
+		if chain == "doge" {
+			return defMax, 1200, defFee // DOGE default chunk size in bytes
+		}
+		return defMax, defChunk, defFee
+	}
+	maxFileSize = defMax
+	if c.MaxFileSize > 0 {
+		maxFileSize = c.MaxFileSize * 1024 * 1024 // MB to bytes
+	}
+	chunkSize = defChunk
+	if c.ChunkSizeBytes > 0 {
+		chunkSize = c.ChunkSizeBytes // Use bytes directly (for DOGE etc)
+	} else if c.ChunkSize > 0 && chain != "doge" {
+		chunkSize = c.ChunkSize * 1024 * 1024 // MB to bytes (DOGE uses 10KB script limit, must use ChunkSizeBytes)
+	} else if chain == "doge" {
+		chunkSize = 1200 // DOGE default when ChunkSizeBytes not set (inscription script max 10KB)
+	}
+	feeRate = defFee
+	if c.FeeRate > 0 {
+		feeRate = c.FeeRate
+	}
+	return maxFileSize, chunkSize, feeRate
+}
+
+// GetUploaderChainNames returns the list of supported chain names
+func GetUploaderChainNames() []string {
+	if Cfg == nil {
+		return nil
+	}
+	names := make([]string, 0, len(Cfg.Uploader.Chains))
+	for _, c := range Cfg.Uploader.Chains {
+		names = append(names, c.Name)
+	}
+	return names
+}
+
+// IsChainSupportedForUpload returns true if the chain is configured for upload
+func IsChainSupportedForUpload(chain string) bool {
+	if chain == "" {
+		return false
+	}
+	c := GetUploaderChainConfig(chain)
+	if c == nil {
+		return false
+	}
+	_, ok := RpcConfigMap[chain]
+	return ok && c.RpcUrl != ""
 }

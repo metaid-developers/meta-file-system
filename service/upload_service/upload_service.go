@@ -18,7 +18,12 @@ import (
 	txscript2 "github.com/bitcoinsv/bsvd/txscript"
 	wire2 "github.com/bitcoinsv/bsvd/wire"
 	bsvutil2 "github.com/bitcoinsv/bsvutil"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
+	btcchainhash "github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"gorm.io/gorm"
 
 	"meta-file-system/common"
@@ -326,6 +331,9 @@ func (s *UploadService) DirectUpload(req *DirectUploadRequest) (*UploadResponse,
 	if req.PreTxHex == "" {
 		return nil, fmt.Errorf("PreTxHex is required")
 	}
+	if conf.Cfg.Uploader.MaxFileSize > 0 && int64(len(req.Content)) > conf.Cfg.Uploader.MaxFileSize {
+		return nil, fmt.Errorf("file size exceeds limit (size %d bytes, max %d bytes)", len(req.Content), conf.Cfg.Uploader.MaxFileSize)
+	}
 
 	// Set default values
 	if req.Operation == "" {
@@ -589,11 +597,13 @@ type EstimateChunkedUploadRequest struct {
 	Content     []byte // File content
 	Path        string // Base MetaID path (will append /file/_chunk and /file/index)
 	ContentType string // MIME type (e.g. image/jpeg, text/plain)
-	FeeRate     int64  // Fee rate (optional, defaults to config)
+	Chain       string // Blockchain: mvc or doge (default mvc), used for per-chain fee_rate/chunk_size
+	FeeRate     int64  // Fee rate (optional, defaults to chain config)
 }
 
 // EstimateChunkedUploadResponse contains fee estimation details for chunked upload.
 type EstimateChunkedUploadResponse struct {
+	Chain         string  `json:"chain"`         // Blockchain used for estimate (mvc, doge, etc.)
 	ChunkNumber   int     `json:"chunkNumber"`   // Number of chunks
 	ChunkSize     int64   `json:"chunkSize"`     // Chunk size in bytes
 	ChunkFees     []int64 `json:"chunkFees"`     // Fee per chunk
@@ -614,6 +624,7 @@ type ChunkedUploadRequest struct {
 	Path          string                  // Base MetaID path (auto appends /file/_chunk and /file/index)
 	Operation     string                  // create/update
 	ContentType   string                  // MIME type (e.g. image/jpeg, text/plain)
+	Chain         string                  // Blockchain: mvc or doge (default mvc)
 	ChunkPreTxHex string                  // Pre-built chunk funding transaction (contains inputs, signNull)
 	IndexPreTxHex string                  // Pre-built index transaction (contains inputs, signNull)
 	MergeTxHex    string                  // Optional merge transaction hex (creates two UTXOs, broadcast first)
@@ -636,13 +647,14 @@ func (s *UploadService) EstimateChunkedUpload(req *EstimateChunkedUploadRequest)
 	if req.ContentType == "" {
 		req.ContentType = "application/octet-stream"
 	}
-	feeRate := req.FeeRate
-	if feeRate == 0 {
-		feeRate = conf.Cfg.Uploader.FeeRate
+	chain := req.Chain
+	if chain == "" {
+		chain = "mvc"
 	}
-
-	chunkSize := conf.Cfg.Uploader.ChunkSize
-	fmt.Println("Conf - chunkSize:", chunkSize)
+	_, chunkSize, feeRate := conf.GetUploaderChainParam(chain)
+	if req.FeeRate > 0 {
+		feeRate = req.FeeRate
+	}
 	if chunkSize <= 0 {
 		chunkSize = 2000 * 1024 // default 2000 KB
 	}
@@ -657,6 +669,11 @@ func (s *UploadService) EstimateChunkedUpload(req *EstimateChunkedUploadRequest)
 		chunkPath = "/" + chunkPath
 	}
 
+	if chain == "doge" {
+		return s.estimateChunkedUploadDoge(req, chunks, chunkSize, chunkNumber, chunkPath, feeRate)
+	}
+
+	// MVC path
 	// Estimate fee per chunk
 	totalChunkFee := int64(0)
 	perChunkFee := int64(0)
@@ -760,6 +777,7 @@ func (s *UploadService) EstimateChunkedUpload(req *EstimateChunkedUploadRequest)
 	totalFee := chunkPreTxFee + indexFee
 
 	return &EstimateChunkedUploadResponse{
+		Chain:         chain,
 		ChunkNumber:   chunkNumber,
 		ChunkSize:     chunkSize,
 		ChunkFees:     chunkFees,
@@ -771,19 +789,125 @@ func (s *UploadService) EstimateChunkedUpload(req *EstimateChunkedUploadRequest)
 	}, nil
 }
 
+// estimateChunkedUploadDoge estimates DOGE chunked upload fees using BuildDogeMetaIdInscriptionTxs logic.
+// feeRate is in sat/KB (DOGE config convention).
+func (s *UploadService) estimateChunkedUploadDoge(
+	req *EstimateChunkedUploadRequest,
+	chunks [][]byte,
+	chunkSize int64,
+	chunkNumber int,
+	chunkPath string,
+	feeRate int64,
+) (*EstimateChunkedUploadResponse, error) {
+	chunkContentType := metaid_protocols.MonitorMetaIdFileChunkContentType + ";binary"
+	totalChunkFee := int64(0)
+	chunkFees := make([]int64, 0, chunkNumber)
+
+	for _, chunkData := range chunks {
+		fee, err := common.EstimateDogeInscriptionFee(chunkData, chunkPath, chunkContentType, feeRate)
+		if err != nil {
+			return nil, fmt.Errorf("estimate chunk inscription fee: %w", err)
+		}
+		// Each chunk output must fund 100000 P2SH + inscription fees
+		chunkOutput := 100000 + fee
+		chunkFees = append(chunkFees, chunkOutput)
+		totalChunkFee += chunkOutput
+	}
+
+	perChunkFee := int64(0)
+	if chunkNumber > 0 {
+		perChunkFee = totalChunkFee / int64(chunkNumber)
+	}
+
+	// Chunk funding tx: 1 input + chunkNumber outputs (DOGE version 2)
+	feeRatePerByte := feeRate / 1024
+	if feeRatePerByte < 1 {
+		feeRatePerByte = 1
+	}
+	const chunkFundingInputSize = 148
+	const chunkFundingOutputSize = 34
+	estimatedChunkFundingTxSize := 4 + 1 + chunkFundingInputSize + 1 + chunkFundingOutputSize*chunkNumber + 4
+	chunkFundingTxFee := int64(estimatedChunkFundingTxSize) * feeRatePerByte
+	if chunkFundingTxFee < 600 {
+		chunkFundingTxFee = 600
+	}
+	chunkPreTxFee := totalChunkFee + chunkFundingTxFee
+
+	// Index: BuildDogeMetaIdInscriptionTxs same structure
+	indexPath := fmt.Sprintf("%s/file/index", req.Path)
+	if !strings.HasPrefix(indexPath, "/") {
+		indexPath = "/" + indexPath
+	}
+	indexContentType := metaid_protocols.MonitorMetaIdFileIndexContentType + ";utf-8"
+
+	sha256hash := sha256.Sum256(req.Content)
+	filehashStr := hex.EncodeToString(sha256hash[:])
+	chunkList := make([]struct {
+		Sha256 string `json:"sha256"`
+		PinId  string `json:"pinId"`
+	}, 0, chunkNumber)
+	for i, chunkData := range chunks {
+		chunkHash := sha256.Sum256(chunkData)
+		chunkHashStr := hex.EncodeToString(chunkHash[:])
+		chunkList = append(chunkList, struct {
+			Sha256 string `json:"sha256"`
+			PinId  string `json:"pinId"`
+		}{
+			Sha256: chunkHashStr,
+			PinId:  fmt.Sprintf("placeholder_%d", i),
+		})
+	}
+	metaFileIndex := metaid_protocols.MetaFileIndex{
+		Sha256:      filehashStr,
+		FileSize:    int64(len(req.Content)),
+		ChunkNumber: chunkNumber,
+		ChunkSize:   chunkSize,
+		DataType:    req.ContentType,
+		Name:        req.FileName,
+		ChunkList:   chunkList,
+	}
+	indexData, err := json.Marshal(metaFileIndex)
+	if err != nil {
+		return nil, fmt.Errorf("marshal index: %w", err)
+	}
+	indexFee, err := common.EstimateDogeInscriptionFee(indexData, indexPath, indexContentType, feeRate)
+	if err != nil {
+		if strings.Contains(err.Error(), "too large for DOGE") {
+			return nil, fmt.Errorf("index too large for DOGE: file has too many chunks (script max 10KB). Consider reducing file size: %w", err)
+		}
+		return nil, fmt.Errorf("estimate index inscription fee: %w", err)
+	}
+
+	totalFee := chunkPreTxFee + indexFee
+
+	return &EstimateChunkedUploadResponse{
+		Chain:         "doge",
+		ChunkNumber:   chunkNumber,
+		ChunkSize:     chunkSize,
+		ChunkFees:     chunkFees,
+		ChunkPreTxFee: chunkPreTxFee,
+		IndexPreTxFee: indexFee,
+		TotalFee:      totalFee,
+		PerChunkFee:   perChunkFee,
+		Message:       "success",
+	}, nil
+}
+
 // ChunkedUploadResponse represents the result of a chunked upload build.
 type ChunkedUploadResponse struct {
-	FileId         string   `json:"fileId"`         // File ID
-	FileHash       string   `json:"fileHash"`       // File SHA256 hash
-	FileMd5        string   `json:"fileMd5"`        // File MD5 hash
-	ChunkNumber    int      `json:"chunkNumber"`    // Number of chunks
-	ChunkFundingTx string   `json:"chunkFundingTx"` // Funding transaction for chunk outputs
-	ChunkTxs       []string `json:"chunkTxs"`       // Chunk transaction hex list (ordered)
-	ChunkTxIds     []string `json:"chunkTxIds"`     // Chunk transaction IDs (ordered)
-	IndexTx        string   `json:"indexTx"`        // Index transaction hex
-	IndexTxId      string   `json:"indexTxId"`      // Index transaction ID
-	Status         string   `json:"status"`         // Status string
-	Message        string   `json:"message"`        // Additional message
+	FileId           string   `json:"fileId"`           // File ID
+	FileHash         string   `json:"fileHash"`         // File SHA256 hash
+	FileMd5          string   `json:"fileMd5"`          // File MD5 hash
+	ChunkNumber      int      `json:"chunkNumber"`      // Number of chunks
+	ChunkFundingTx   string   `json:"chunkFundingTx"`   // Funding transaction for chunk outputs
+	ChunkTxs         []string `json:"chunkTxs"`         // Chunk transaction hex list (ordered)
+	ChunkTxIds       []string `json:"chunkTxIds"`       // Chunk transaction IDs (flat, for broadcast)
+	ChunkRevealTxIds []string `json:"chunkRevealTxIds"` // DOGE: reveal tx id per chunk for index
+	IndexTx          string   `json:"indexTx"`          // Index transaction hex (MVC single tx)
+	IndexTxs         []string `json:"indexTxs"`         // DOGE: index txs [commitHex, revealHex]
+	IndexTxId        string   `json:"indexTxId"`        // Index transaction ID
+	Status           string   `json:"status"`           // Status string
+	Message          string   `json:"message"`          // Additional message
 }
 
 // ChunkedUpload splits a large file, builds chunk and index transactions, and optionally broadcasts them.
@@ -812,8 +936,16 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 	if req.ContentType == "" {
 		req.ContentType = "application/octet-stream"
 	}
+	chain := req.Chain
+	if chain == "" {
+		chain = "mvc"
+	}
+	maxFileSize, chunkSize, chainFeeRate := conf.GetUploaderChainParam(chain)
 	if req.FeeRate == 0 {
-		req.FeeRate = conf.Cfg.Uploader.FeeRate
+		req.FeeRate = chainFeeRate
+	}
+	if maxFileSize > 0 && int64(len(req.Content)) > maxFileSize {
+		return nil, fmt.Errorf("file size exceeds limit for chain %s (size %d bytes, max %d bytes)", chain, len(req.Content), maxFileSize)
 	}
 
 	// Load network parameters
@@ -824,7 +956,6 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 		netParam = &chaincfg2.TestNet3Params
 	}
 
-	chunkSize := conf.Cfg.Uploader.ChunkSize
 	if chunkSize <= 0 {
 		chunkSize = 2000 * 1024
 	}
@@ -1320,6 +1451,290 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 	}, nil
 }
 
+// ChunkedUploadInDoge is the DOGE chain version of ChunkedUpload.
+// Uses BuildDogeMetaIdInscriptionTxs: each chunk produces commit+reveal txs, chunk size max 1500 bytes.
+func (s *UploadService) ChunkedUploadInDoge(req *ChunkedUploadRequest) (*ChunkedUploadResponse, error) {
+	if len(req.Content) == 0 {
+		return nil, fmt.Errorf("file content is empty")
+	}
+	if req.Path == "" {
+		return nil, fmt.Errorf("file path is required")
+	}
+	if req.Address == "" {
+		return nil, fmt.Errorf("user address is required")
+	}
+	if req.ChunkPreTxHex == "" {
+		return nil, fmt.Errorf("chunk pre-tx hex is required")
+	}
+
+	if req.Operation == "" {
+		req.Operation = "create"
+	}
+	if req.ContentType == "" {
+		req.ContentType = "application/octet-stream"
+	}
+	_, _, chainFeeRate := conf.GetUploaderChainParam("doge")
+	if req.FeeRate == 0 {
+		req.FeeRate = chainFeeRate
+	}
+
+	netParam := common.DogeMainNetParams
+
+	_, chunkSize, _ := conf.GetUploaderChainParam("doge")
+	if chunkSize <= 0 {
+		chunkSize = 1200
+	}
+
+	chunkFundingTx, err := common.DecodeDogeTx(req.ChunkPreTxHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode chunk pre-tx: %w", err)
+	}
+
+	assistent, err := s.getOrCreateFileAssistentDoge(req.MetaId, req.Address, netParam)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare assistent address: %w", err)
+	}
+
+	sha256hash := sha256.Sum256(req.Content)
+	md5hash := md5.Sum(req.Content)
+	filehashStr := hex.EncodeToString(sha256hash[:])
+	md5hashStr := hex.EncodeToString(md5hash[:])
+	fileId := req.MetaId + "_" + filehashStr
+
+	chunks := splitFile(req.Content, chunkSize)
+	chunkNumber := len(chunks)
+
+	log.Printf("DOGE: File split into %d chunks (max %d bytes each), file size: %d bytes", chunkNumber, chunkSize, len(req.Content))
+	s.updateUploadTaskProgress(req.Task, fmt.Sprintf("File split completed, %d chunks total", chunkNumber), 30, 0)
+
+	chunkFundingTxHex := strings.TrimSpace(req.ChunkPreTxHex)
+	chunkFundingTxId := common.GetDogeTxhashFromRaw(chunkFundingTxHex)
+	fmt.Printf("chunkFundingTxHex: %s\n", chunkFundingTxHex)
+	fmt.Printf("chunkFundingTxId: %s\n", chunkFundingTxId)
+	fmt.Printf("chunkFundingTx: %+v\n", chunkFundingTx)
+	fmt.Printf("chunkFundingTx.TxOut: %+v\n", chunkFundingTx.TxOut)
+
+	availableUtxos := make([]*common.TxInputUtxo, 0, len(chunkFundingTx.TxOut))
+	for i, txOut := range chunkFundingTx.TxOut {
+		if txOut.Value < 100000 {
+			continue
+		}
+		availableUtxos = append(availableUtxos, &common.TxInputUtxo{
+			TxId:     chunkFundingTxId,
+			TxIndex:  int64(i),
+			PkScript: hex.EncodeToString(txOut.PkScript),
+			Amount:   uint64(txOut.Value),
+			PriHex:   assistent.AssistentPriHex,
+			SignMode: common.SignModeLegacy,
+		})
+	}
+	if len(availableUtxos) == 0 {
+		return nil, fmt.Errorf("chunk pre-tx has no spendable outputs")
+	}
+
+	chunkPath := "/file/_chunk"
+	chunkContentType := metaid_protocols.MonitorMetaIdFileChunkContentType + ";binary"
+
+	chunkTxs := make([]string, 0)
+	chunkTxIds := make([]string, 0)
+	chunkRevealTxIds := make([]string, 0, chunkNumber)
+	chunkList := make([]struct {
+		Sha256 string `json:"sha256"`
+		PinId  string `json:"pinId"`
+	}, 0, chunkNumber)
+
+	for i, chunkData := range chunks {
+		txs, changeUtxos, err := common.BuildDogeMetaIdInscriptionTxs(
+			netParam,
+			chunkData,
+			chunkContentType,
+			availableUtxos,
+			assistent.AssistentAddress,
+			100000,
+			assistent.AssistentAddress,
+			req.FeeRate,
+			false,
+			common.InscriptionFormatMetaID,
+			chunkPath,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build chunk %d inscription txs: %w", i, err)
+		}
+
+		var revealTxId string
+		for _, tx := range txs {
+			txHex, err := common.ToRaw(tx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to serialize chunk %d tx: %w", i, err)
+			}
+			chunkTxs = append(chunkTxs, txHex) // commit tx hex and reveal tx hex
+			txId := common.GetDogeTxhashFromRaw(txHex)
+			chunkTxIds = append(chunkTxIds, txId)
+			revealTxId = txId //last tx id is the reveal tx id
+		}
+		chunkRevealTxIds = append(chunkRevealTxIds, revealTxId)
+		chunkPinId := fmt.Sprintf("%si0", revealTxId)
+
+		chunkHash := sha256.Sum256(chunkData)
+		chunkHashStr := hex.EncodeToString(chunkHash[:])
+		chunkList = append(chunkList, struct {
+			Sha256 string `json:"sha256"`
+			PinId  string `json:"pinId"`
+		}{Sha256: chunkHashStr, PinId: chunkPinId})
+
+		availableUtxos = make([]*common.TxInputUtxo, 0, len(changeUtxos))
+		for _, cu := range changeUtxos {
+			availableUtxos = append(availableUtxos, &common.TxInputUtxo{
+				TxId:     cu.TxId,
+				TxIndex:  cu.TxIndex,
+				PkScript: cu.PkScript,
+				Amount:   cu.Amount,
+				PriHex:   cu.PriHex,
+				SignMode: cu.SignMode,
+			})
+		}
+
+		chunkMd5Hash := md5.Sum(chunkData)
+		chunkMd5Str := hex.EncodeToString(chunkMd5Hash[:])
+
+		existingChunk, err := s.fileChunkDAO.GetByTxID(revealTxId)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			log.Printf("Failed to check existing chunk %d: %v", i, err)
+		} else if existingChunk != nil {
+			log.Printf("File chunk %d already exists: hash=%s, txId=%s, skipping create", i, chunkHashStr, revealTxId)
+		} else {
+			fileChunk := &model.FileChunk{
+				ChunkHash:   chunkHashStr,
+				ChunkSize:   int64(len(chunkData)),
+				ChunkMd5:    chunkMd5Str,
+				ChunkIndex:  int64(i),
+				FileHash:    filehashStr,
+				TxID:        revealTxId,
+				PinId:       chunkPinId,
+				Path:        chunkPath,
+				ContentType: chunkContentType,
+				Size:        int64(len(chunkData)),
+				StorageType: conf.Cfg.Storage.Type,
+				StoragePath: "",
+				Operation:   req.Operation,
+				Status:      model.StatusPending,
+			}
+			if err := s.fileChunkDAO.Create(fileChunk); err != nil {
+				log.Printf("Failed to save file chunk %d: %v", i, err)
+			}
+		}
+
+		progress := calcProgressRange(30, 70, i+1, chunkNumber)
+		s.updateUploadTaskProgress(req.Task, fmt.Sprintf("Building chunk transactions (%d/%d)", i+1, chunkNumber), progress, i+1)
+	}
+
+	s.updateUploadTaskProgress(req.Task, "Chunk transactions built, preparing index", 75, len(chunkTxIds))
+
+	metaFileIndex := metaid_protocols.MetaFileIndex{
+		Sha256:      filehashStr,
+		FileSize:    int64(len(req.Content)),
+		ChunkNumber: chunkNumber,
+		ChunkSize:   chunkSize,
+		DataType:    req.ContentType,
+		Name:        req.FileName,
+		ChunkList:   chunkList,
+	}
+
+	indexData, err := json.Marshal(metaFileIndex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal index data: %w", err)
+	}
+
+	indexPath := "/file/index"
+	indexContentType := metaid_protocols.MonitorMetaIdFileIndexContentType + ";utf-8"
+	indexTxs, _, err := common.BuildDogeMetaIdInscriptionTxs(
+		netParam,
+		indexData,
+		indexContentType,
+		availableUtxos,
+		req.Address,
+		100000,
+		assistent.AssistentAddress,
+		req.FeeRate,
+		false,
+		common.InscriptionFormatMetaID,
+		indexPath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build index inscription txs: %w", err)
+	}
+
+	indexTxHexes := make([]string, 0, len(indexTxs))
+	for _, tx := range indexTxs {
+		txHex, err := common.ToRaw(tx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize index tx: %w", err)
+		}
+		indexTxHexes = append(indexTxHexes, txHex)
+	}
+	indexTxId := common.GetDogeTxhashFromRaw(indexTxHexes[len(indexTxHexes)-1])
+
+	s.updateUploadTaskProgress(req.Task, "Index transaction built", 80, len(chunkTxIds))
+
+	existingFile, err := s.fileDAO.GetByFileID(fileId)
+	if err == nil && existingFile != nil && existingFile.Status == model.StatusSuccess {
+		log.Printf("File already exists and uploaded successfully: FileId=%s", fileId)
+		return &ChunkedUploadResponse{
+			FileId:      existingFile.FileId,
+			FileHash:    existingFile.FileHash,
+			FileMd5:     existingFile.FileMd5,
+			ChunkNumber: chunkNumber,
+			IndexTxId:   existingFile.TxID,
+			Status:      string(existingFile.Status),
+			Message:     "file already exists and uploaded",
+		}, nil
+	}
+
+	indexPathForFile := "/file/index"
+	file := &model.File{
+		FileId:          fileId,
+		FileName:        req.FileName,
+		FileType:        strings.ReplaceAll(req.ContentType, ";binary", ""),
+		MetaId:          req.MetaId,
+		Address:         req.Address,
+		Path:            indexPathForFile,
+		ContentType:     metaid_protocols.MonitorMetaIdFileIndexContentType + ";utf-8",
+		FileSize:        int64(len(req.Content)),
+		FileHash:        filehashStr,
+		FileMd5:         md5hashStr,
+		FileContentType: req.ContentType,
+		ChunkType:       model.ChunkTypeMulti,
+		Operation:       req.Operation,
+		Status:          model.StatusPending,
+	}
+
+	if existingFile != nil {
+		file.ID = existingFile.ID
+		if err := s.fileDAO.Update(file); err != nil {
+			return nil, fmt.Errorf("failed to update file metadata: %w", err)
+		}
+	} else {
+		if err := s.fileDAO.Create(file); err != nil {
+			return nil, fmt.Errorf("failed to save file metadata: %w", err)
+		}
+	}
+
+	return &ChunkedUploadResponse{
+		FileId:           fileId,
+		FileHash:         filehashStr,
+		FileMd5:          md5hashStr,
+		ChunkNumber:      chunkNumber,
+		ChunkFundingTx:   chunkFundingTxHex,
+		ChunkTxs:         chunkTxs,
+		ChunkTxIds:       chunkTxIds,
+		ChunkRevealTxIds: chunkRevealTxIds,
+		IndexTxs:         indexTxHexes,
+		IndexTxId:        indexTxId,
+		Status:           string(model.StatusPending),
+		Message:          "success",
+	}, nil
+}
+
 // ChunkedUploadForTaskResponse describes the response when creating an async task.
 type ChunkedUploadForTaskResponse struct {
 	TaskId  string `json:"taskId"`  // Task ID
@@ -1336,7 +1751,6 @@ type UploadTaskListResponse struct {
 
 // ChunkedUploadForTask creates an async chunked upload task and returns its ID.
 func (s *UploadService) ChunkedUploadForTask(req *ChunkedUploadRequest) (*ChunkedUploadForTaskResponse, error) {
-	// Validate parameters
 	if len(req.Content) == 0 {
 		return nil, fmt.Errorf("file content is empty")
 	}
@@ -1349,52 +1763,55 @@ func (s *UploadService) ChunkedUploadForTask(req *ChunkedUploadRequest) (*Chunke
 	if req.ChunkPreTxHex == "" {
 		return nil, fmt.Errorf("chunk pre-tx hex is required")
 	}
-	if req.IndexPreTxHex == "" {
-		return nil, fmt.Errorf("index pre-tx hex is required")
+
+	chain := req.Chain
+	if chain == "" {
+		chain = "mvc"
+	}
+	if !conf.IsChainSupportedForUpload(chain) {
+		return nil, fmt.Errorf("chain not supported: %s, supported: %v", chain, conf.GetUploaderChainNames())
+	}
+	if chain == "mvc" && req.IndexPreTxHex == "" {
+		return nil, fmt.Errorf("index pre-tx hex is required for mvc chain")
 	}
 
-	// Apply defaults
 	if req.Operation == "" {
 		req.Operation = "create"
 	}
 	if req.ContentType == "" {
 		req.ContentType = "application/octet-stream"
 	}
+	maxFileSize, chunkSizeParam, chainFeeRate := conf.GetUploaderChainParam(chain)
 	if req.FeeRate == 0 {
-		req.FeeRate = conf.Cfg.Uploader.FeeRate
+		req.FeeRate = chainFeeRate
+	}
+	if maxFileSize > 0 && int64(len(req.Content)) > maxFileSize {
+		return nil, fmt.Errorf("file size exceeds limit for chain %s (size %d bytes, max %d bytes)", chain, len(req.Content), maxFileSize)
 	}
 
-	// Calculate file hashes
 	sha256hash := sha256.Sum256(req.Content)
 	md5hash := md5.Sum(req.Content)
 	filehashStr := hex.EncodeToString(sha256hash[:])
 	md5hashStr := hex.EncodeToString(md5hash[:])
-
-	// Generate file ID
 	fileId := req.MetaId + "_" + filehashStr
 
-	// Determine chunk count
-	chunkSize := conf.Cfg.Uploader.ChunkSize
+	chunkSize := chunkSizeParam
 	if chunkSize <= 0 {
 		chunkSize = 2000 * 1024
 	}
 	chunks := splitFile(req.Content, chunkSize)
 	chunkNumber := len(chunks)
 
-	// Encode content as base64
 	contentBase64 := base64.StdEncoding.EncodeToString(req.Content)
 
-	// Generate task ID
-	taskId := fmt.Sprintf("task_%s_%d", filehashStr[:16], time.Now().Unix())
-
-	// Serialize empty chunk ID list placeholder
+	taskId := fmt.Sprintf("task_%s_%s_%d", chain, filehashStr[:16], time.Now().Unix())
 	chunkTxIdsJSON, _ := json.Marshal([]string{})
 
-	// Create task record
 	task := &model.FileUploaderTask{
 		TaskId:          taskId,
 		MetaId:          req.MetaId,
 		Address:         req.Address,
+		Chain:           chain,
 		FileName:        req.FileName,
 		FileHash:        filehashStr,
 		FileMd5:         md5hashStr,
@@ -1420,7 +1837,7 @@ func (s *UploadService) ChunkedUploadForTask(req *ChunkedUploadRequest) (*Chunke
 		return nil, fmt.Errorf("failed to create upload task: %w", err)
 	}
 
-	log.Printf("Created chunked upload task: taskId=%s, fileId=%s, chunkNumber=%d", taskId, fileId, chunkNumber)
+	log.Printf("Created chunked upload task: taskId=%s, fileId=%s, chunkNumber=%d, chain=%s", taskId, fileId, chunkNumber, chain)
 
 	return &ChunkedUploadForTaskResponse{
 		TaskId:  taskId,
@@ -1494,8 +1911,13 @@ func (s *UploadService) ProcessUploadTask(task *model.FileUploaderTask) error {
 	task.Progress = 10
 	s.fileUploaderTaskDAO.Update(task)
 
-	// Build/broadcast with resumable logic
-	resp, err := s.chunkedUploadOnTask(chunkedReq, task)
+	// Build/broadcast with resumable logic (route by chain)
+	var resp *ChunkedUploadResponse
+	if task.Chain == "doge" {
+		resp, err = s.chunkedUploadOnTaskInDoge(chunkedReq, task)
+	} else {
+		resp, err = s.chunkedUploadOnTask(chunkedReq, task)
+	}
 	if err != nil {
 		task.Status = model.StatusFailed
 		task.ErrorMessage = err.Error()
@@ -1655,6 +2077,338 @@ func (s *UploadService) prepareChunkedUploadForTask(req *ChunkedUploadRequest, t
 	return s.fileUploaderTaskDAO.Update(task)
 }
 
+func (s *UploadService) chunkedUploadOnTaskInDoge(req *ChunkedUploadRequest, task *model.FileUploaderTask) (*ChunkedUploadResponse, error) {
+	if task == nil {
+		return nil, fmt.Errorf("task is nil")
+	}
+	if task.Stage == "" {
+		task.Stage = model.TaskStageCreated
+	}
+
+	if task.Stage == model.TaskStageCreated {
+		if err := s.prepareChunkedUploadForTaskInDoge(req, task); err != nil {
+			return nil, err
+		}
+	}
+
+	chunkTxHexes, err := decodeStringArray(task.ChunkTxHexes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse chunk tx hex cache: %w", err)
+	}
+	chunkTxIds, err := decodeStringArray(task.ChunkTxIds)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse chunk tx id cache: %w", err)
+	}
+
+	if task.Stage == model.TaskStagePrepared {
+		if err := s.broadcastMergeTxForTaskInDoge(task); err != nil {
+			return nil, err
+		}
+	}
+
+	if task.Stage == model.TaskStageMergeBroadcast {
+		if err := s.broadcastFundingTxForTaskInDoge(task); err != nil {
+			return nil, err
+		}
+	}
+
+	if task.Stage == model.TaskStageFundingBroadcast {
+		if err := s.broadcastChunkTransactionsForTaskInDoge(task, chunkTxHexes, chunkTxIds); err != nil {
+			return nil, err
+		}
+	}
+
+	if task.Stage == model.TaskStageChunkBroadcast {
+		return s.broadcastIndexTxForTaskInDoge(req, task, chunkTxIds)
+	}
+
+	if task.Stage == model.TaskStageIndexBroadcast || task.Stage == model.TaskStageCompleted {
+		return &ChunkedUploadResponse{
+			FileId:      task.FileId,
+			FileHash:    task.FileHash,
+			FileMd5:     task.FileMd5,
+			ChunkNumber: task.TotalChunks,
+			ChunkTxIds:  chunkTxIds,
+			IndexTxId:   task.IndexTxId,
+			Status:      string(model.StatusSuccess),
+			Message:     "success",
+		}, nil
+	}
+
+	return nil, fmt.Errorf("unknown task stage: %s", task.Stage)
+}
+
+func (s *UploadService) prepareChunkedUploadForTaskInDoge(req *ChunkedUploadRequest, task *model.FileUploaderTask) error {
+	reqCopy := *req
+	reqCopy.IsBroadcast = false
+	reqCopy.Task = task
+
+	s.updateUploadTaskProgress(task, "Building chunk transactions (DOGE)", 20, 0)
+
+	resp, err := s.ChunkedUploadInDoge(&reqCopy)
+	if err != nil {
+		return err
+	}
+
+	if resp.Status == string(model.StatusSuccess) && resp.ChunkFundingTx == "" {
+		task.FileId = resp.FileId
+		task.FileHash = resp.FileHash
+		task.FileMd5 = resp.FileMd5
+		task.TotalChunks = resp.ChunkNumber
+		task.IndexTxId = resp.IndexTxId
+		if len(resp.ChunkTxIds) > 0 {
+			chunkTxIdsJSON, _ := json.Marshal(resp.ChunkTxIds)
+			task.ChunkTxIds = string(chunkTxIdsJSON)
+		}
+		task.Stage = model.TaskStageCompleted
+		task.Progress = 100
+		task.CurrentStep = "File already uploaded successfully"
+		s.updateUploadTaskProgress(task, "File already uploaded successfully", 100, task.TotalChunks)
+		return nil
+	}
+
+	if resp.ChunkFundingTx == "" {
+		return fmt.Errorf("chunk funding transaction is missing from ChunkedUpload response")
+	}
+
+	chunkTxHexJSON, err := json.Marshal(resp.ChunkTxs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal chunk tx hex list: %w", err)
+	}
+	chunkTxIdsJSON, err := json.Marshal(resp.ChunkTxIds)
+	if err != nil {
+		return fmt.Errorf("failed to marshal chunk tx ids: %w", err)
+	}
+	chunkRevealTxIdsJSON, _ := json.Marshal(resp.ChunkRevealTxIds)
+	indexTxHexesJSON, _ := json.Marshal(resp.IndexTxs)
+
+	task.ChunkFundingTx = resp.ChunkFundingTx
+	task.ChunkTxHexes = string(chunkTxHexJSON)
+	task.ChunkTxIds = string(chunkTxIdsJSON)
+	task.ChunkRevealTxIds = string(chunkRevealTxIdsJSON)
+	task.IndexTxHexes = string(indexTxHexesJSON)
+	task.IndexTxId = resp.IndexTxId
+	task.FileId = resp.FileId
+	task.FileHash = resp.FileHash
+	task.FileMd5 = resp.FileMd5
+	task.TotalChunks = resp.ChunkNumber
+	task.ProcessedChunks = 0
+	task.Stage = model.TaskStagePrepared
+
+	s.updateUploadTaskProgress(task, "Chunk transactions prepared", 40, 0)
+	return s.fileUploaderTaskDAO.Update(task)
+}
+
+func (s *UploadService) broadcastMergeTxForTaskInDoge(task *model.FileUploaderTask) error {
+	chain := "doge"
+	mergeHex := strings.TrimSpace(task.MergeTxHex)
+
+	return database.UploaderDB.Transaction(func(tx *gorm.DB) error {
+		task.Stage = model.TaskStageMergeBroadcast
+		if err := tx.Model(&model.FileUploaderTask{}).
+			Where("id = ?", task.ID).
+			Updates(map[string]interface{}{
+				"stage":        task.Stage,
+				"merge_tx_hex": task.MergeTxHex,
+			}).Error; err != nil {
+			return err
+		}
+
+		if mergeHex != "" {
+			if _, err := node.BroadcastTx(chain, mergeHex); err != nil {
+				if !isDuplicateBroadcastError(err) {
+					return fmt.Errorf("failed to broadcast merge transaction: %w", err)
+				}
+			}
+			task.MergeTxHex = ""
+		} else {
+			log.Printf("Merge transaction already broadcasted or not required for taskId=%s", task.TaskId)
+		}
+
+		return nil
+	})
+}
+
+func (s *UploadService) broadcastFundingTxForTaskInDoge(task *model.FileUploaderTask) error {
+	fundingHex := strings.TrimSpace(task.ChunkFundingTx)
+	if fundingHex == "" {
+		return fmt.Errorf("chunk funding transaction missing")
+	}
+
+	chain := "doge"
+	return database.UploaderDB.Transaction(func(tx *gorm.DB) error {
+		task.Stage = model.TaskStageFundingBroadcast
+		if err := tx.Model(&model.FileUploaderTask{}).
+			Where("id = ?", task.ID).
+			Update("stage", task.Stage).Error; err != nil {
+			return err
+		}
+
+		if _, err := node.BroadcastTx(chain, fundingHex); err != nil {
+			if !isDuplicateBroadcastError(err) {
+				return fmt.Errorf("failed to broadcast chunk funding transaction: %w", err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func (s *UploadService) broadcastChunkTransactionsForTaskInDoge(task *model.FileUploaderTask, chunkTxHexes, chunkTxIds []string) error {
+	if len(chunkTxHexes) == 0 {
+		return fmt.Errorf("chunk transaction cache empty")
+	}
+	if len(chunkTxIds) < len(chunkTxHexes) {
+		missing := make([]string, len(chunkTxHexes)-len(chunkTxIds))
+		chunkTxIds = append(chunkTxIds, missing...)
+	}
+
+	total := len(chunkTxHexes)
+	start := task.ProcessedChunks
+	if start < 0 {
+		start = 0
+	}
+
+	for i := start; i < total; i++ {
+		if err := s.broadcastSingleChunkTxInDoge(task, chunkTxHexes, chunkTxIds, i, total); err != nil {
+			return err
+		}
+	}
+
+	task.Stage = model.TaskStageChunkBroadcast
+	if encoded, err := json.Marshal(chunkTxIds); err == nil {
+		task.ChunkTxIds = string(encoded)
+	}
+	s.updateUploadTaskProgress(task, "Chunk transactions broadcasted", 95, task.ProcessedChunks)
+	return s.fileUploaderTaskDAO.Update(task)
+}
+
+func (s *UploadService) broadcastSingleChunkTxInDoge(task *model.FileUploaderTask, chunkTxHexes, chunkTxIds []string, index, total int) error {
+	chain := "doge"
+	txHex := chunkTxHexes[index]
+
+	return database.UploaderDB.Transaction(func(tx *gorm.DB) error {
+		txID := common.GetDogeTxhashFromRaw(txHex)
+		chunkTxIds[index] = txID
+
+		pinID := fmt.Sprintf("%si0", txID)
+		if err := tx.Model(&model.FileChunk{}).
+			Where("pin_id = ?", pinID).
+			Update("status", model.StatusSuccess).Error; err != nil {
+			return err
+		}
+
+		processed := index + 1
+		progress := calcProgressRange(85, 95, processed, total)
+		step := fmt.Sprintf("Broadcasting chunk transactions (%d/%d)", processed, total)
+
+		chunkTxIdsJSON, err := json.Marshal(chunkTxIds)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Model(&model.FileUploaderTask{}).
+			Where("id = ?", task.ID).
+			Updates(map[string]interface{}{
+				"processed_chunks": processed,
+				"progress":         progress,
+				"current_step":     step,
+				"chunk_tx_ids":     string(chunkTxIdsJSON),
+			}).Error; err != nil {
+			return err
+		}
+
+		_, err = node.BroadcastTx(chain, txHex)
+		if err != nil {
+			if !isDuplicateBroadcastError(err) {
+				return fmt.Errorf("failed to broadcast chunk transaction %d: %w", index, err)
+			}
+		}
+
+		task.ProcessedChunks = processed
+		task.Progress = progress
+		task.CurrentStep = step
+		task.ChunkTxIds = string(chunkTxIdsJSON)
+		return nil
+	})
+}
+
+func (s *UploadService) broadcastIndexTxForTaskInDoge(req *ChunkedUploadRequest, task *model.FileUploaderTask, chunkTxIds []string) (*ChunkedUploadResponse, error) {
+	indexTxHexes, err := decodeStringArray(task.IndexTxHexes)
+	if err != nil || len(indexTxHexes) == 0 {
+		return nil, fmt.Errorf("index tx hexes missing or invalid: %w", err)
+	}
+
+	indexTxId := common.GetDogeTxhashFromRaw(indexTxHexes[len(indexTxHexes)-1])
+	fileId := task.FileId
+	if fileId == "" {
+		return nil, fmt.Errorf("file ID missing in task")
+	}
+
+	chain := "doge"
+	err = database.UploaderDB.Transaction(func(tx *gorm.DB) error {
+		for i, hexStr := range indexTxHexes {
+			if _, err := node.BroadcastTx(chain, hexStr); err != nil {
+				if !isDuplicateBroadcastError(err) {
+					if updateErr := tx.Model(&model.File{}).Where("file_id = ?", fileId).Update("status", model.StatusFailed).Error; updateErr != nil {
+						log.Printf("Failed to update file status: %v", updateErr)
+					}
+					return fmt.Errorf("failed to broadcast index tx %d: %w", i+1, err)
+				}
+			}
+		}
+
+		task.IndexTxId = indexTxId
+		task.Stage = model.TaskStageIndexBroadcast
+		task.Progress = 98
+		task.CurrentStep = "Index transaction broadcasted"
+		if err := tx.Model(&model.FileUploaderTask{}).
+			Where("id = ?", task.ID).
+			Updates(map[string]interface{}{
+				"index_tx_id":  task.IndexTxId,
+				"stage":        task.Stage,
+				"progress":     task.Progress,
+				"current_step": task.CurrentStep,
+			}).Error; err != nil {
+			return fmt.Errorf("failed to update task: %w", err)
+		}
+
+		if err := tx.Model(&model.File{}).
+			Where("file_id = ?", fileId).
+			Updates(map[string]interface{}{
+				"status": model.StatusSuccess,
+				"tx_id":  indexTxId,
+				"pin_id": fmt.Sprintf("%si0", indexTxId),
+			}).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to broadcast index transaction and update records: %w", err)
+	}
+
+	task.IndexTxId = indexTxId
+	task.Stage = model.TaskStageIndexBroadcast
+	task.Progress = 98
+	task.CurrentStep = "Index transaction broadcasted"
+
+	return &ChunkedUploadResponse{
+		FileId:         task.FileId,
+		FileHash:       task.FileHash,
+		FileMd5:        task.FileMd5,
+		ChunkNumber:    task.TotalChunks,
+		ChunkFundingTx: task.ChunkFundingTx,
+		ChunkTxIds:     chunkTxIds,
+		IndexTxs:       indexTxHexes,
+		IndexTxId:      indexTxId,
+		Status:         string(model.StatusSuccess),
+		Message:        "success",
+	}, nil
+}
+
 func (s *UploadService) broadcastMergeTxForTask(task *model.FileUploaderTask) error {
 	chain := conf.Cfg.Net
 	mergeHex := strings.TrimSpace(task.MergeTxHex)
@@ -1798,7 +2552,7 @@ func (s *UploadService) broadcastIndexTxForTask(req *ChunkedUploadRequest, task 
 		return nil, fmt.Errorf("chunk transaction ID cache empty")
 	}
 
-	chunkSize := conf.Cfg.Uploader.ChunkSize
+	_, chunkSize, _ := conf.GetUploaderChainParam(task.Chain)
 	if chunkSize <= 0 {
 		chunkSize = 2000 * 1024
 	}
@@ -1877,9 +2631,13 @@ func (s *UploadService) broadcastIndexTxForTask(req *ChunkedUploadRequest, task 
 	}
 
 	// Use transaction to ensure atomicity of broadcast and updates
+	broadcastChain := task.Chain
+	if broadcastChain == "" {
+		broadcastChain = conf.Cfg.Net
+	}
 	err = database.UploaderDB.Transaction(func(tx *gorm.DB) error {
 		// Broadcast index transaction
-		if _, err := node.BroadcastTx(conf.Cfg.Net, indexTxHex); err != nil {
+		if _, err := node.BroadcastTx(broadcastChain, indexTxHex); err != nil {
 			if !isDuplicateBroadcastError(err) {
 				// Mark file as failed on broadcast error
 				if updateErr := tx.Model(&model.File{}).Where("file_id = ?", fileId).Update("status", model.StatusFailed).Error; updateErr != nil {
@@ -2207,6 +2965,111 @@ func buildIndexTxFromPreTx(netParam *chaincfg2.Params, baseTx *wire2.MsgTx, user
 	return baseTx, nil
 }
 
+// --- DOGE chain helpers ---
+
+func estimateChunkFundingValueDoge(chunkScript []byte, feeRate int64) int64 {
+	const inputSize = 148
+	opReturnSize := 8 + wire.VarIntSerializeSize(uint64(len(chunkScript))) + len(chunkScript)
+	txSize := 4 + 1 + inputSize + 1 + opReturnSize + 4
+	fee := int64(txSize) * feeRate
+	if fee < 600 {
+		fee = 600
+	}
+	return fee
+}
+
+func (s *UploadService) getOrCreateFileAssistentDoge(metaID, address string, netParam *chaincfg.Params) (*model.FileAssistent, error) {
+	assistent, err := s.fileAssistentDAO.GetByAddress(address)
+	if err != nil {
+		return nil, err
+	}
+	if assistent != nil {
+		return assistent, nil
+	}
+
+	privateKey, err := btcec.NewPrivateKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate assistent private key: %w", err)
+	}
+	privateKeyHex := hex.EncodeToString(privateKey.Serialize())
+
+	pubKeyHash := btcutil.Hash160(privateKey.PubKey().SerializeCompressed())
+	addr, err := btcutil.NewAddressPubKeyHash(pubKeyHash, netParam)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive assistent address: %w", err)
+	}
+
+	newAssistent := &model.FileAssistent{
+		MetaId:           metaID,
+		Address:          address,
+		AssistentAddress: addr.EncodeAddress(),
+		AssistentPriHex:  privateKeyHex,
+		Status:           model.StatusSuccess,
+	}
+
+	if err := s.fileAssistentDAO.Create(newAssistent); err != nil {
+		return nil, fmt.Errorf("failed to create assistent: %w", err)
+	}
+
+	log.Printf("Created new DOGE file assistent for user address %s, assistent address: %s", address, newAssistent.AssistentAddress)
+	return newAssistent, nil
+}
+
+func (s *UploadService) buildChunkTxWithFundingDoge(input *common.TxInputUtxo, chunkScript []byte) (*wire.MsgTx, error) {
+	tx := wire.NewMsgTx(2)
+
+	hash, err := btcchainhash.NewHashFromStr(input.TxId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse chunk funding txid: %w", err)
+	}
+	prevOut := wire.NewOutPoint(hash, uint32(input.TxIndex))
+	txIn := wire.NewTxIn(prevOut, nil, nil)
+	tx.AddTxIn(txIn)
+
+	tx.AddTxOut(wire.NewTxOut(0, chunkScript))
+
+	privateKeyBytes, err := hex.DecodeString(input.PriHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode assistent private key: %w", err)
+	}
+	privateKey, _ := btcec.PrivKeyFromBytes(privateKeyBytes)
+
+	pkScriptBytes, err := hex.DecodeString(input.PkScript)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode pkScript: %w", err)
+	}
+
+	signature, err := txscript.RawTxInSignature(tx, 0, pkScriptBytes, txscript.SigHashAll, privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign chunk tx: %w", err)
+	}
+
+	sigBuilder := txscript.NewScriptBuilder()
+	sigBuilder.AddData(signature)
+	sigBuilder.AddData(privateKey.PubKey().SerializeCompressed())
+	sigScript, err := sigBuilder.Script()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build sig script: %w", err)
+	}
+
+	tx.TxIn[0].SignatureScript = sigScript
+	return tx, nil
+}
+
+func buildIndexTxFromPreTxDoge(netParam *chaincfg.Params, baseTx *wire.MsgTx, userAddress string, indexScript []byte) (*wire.MsgTx, error) {
+	addr, err := btcutil.DecodeAddress(userAddress, netParam)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode user address: %w", err)
+	}
+	userPkScript, err := txscript.PayToAddrScript(addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build user pkScript: %w", err)
+	}
+	baseTx.AddTxOut(wire.NewTxOut(1, userPkScript))
+	baseTx.AddTxOut(wire.NewTxOut(0, indexScript))
+	return baseTx, nil
+}
+
 // MultipartUploadRequest multipart upload request
 type MultipartUploadRequest struct {
 	FileName string `json:"fileName"` // File name
@@ -2261,6 +3124,9 @@ func (s *UploadService) InitiateMultipartUpload(req *MultipartUploadRequest) (*I
 	}
 	if req.FileSize <= 0 {
 		return nil, fmt.Errorf("file size must be greater than 0")
+	}
+	if conf.Cfg.Uploader.MaxFileSize > 0 && req.FileSize > conf.Cfg.Uploader.MaxFileSize {
+		return nil, fmt.Errorf("file size exceeds limit (size %d bytes, max %d bytes)", req.FileSize, conf.Cfg.Uploader.MaxFileSize)
 	}
 
 	// Generate storage key
@@ -2371,16 +3237,19 @@ func (s *UploadService) CompleteMultipartUpload(key string, req *CompleteMultipa
 		return nil, fmt.Errorf("upload session has expired")
 	}
 
+	// Calculate total file size and enforce limit before completing
+	var totalSize int64
+	for _, part := range req.Parts {
+		totalSize += part.Size
+	}
+	if conf.Cfg.Uploader.MaxFileSize > 0 && totalSize > conf.Cfg.Uploader.MaxFileSize {
+		return nil, fmt.Errorf("file size exceeds limit (size %d bytes, max %d bytes)", totalSize, conf.Cfg.Uploader.MaxFileSize)
+	}
+
 	// Complete multipart upload
 	err = s.storage.CompleteMultipartUpload(key, req.UploadId, req.Parts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to complete multipart upload: %w", err)
-	}
-
-	// Calculate total file size
-	var totalSize int64
-	for _, part := range req.Parts {
-		totalSize += part.Size
 	}
 
 	// Update upload record status to completed

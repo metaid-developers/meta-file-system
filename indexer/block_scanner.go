@@ -17,18 +17,25 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
+// DefaultLargeBlockThresholdBytes is the default block size threshold above which we use lazy tx-by-tx loading (50MB)
+const DefaultLargeBlockThresholdBytes = 50 * 1024 * 1024
+
+// LargeBlockTxCountFallback: when RPC does not return block size, use tx count as fallback for lazy path
+const LargeBlockTxCountFallback = 50000
+
 // BlockScanner block scanner
 type BlockScanner struct {
-	rpcURL      string
-	rpcUser     string
-	rpcPassword string
-	startHeight int64
-	interval    time.Duration
-	chainType   ChainType // Chain type: btc, mvc, or doge
-	progressBar *progressbar.ProgressBar
-	zmqClient   *ZMQClient    // ZMQ client for real-time transaction monitoring
-	zmqEnabled  bool          // Whether ZMQ is enabled
-	parser      *MetaIDParser // Shared parser to avoid repeated allocation
+	rpcURL                   string
+	rpcUser                  string
+	rpcPassword              string
+	startHeight              int64
+	interval                 time.Duration
+	chainType                ChainType // Chain type: btc, mvc, or doge
+	progressBar              *progressbar.ProgressBar
+	zmqClient                *ZMQClient    // ZMQ client for real-time transaction monitoring
+	zmqEnabled               bool          // Whether ZMQ is enabled
+	parser                   *MetaIDParser // Shared parser to avoid repeated allocation
+	largeBlockThresholdBytes int64         // Block size in bytes above which to use lazy loading; 0 = default
 }
 
 // NewBlockScanner create block scanner (default MVC)
@@ -69,6 +76,16 @@ func (s *BlockScanner) SetZMQTransactionHandler(handler func(tx interface{}, met
 	if s.zmqClient != nil {
 		s.zmqClient.SetTransactionHandler(handler)
 	}
+}
+
+// SetLargeBlockThreshold sets the block size threshold in bytes above which blocks are loaded lazily (tx-by-tx).
+// If bytes <= 0, DefaultLargeBlockThresholdBytes is used.
+func (s *BlockScanner) SetLargeBlockThreshold(bytes int64) {
+	if bytes <= 0 {
+		s.largeBlockThresholdBytes = DefaultLargeBlockThresholdBytes
+		return
+	}
+	s.largeBlockThresholdBytes = bytes
 }
 
 // RPCRequest RPC request structure
@@ -198,7 +215,33 @@ func (s *BlockScanner) GetRawTransaction(txid string) (string, error) {
 	return txHex, nil
 }
 
-// BlockVerboseResult represents the result of getblock RPC with verbosity=2
+// GetAndDeserializeTx fetches raw transaction by txid and deserializes it to *btcwire.MsgTx or *wire.MsgTx.
+// Used for large-block path to avoid holding the full block in memory.
+func (s *BlockScanner) GetAndDeserializeTx(txid string) (interface{}, error) {
+	txHex, err := s.GetRawTransaction(txid)
+	if err != nil {
+		return nil, err
+	}
+	txBytes, err := hex.DecodeString(txHex)
+	if err != nil {
+		return nil, fmt.Errorf("decode tx hex: %w", err)
+	}
+	if s.chainType == ChainTypeBTC || s.chainType == ChainTypeDOGE {
+		var btcTx btcwire.MsgTx
+		if err := btcTx.Deserialize(bytes.NewReader(txBytes)); err != nil {
+			return nil, fmt.Errorf("deserialize btc/doge tx: %w", err)
+		}
+		return &btcTx, nil
+	}
+	var mvcTx wire.MsgTx
+	if err := mvcTx.Deserialize(bytes.NewReader(txBytes)); err != nil {
+		return nil, fmt.Errorf("deserialize mvc tx: %w", err)
+	}
+	return &mvcTx, nil
+}
+
+// BlockVerboseResult represents the result of getblock RPC with verbosity=1
+// (Bitcoin Core returns size, strippedsize, time, tx; some nodes may omit size)
 type BlockVerboseResult struct {
 	Hash         string   `json:"hash"`
 	Version      int32    `json:"version"`
@@ -208,6 +251,8 @@ type BlockVerboseResult struct {
 	Bits         string   `json:"bits"`
 	Nonce        uint32   `json:"nonce"`
 	Tx           []string `json:"tx"`
+	Size         int      `json:"size"`         // Block size in bytes (from getblock verbosity=1)
+	StrippedSize int      `json:"strippedsize"` // Block size excluding witness (optional)
 }
 
 // TxVerboseResult represents the result of getrawtransaction RPC with verbosity=1
@@ -562,74 +607,116 @@ func (s *BlockScanner) ScanMempool(handler func(tx interface{}, metaDataTx *Meta
 	return processedCount, nil
 }
 
-// GetBlockMsg get block message (MsgBlock) with all transactions
-// Returns interface{} which can be *wire.MsgBlock (MVC) or *btcwire.MsgBlock (BTC/DOGE)
+// GetBlockMsg get block message (MsgBlock) with all transactions, or *LazyBlock for large blocks.
+// Returns interface{} which can be *wire.MsgBlock (MVC), *btcwire.MsgBlock (BTC/DOGE), or *LazyBlock.
+// For large blocks (size > largeBlockThresholdBytes), returns LazyBlock to avoid loading full block into memory.
 func (s *BlockScanner) GetBlockMsg(height int64) (interface{}, int, error) {
-	// Get block hash
 	blockhash, err := s.GetBlockhash(height)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get block hash: %w", err)
 	}
 
-	// Get block hex
+	verbose, err := s.GetBlockVerbose(blockhash)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get block verbose: %w", err)
+	}
+
+	threshold := s.largeBlockThresholdBytes
+	if threshold <= 0 {
+		threshold = DefaultLargeBlockThresholdBytes
+	}
+
+	useLazy := false
+	if verbose.Size > 0 {
+		useLazy = int64(verbose.Size) > threshold
+	} else if len(verbose.Tx) > LargeBlockTxCountFallback {
+		// RPC did not return size; use tx count as fallback
+		useLazy = true
+	}
+
+	if useLazy {
+		timestampMs := verbose.Time * 1000
+		if verbose.Time > 1e12 {
+			timestampMs = verbose.Time
+		}
+		lazy := &LazyBlock{
+			TxIDs:     verbose.Tx,
+			Timestamp: timestampMs,
+			Blockhash: blockhash,
+		}
+		log.Printf("Using lazy block loading for block %s at height %d, size: %dMB, tx count: %d", blockhash, height, verbose.Size/1024/1024, len(verbose.Tx))
+		return lazy, len(verbose.Tx), nil
+	}
+
+	// Normal path: load full block
+	if s.chainType == ChainTypeDOGE {
+		msgBlock, err := s.getDOGEBlockByRPC(blockhash)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to get DOGE block by RPC: %w", err)
+		}
+		return msgBlock, len(msgBlock.Transactions), nil
+	}
+
 	blockHex, err := s.GetBlockHex(blockhash)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get block hex: %w", err)
 	}
-
-	// Decode hex to bytes
 	blockBytes, err := hex.DecodeString(blockHex)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to decode block hex: %w", err)
 	}
 
-	// Deserialize based on chain type
-	if s.chainType == ChainTypeDOGE {
-		// DOGE: Use verbose RPC method to avoid deserialization issues
-		msgBlock, err := s.getDOGEBlockByRPC(blockhash)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to get DOGE block by RPC: %w", err)
-		}
-		txCount := len(msgBlock.Transactions)
-		return msgBlock, txCount, nil
-	} else if s.chainType == ChainTypeBTC {
-		// Parse as BTC block
+	if s.chainType == ChainTypeBTC {
 		var msgBlock btcwire.MsgBlock
 		if err := msgBlock.Deserialize(bytes.NewReader(blockBytes)); err != nil {
 			return nil, 0, fmt.Errorf("failed to deserialize BTC block: %w", err)
 		}
-		txCount := len(msgBlock.Transactions)
-		return &msgBlock, txCount, nil
-	} else {
-		// Parse as MVC block
-		var msgBlock wire.MsgBlock
-		if err := msgBlock.Deserialize(bytes.NewReader(blockBytes)); err != nil {
-			return nil, 0, fmt.Errorf("failed to deserialize MVC block: %w", err)
-		}
-		txCount := len(msgBlock.Transactions)
-		return &msgBlock, txCount, nil
+		return &msgBlock, len(msgBlock.Transactions), nil
 	}
+	var msgBlock wire.MsgBlock
+	if err := msgBlock.Deserialize(bytes.NewReader(blockBytes)); err != nil {
+		return nil, 0, fmt.Errorf("failed to deserialize MVC block: %w", err)
+	}
+	return &msgBlock, len(msgBlock.Transactions), nil
 }
 
 // ScanBlock scan specified block
 // handler accepts interface{} for tx to support both BTC and MVC
 // Returns the number of processed MetaID transactions
 func (s *BlockScanner) ScanBlock(height int64, handler func(tx interface{}, metaDataTx *MetaIDDataTx, height, timestamp int64) error) (int, error) {
-	// Get block message with all transactions
+	// Get block message with all transactions (or LazyBlock for large blocks)
 	msgBlockInterface, txCount, err := s.GetBlockMsg(height)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get block message: %w", err)
 	}
 
-	// log.Printf("Scanning block at height %d, transaction count: %d (chain: %s)", height, txCount, s.chainType)
-
 	processedCount := 0
 	metaidPinCount := 0
 
-	// Use shared parser to avoid repeated allocation
-	// Note: parser := NewMetaIDParser("") removed to reduce memory allocation
+	// Large block path: iterate txids and fetch each tx on demand
+	if lazy, ok := msgBlockInterface.(*LazyBlock); ok {
+		for _, txid := range lazy.TxIDs {
+			tx, err := s.GetAndDeserializeTx(txid)
+			if err != nil {
+				log.Printf("[%s] Failed to get tx %s in block %d: %v", s.chainType, txid, height, err)
+				continue
+			}
+			metaDataTx, err := s.parser.ParseAllPINs(tx, s.chainType)
+			if err != nil || metaDataTx == nil {
+				continue
+			}
+			metaidPinCount += len(metaDataTx.MetaIDData)
+			if err := handler(tx, metaDataTx, height, lazy.Timestamp); err != nil {
+				log.Printf("[%s] Failed to handle transaction %s: %v", s.chainType, metaDataTx.TxID, err)
+			} else {
+				processedCount++
+			}
+		}
+		log.Printf("Scanned block at height %d (lazy), transaction count: %d (chain: %s), MetaID PIN count: %d", height, txCount, s.chainType, metaidPinCount)
+		return processedCount, nil
+	}
 
-	// Process transactions based on chain type
+	// Process transactions based on chain type (full block in memory)
 	if s.chainType == ChainTypeBTC || s.chainType == ChainTypeDOGE {
 		// BTC/DOGE block
 		btcBlock, ok := msgBlockInterface.(*btcwire.MsgBlock)

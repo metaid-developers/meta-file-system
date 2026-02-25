@@ -909,7 +909,15 @@
         </div>
 
         <div class="form-group">
-            <label class="form-label">Fee Rate (satoshis/byte)</label>
+            <label class="form-label">Chain</label>
+            <select id="chainSelect" class="form-select">
+                <option value="mvc">MVC</option>
+                <option value="doge">DOGE</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label id="feeRateLabel" class="form-label">Fee Rate (satoshis/byte)</label>
             <input type="number" id="feeRateInput" class="form-input" placeholder="Enter fee rate, recommended 1-10" value="1" min="0.1" step="0.1">
         </div>
 
@@ -1048,7 +1056,8 @@
         </div>
     </div>
 
-    <!-- Include meta-contract library (local version 0.3.35) -->
+    <!-- Libs from npm (copied by npm run copy-libs): meta-contract, metaid, bitcoinjs-lib-browser -->
+    <script src="static/bitcoinjs.min.js"></script>
     <script src="static/metacontract.min.js"></script>
     <!-- Include MetaID SDK (local version) -->
     <script src="static/metaid.min.js"></script>

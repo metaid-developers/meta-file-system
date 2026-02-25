@@ -562,9 +562,16 @@ MIT License
 
 ## Version Information
 
-**Current Version: v0.4.0**
+**Current Version: v0.5.0**
 
 ### Changelog
+
+#### v0.5.0 (2026-02-25)
+
+**Indexer Service - Large Block Handling**
+- 🛡️ **Large block memory optimization**: When scanning blocks larger than a configurable threshold (default 50MB), the indexer no longer loads the full raw block into memory. Instead, it fetches the block's txid list via `getblock` verbosity=1, then retrieves each transaction by `getrawtransaction` and processes them one-by-one to avoid OOM on very large blocks (e.g. 800MB+).
+- 📊 **No blocks skipped**: All blocks are indexed; large blocks are processed in a lazy, tx-by-tx manner.
+- ⚙️ **New config**: `indexer.large_block_size_mb` — blocks larger than this size (MB) use the lazy loading path; 0 uses default 200, i.e. blocks larger than 200MB use the lazy loading path.
 
 #### v0.4.0 (2025-12-31)
 

@@ -22,7 +22,7 @@ indexer:
   swagger_base_url: "localhost:7281"  # Swagger API base URL (shown in Swagger UI)
   zmq_enabled: false  # Enable ZMQ real-time monitoring
   zmq_address: "tcp://127.0.0.1:28332"  # ZMQ server address (for BTC/MVC node)
-  
+  large_block_size_mb: 200  # Blocks larger than this (MB) are loaded tx-by-tx to avoid OOM; 0 = 50
   # Multi-chain configuration (if configured, will use multi-chain mode)
   time_ordering_enabled: true  # Enable strict time ordering across chains
   chains:
@@ -51,10 +51,26 @@ indexer:
 # Uploader configuration
 uploader:
   port: "7282"  # Uploader service port
-  max_file_size: 100 # MB
-  chunk_size: 100 * 1024 # 100KB
+  max_file_size: 100 # MB (global default)
+  chunk_size: 2      # MB (global default)
   fee_rate: 1
   swagger_base_url: "localhost:7282"  # Swagger API base URL (shown in Swagger UI)
+  # RpcConfigMap and per-chain params are populated from uploader.chains (not indexer.chains)
+  chains:
+    - name: "mvc"
+      rpc_url: "http://127.0.0.1:9882"
+      rpc_user: "rpcuser"
+      rpc_pass: "rpcpassword"
+      max_file_size: 100  # MB, optional
+      chunk_size: 2       # MB, optional
+      fee_rate: 1         # sat/byte
+    - name: "doge"
+      rpc_url: "http://127.0.0.1:22555"
+      rpc_user: "dogeuser"
+      rpc_pass: "dogepass"
+      max_file_size: 100
+      chunk_size_bytes: 1200  # DOGE max chunk size in bytes
+      fee_rate: 200000    # sat/KB for DOGE
 
 # Blockchain configuration
 chain:

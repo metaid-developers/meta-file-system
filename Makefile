@@ -1,4 +1,4 @@
-.PHONY: build clean run-indexer run-uploader test deps init-db swagger swagger-indexer swagger-uploader docker-build docker-up docker-down docker-logs
+.PHONY: build clean build-web run-indexer run-uploader test deps init-db swagger swagger-indexer swagger-uploader docker-build docker-up docker-down docker-logs
 
 # Build all services
 build:
@@ -7,6 +7,11 @@ build:
 	@go build -o bin/indexer ./cmd/indexer
 	@go build -o bin/uploader ./cmd/uploader
 	@echo "Build completed!"
+
+# Copy web min.js libs from node_modules (meta-contract, metaid, bitcoinjs-lib-browser)
+build-web:
+	@cd web && npm install
+	@echo "Web libs copied to web/"
 
 # Clean build artifacts
 clean:

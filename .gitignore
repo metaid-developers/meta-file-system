@@ -43,3 +43,6 @@ temp/
 nginx.d
 
 fix_service.go
+res/file/*
+
+.claude/

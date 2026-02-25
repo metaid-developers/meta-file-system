@@ -375,24 +375,42 @@ func (h *UploadHandler) CommitUpload(c *gin.Context) {
 	respond.Success(c, resp)
 }
 
+// ChainConfigItem per-chain config for GetConfig response
+type ChainConfigItem struct {
+	MaxFileSize int64 `json:"maxFileSize" description:"Max file size in bytes"`
+	ChunkSize   int64 `json:"chunkSize" description:"Chunk size in bytes"`
+	FeeRate     int64 `json:"feeRate" description:"Fee rate (sat/byte or sat/KB)"`
+}
+
 // ConfigResponse configuration response
 type ConfigResponse struct {
-	MaxFileSize    int64  `json:"maxFileSize" example:"10485760" description:"Max file size (bytes)"`
-	SwaggerBaseUrl string `json:"swaggerBaseUrl" example:"localhost:7282" description:"Swagger API base URL"`
+	MaxFileSize    int64                      `json:"maxFileSize" example:"10485760" description:"Max file size (bytes), min across chains for backward compat"`
+	SwaggerBaseUrl string                     `json:"swaggerBaseUrl" example:"localhost:7282" description:"Swagger API base URL"`
+	Chains         map[string]ChainConfigItem `json:"chains,omitempty" description:"Per-chain config (maxFileSize, chunkSize, feeRate)"`
 }
 
 // GetConfig get configuration information
 // @Summary      Get configuration
-// @Description  Get upload service configuration information, including max file size and swagger base URL
+// @Description  Get upload service configuration information, including max file size, swagger base URL, and per-chain config
 // @Tags         Configuration
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  respond.Response{data=ConfigResponse}
 // @Router       /config [get]
 func (h *UploadHandler) GetConfig(c *gin.Context) {
+	chainsMap := make(map[string]ChainConfigItem)
+	minMaxFileSize := conf.Cfg.Uploader.MaxFileSize
+	for _, c := range conf.Cfg.Uploader.Chains {
+		maxFileSize, chunkSize, feeRate := conf.GetUploaderChainParam(c.Name)
+		chainsMap[c.Name] = ChainConfigItem{MaxFileSize: maxFileSize, ChunkSize: chunkSize, FeeRate: feeRate}
+		if maxFileSize > 0 && (minMaxFileSize == 0 || maxFileSize < minMaxFileSize) {
+			minMaxFileSize = maxFileSize
+		}
+	}
 	respond.Success(c, ConfigResponse{
-		MaxFileSize:    conf.Cfg.Uploader.MaxFileSize,
+		MaxFileSize:    minMaxFileSize,
 		SwaggerBaseUrl: conf.Cfg.Uploader.SwaggerBaseUrl,
+		Chains:         chainsMap,
 	})
 }
 
@@ -403,7 +421,8 @@ type EstimateChunkedUploadRequest struct {
 	StorageKey  string `json:"storageKey" description:"Storage key from multipart upload (optional, if provided, file will be read from storage)"`
 	Path        string `json:"path" binding:"required" example:"/file" description:"MetaID path (base path, will auto-add /file/_chunk and /file/index)"`
 	ContentType string `json:"contentType" example:"image/jpeg" description:"File content type"`
-	FeeRate     int64  `json:"feeRate" example:"1" description:"Fee rate (optional, defaults to config)"`
+	Chain       string `json:"chain" example:"mvc" description:"Blockchain: mvc or doge (default mvc)"`
+	FeeRate     int64  `json:"feeRate" example:"1" description:"Fee rate (optional, defaults to chain config)"`
 }
 
 // EstimateChunkedUpload estimate chunked upload fee
@@ -447,11 +466,16 @@ func (h *UploadHandler) EstimateChunkedUpload(c *gin.Context) {
 	}
 
 	// Convert to service request
+	chain := req.Chain
+	if chain == "" {
+		chain = "mvc"
+	}
 	serviceReq := &upload_service.EstimateChunkedUploadRequest{
 		FileName:    req.FileName,
 		Content:     content,
 		Path:        req.Path,
 		ContentType: req.ContentType,
+		Chain:       chain,
 		FeeRate:     req.FeeRate,
 	}
 
@@ -558,8 +582,9 @@ type ChunkedUploadForTaskRequest struct {
 	Path          string `json:"path" binding:"required" example:"/file" description:"Base MetaID path (will append /file/_chunk and /file/index)"`
 	Operation     string `json:"operation" example:"create" description:"Operation type (create/update)"`
 	ContentType   string `json:"contentType" example:"image/jpeg" description:"MIME type"`
+	Chain         string `json:"chain" example:"mvc" description:"Blockchain: mvc or doge (default mvc)"`
 	ChunkPreTxHex string `json:"chunkPreTxHex" binding:"required" example:"0100000..." description:"Pre-built chunk transaction (contains inputs, signNull)"`
-	IndexPreTxHex string `json:"indexPreTxHex" binding:"required" example:"0100000..." description:"Pre-built index transaction (contains inputs, signNull)"`
+	IndexPreTxHex string `json:"indexPreTxHex" example:"0100000..." description:"Pre-built index transaction (required for mvc, optional for doge - index funded by chunk change)"`
 	MergeTxHex    string `json:"mergeTxHex" example:"0100000..." description:"Merge transaction hex (optional, broadcast first)"`
 	FeeRate       int64  `json:"feeRate" example:"1" description:"Fee rate (optional, defaults to config)"`
 }
@@ -604,6 +629,23 @@ func (h *UploadHandler) ChunkedUploadForTask(c *gin.Context) {
 		return
 	}
 
+	chain := req.Chain
+	if chain == "" {
+		chain = "mvc"
+	}
+	if !conf.IsChainSupportedForUpload(chain) {
+		supported := "none configured"
+		if names := conf.GetUploaderChainNames(); len(names) > 0 {
+			supported = strings.Join(names, ", ")
+		}
+		respond.InvalidParam(c, "chain not supported: "+chain+", supported: "+supported)
+		return
+	}
+	if chain == "mvc" && req.IndexPreTxHex == "" {
+		respond.InvalidParam(c, "indexPreTxHex is required for mvc chain")
+		return
+	}
+
 	// Convert to service request
 	serviceReq := &upload_service.ChunkedUploadRequest{
 		MetaId:        req.MetaId,
@@ -613,6 +655,7 @@ func (h *UploadHandler) ChunkedUploadForTask(c *gin.Context) {
 		Path:          req.Path,
 		Operation:     req.Operation,
 		ContentType:   req.ContentType,
+		Chain:         chain,
 		ChunkPreTxHex: req.ChunkPreTxHex,
 		IndexPreTxHex: req.IndexPreTxHex,
 		MergeTxHex:    req.MergeTxHex,

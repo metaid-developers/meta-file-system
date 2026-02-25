@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS `tb_file_uploader_task` (
     `index_pre_tx_hex` TEXT COMMENT 'Pre-built index transaction',
     `merge_tx_hex` TEXT COMMENT 'Merge transaction hex',
     `fee_rate` BIGINT DEFAULT NULL COMMENT 'Fee rate',
+    `chain` VARCHAR(20) DEFAULT 'mvc' COMMENT 'Blockchain (mvc/doge)',
     
     -- Task status and progress
     `status` VARCHAR(20) DEFAULT 'pending' COMMENT 'pending/processing/success/failed',
@@ -182,8 +183,10 @@ CREATE TABLE IF NOT EXISTS `tb_file_uploader_task` (
     -- Result information
     `file_id` VARCHAR(80) DEFAULT NULL COMMENT 'File ID (after success)',
     `chunk_funding_tx` TEXT COMMENT 'Chunk funding transaction',
-    `chunk_tx_ids` TEXT COMMENT 'Chunk transaction ID list (JSON array)',
+    `chunk_tx_ids` TEXT COMMENT 'Chunk transaction ID list (JSON array, flat for broadcast)',
+    `chunk_reveal_tx_ids` TEXT COMMENT 'DOGE: reveal tx id per chunk for index (JSON array)',
     `chunk_tx_hexes` LONGTEXT COMMENT 'Chunk transaction hex list (JSON array, internal use only)',
+    `index_tx_hexes` TEXT COMMENT 'DOGE: index txs [commitHex, revealHex] (JSON array)',
     `index_tx_id` VARCHAR(64) DEFAULT NULL COMMENT 'Index transaction ID',
     `error_message` TEXT COMMENT 'Error message',
     
@@ -244,6 +247,18 @@ CREATE TABLE IF NOT EXISTS `tb_multipart_upload` (
 
 -- query by path and status
 -- ALTER TABLE tb_file ADD INDEX idx_path_status (path, status);
+
+-- =============================================
+-- Migration: add chain column to tb_file_uploader_task (for DOGE support)
+-- =============================================
+-- Run if upgrading from version without chain column:
+-- ALTER TABLE tb_file_uploader_task ADD COLUMN chain VARCHAR(20) DEFAULT 'mvc' COMMENT 'Blockchain (mvc/doge)' AFTER fee_rate;
+
+-- Run if upgrading to DOGE chunked upload (BuildDogeMetaIdInscriptionTxs):
+-- ALTER TABLE tb_file_uploader_task ADD COLUMN chunk_reveal_tx_ids TEXT COMMENT 'DOGE: reveal tx id per chunk for index' AFTER chunk_tx_ids;
+
+-- Run if upgrading to DOGE index inscription (commit+reveal):
+-- ALTER TABLE tb_file_uploader_task ADD COLUMN index_tx_hexes TEXT COMMENT 'DOGE: index txs [commitHex, revealHex]' AFTER chunk_tx_hexes;
 
 
 

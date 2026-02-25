@@ -34,6 +34,9 @@ type FileUploaderTask struct {
 	Operation     string `gorm:"type:varchar(20)" json:"operation"`     // create/update
 	ContentBase64 string `gorm:"type:longtext" json:"content_base64"`   // File content (base64)
 
+	// Chain (mvc/doge)
+	Chain string `gorm:"type:varchar(20);default:'mvc'" json:"chain"` // Blockchain (mvc/doge)
+
 	// Transaction info
 	ChunkPreTxHex string `gorm:"type:text" json:"chunk_pre_tx_hex"` // Pre-built chunk tx
 	IndexPreTxHex string `gorm:"type:text" json:"index_pre_tx_hex"` // Pre-built index tx
@@ -49,12 +52,14 @@ type FileUploaderTask struct {
 	Stage           TaskStage `gorm:"type:varchar(50);default:'created'" json:"stage"`  // resumable stage
 
 	// Result info
-	FileId         string `gorm:"type:varchar(255)" json:"file_id"`    // File ID (after success)
-	ChunkFundingTx string `gorm:"type:text" json:"chunk_funding_tx"`   // Chunk funding tx hex
-	ChunkTxIds     string `gorm:"type:text" json:"chunk_tx_ids"`       // Chunk tx IDs (JSON array)
-	ChunkTxHexes   string `gorm:"type:longtext" json:"-"`              // Chunk tx hex list (JSON array, internal use)
-	IndexTxId      string `gorm:"type:varchar(64)" json:"index_tx_id"` // Index tx ID
-	ErrorMessage   string `gorm:"type:text" json:"error_message"`      // Error message
+	FileId           string `gorm:"type:varchar(255)" json:"file_id"`     // File ID (after success)
+	ChunkFundingTx   string `gorm:"type:text" json:"chunk_funding_tx"`    // Chunk funding tx hex
+	ChunkTxIds       string `gorm:"type:text" json:"chunk_tx_ids"`        // Chunk tx IDs (JSON array, flat for broadcast)
+	ChunkRevealTxIds string `gorm:"type:text" json:"chunk_reveal_tx_ids"` // DOGE: reveal tx id per chunk for index (JSON array)
+	ChunkTxHexes     string `gorm:"type:longtext" json:"-"`               // Chunk tx hex list (JSON array, internal use)
+	IndexTxHexes     string `gorm:"type:text" json:"index_tx_hexes"`      // DOGE: index txs [commitHex, revealHex] (JSON array)
+	IndexTxId        string `gorm:"type:varchar(64)" json:"index_tx_id"`  // Index tx ID
+	ErrorMessage     string `gorm:"type:text" json:"error_message"`       // Error message
 
 	// Timestamps
 	CreatedAt  time.Time  `gorm:"autoCreateTime" json:"created_at"`
