@@ -91,6 +91,15 @@ type DirectUploadRequest struct {
 	TotalInputAmount int64  // Total input amount in satoshis (optional, for change calculation)
 }
 
+const minFeeRate int64 = 5
+
+func normalizeFeeRate(f int64) int64 {
+	if f < minFeeRate {
+		return minFeeRate
+	}
+	return f
+}
+
 // PreUploadResponse pre-upload response
 type PreUploadResponse struct {
 	FileId    string `json:"fileId"`    // File ID (unique identifier)
@@ -134,6 +143,7 @@ func (s *UploadService) PreUpload(req *UploadRequest) (*PreUploadResponse, error
 	if req.FeeRate == 0 {
 		req.FeeRate = conf.Cfg.Uploader.FeeRate
 	}
+	req.FeeRate = normalizeFeeRate(req.FeeRate)
 
 	// Get network parameters
 	var netParam *chaincfg2.Params
@@ -348,6 +358,7 @@ func (s *UploadService) DirectUpload(req *DirectUploadRequest) (*UploadResponse,
 	if req.FeeRate == 0 {
 		req.FeeRate = conf.Cfg.Uploader.FeeRate
 	}
+	req.FeeRate = normalizeFeeRate(req.FeeRate)
 
 	// Get network parameters
 	var netParam *chaincfg2.Params
@@ -655,6 +666,7 @@ func (s *UploadService) EstimateChunkedUpload(req *EstimateChunkedUploadRequest)
 	if req.FeeRate > 0 {
 		feeRate = req.FeeRate
 	}
+	feeRate = normalizeFeeRate(feeRate)
 	if chunkSize <= 0 {
 		chunkSize = 2000 * 1024 // default 2000 KB
 	}
@@ -944,6 +956,7 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 	if req.FeeRate == 0 {
 		req.FeeRate = chainFeeRate
 	}
+	req.FeeRate = normalizeFeeRate(req.FeeRate)
 	if maxFileSize > 0 && int64(len(req.Content)) > maxFileSize {
 		return nil, fmt.Errorf("file size exceeds limit for chain %s (size %d bytes, max %d bytes)", chain, len(req.Content), maxFileSize)
 	}
@@ -1477,6 +1490,7 @@ func (s *UploadService) ChunkedUploadInDoge(req *ChunkedUploadRequest) (*Chunked
 	if req.FeeRate == 0 {
 		req.FeeRate = chainFeeRate
 	}
+	req.FeeRate = normalizeFeeRate(req.FeeRate)
 
 	netParam := common.DogeMainNetParams
 
@@ -1785,6 +1799,7 @@ func (s *UploadService) ChunkedUploadForTask(req *ChunkedUploadRequest) (*Chunke
 	if req.FeeRate == 0 {
 		req.FeeRate = chainFeeRate
 	}
+	req.FeeRate = normalizeFeeRate(req.FeeRate)
 	if maxFileSize > 0 && int64(len(req.Content)) > maxFileSize {
 		return nil, fmt.Errorf("file size exceeds limit for chain %s (size %d bytes, max %d bytes)", chain, len(req.Content), maxFileSize)
 	}
