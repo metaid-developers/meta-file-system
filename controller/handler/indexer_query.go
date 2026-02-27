@@ -2,10 +2,14 @@ package handler
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
+	"meta-file-system/conf"
 	"meta-file-system/controller/respond"
+	"meta-file-system/model"
 	"meta-file-system/service/common_service"
 	"meta-file-system/service/indexer_service"
 
@@ -33,6 +37,18 @@ func (h *IndexerQueryHandler) SetIndexerService(indexerService *indexer_service.
 	h.indexerService = indexerService
 }
 
+// getIndexerBaseUrl returns base URL for indexer API (content_url / accelerate_content_url), with scheme if missing
+func getIndexerBaseUrl() string {
+	s := conf.Cfg.Indexer.SwaggerBaseUrl
+	if s == "" {
+		return ""
+	}
+	if strings.Contains(s, "://") {
+		return strings.TrimSuffix(s, "/")
+	}
+	return "https://" + strings.TrimSuffix(s, "/")
+}
+
 // GetLatestByFirstPinID get latest file information by first PIN ID
 // @Summary      Get latest file by first PIN ID
 // @Description  Query latest file details by first PIN ID
@@ -55,8 +71,7 @@ func (h *IndexerQueryHandler) GetLatestByFirstPinID(c *gin.Context) {
 		respond.NotFound(c, err.Error())
 		return
 	}
-
-	respond.Success(c, respond.ToIndexerFileResponse(file))
+	respond.Success(c, respond.ToIndexerFileResponse(file, h.indexerFileService, getIndexerBaseUrl()))
 }
 
 // GetByPinID get file information by PIN ID
@@ -81,8 +96,7 @@ func (h *IndexerQueryHandler) GetByPinID(c *gin.Context) {
 		respond.NotFound(c, err.Error())
 		return
 	}
-
-	respond.Success(c, respond.ToIndexerFileResponse(file))
+	respond.Success(c, respond.ToIndexerFileResponse(file, h.indexerFileService, getIndexerBaseUrl()))
 }
 
 // GetPinInfoByPinID get PIN information by PIN ID from collectionPinInfo
@@ -144,43 +158,49 @@ func (h *IndexerQueryHandler) GetByCreatorAddress(c *gin.Context) {
 		return
 	}
 
-	respond.Success(c, respond.ToIndexerFileListResponse(files, nextCursor, hasMore))
+	respond.Success(c, respond.ToIndexerFileListResponse(files, nextCursor, hasMore, h.indexerFileService, getIndexerBaseUrl()))
 }
 
-// GetByCreatorMetaID get file list by creator MetaID
-// @Summary      Get files by creator MetaID
-// @Description  Query file list by creator MetaID with cursor pagination
+// GetByCreatorMetaID get file list by creator MetaID or GlobalMetaID
+// @Summary      Get files by creator MetaID or GlobalMetaID
+// @Description  Query file list by creator MetaID or GlobalMetaID with cursor pagination (param is metaId or globalMetaId)
 // @Tags         Indexer File Query
 // @Accept       json
 // @Produce      json
-// @Param        metaId   path   string  true   "Creator MetaID"
-// @Param        cursor   query  int     false  "Cursor" default(0)
-// @Param        size     query  int     false  "Page size"             default(20)
-// @Success      200      {object}  respond.Response{data=respond.IndexerFileListResponse}
-// @Failure      500      {object}  respond.Response
-// @Router       /files/metaid/{metaId} [get]
+// @Param        metaidOrGlobalMetaId  path   string  true   "Creator MetaID or GlobalMetaID"
+// @Param        cursor                query  int     false  "Cursor" default(0)
+// @Param        size                  query  int     false  "Page size" default(20)
+// @Success      200                   {object}  respond.Response{data=respond.IndexerFileListResponse}
+// @Failure      500                   {object}  respond.Response
+// @Router       /files/metaid/{metaidOrGlobalMetaId} [get]
 func (h *IndexerQueryHandler) GetByCreatorMetaID(c *gin.Context) {
-	metaID := c.Param("metaId")
-	if metaID == "" {
-		respond.InvalidParam(c, "metaId is required")
+	metaidOrGlobalMetaId := c.Param("metaidOrGlobalMetaId")
+	if metaidOrGlobalMetaId == "" {
+		respond.InvalidParam(c, "metaidOrGlobalMetaId is required")
 		return
 	}
 
-	// Get cursor and size parameters
 	cursorStr := c.DefaultQuery("cursor", "0")
 	sizeStr := c.DefaultQuery("size", "20")
-
 	cursor, _ := strconv.ParseInt(cursorStr, 10, 64)
 	size, _ := strconv.Atoi(sizeStr)
 
-	// Query file list
-	files, nextCursor, hasMore, err := h.indexerFileService.GetFilesByCreatorMetaID(metaID, cursor, size)
+	var files []*model.IndexerFile
+	var nextCursor int64
+	var hasMore bool
+	var err error
+
+	if common_service.IsGlobalMetaId(metaidOrGlobalMetaId) {
+		files, nextCursor, hasMore, err = h.indexerFileService.GetFilesByCreatorGlobalMetaID(metaidOrGlobalMetaId, cursor, size)
+	} else {
+		files, nextCursor, hasMore, err = h.indexerFileService.GetFilesByCreatorMetaID(metaidOrGlobalMetaId, cursor, size)
+	}
 	if err != nil {
 		respond.ServerError(c, err.Error())
 		return
 	}
 
-	respond.Success(c, respond.ToIndexerFileListResponse(files, nextCursor, hasMore))
+	respond.Success(c, respond.ToIndexerFileListResponse(files, nextCursor, hasMore, h.indexerFileService, getIndexerBaseUrl()))
 }
 
 // ListFiles get file list with cursor pagination
@@ -209,7 +229,216 @@ func (h *IndexerQueryHandler) ListFiles(c *gin.Context) {
 		return
 	}
 
-	respond.Success(c, respond.ToIndexerFileListResponse(files, nextCursor, hasMore))
+	respond.Success(c, respond.ToIndexerFileListResponse(files, nextCursor, hasMore, h.indexerFileService, getIndexerBaseUrl()))
+}
+
+// normalizeExtension 归一化扩展名：小写、带前导点（与 DB 索引一致）
+func normalizeExtension(ext string) string {
+	ext = strings.TrimSpace(strings.ToLower(ext))
+	if ext == "" {
+		return ""
+	}
+	if !strings.HasPrefix(ext, ".") {
+		return "." + ext
+	}
+	return ext
+}
+
+// parseExtensionsQuery supports both:
+// - multi: extension=.jpg&extension=.png
+// - csv:   extension=.jpg,.png
+func parseExtensionsQuery(c *gin.Context) []string {
+	rawExts := c.QueryArray("extension")
+	var extensions []string
+	seen := make(map[string]struct{})
+	for _, raw := range rawExts {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		parts := []string{raw}
+		if strings.Contains(raw, ",") {
+			parts = strings.Split(raw, ",")
+		}
+		for _, p := range parts {
+			e := normalizeExtension(p)
+			if e == "" {
+				continue
+			}
+			if _, ok := seen[e]; ok {
+				continue
+			}
+			seen[e] = struct{}{}
+			extensions = append(extensions, e)
+		}
+	}
+	return extensions
+}
+
+// extractTimestamp16FromKey 从 extension 索引 key（格式 extension:ts16 或 globalMetaId:extension:ts16）中取出 16 位 timestamp
+func extractTimestamp16FromKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	i := strings.LastIndex(key, ":")
+	if i < 0 {
+		return key
+	}
+	return key[i+1:]
+}
+
+// mergeFilesByExtension 合并多 extension 的结果：按 Timestamp 降序、PinID 升序，去重后取前 size 条；nextTimestamp 用最后一条的 10 位秒+000000
+func mergeFilesByExtension(filesByExt [][]*model.IndexerFile, size int) ([]*model.IndexerFile, string, bool) {
+	var all []*model.IndexerFile
+	for _, list := range filesByExt {
+		all = append(all, list...)
+	}
+	if len(all) == 0 {
+		return nil, "", false
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Timestamp != all[j].Timestamp {
+			return all[i].Timestamp > all[j].Timestamp
+		}
+		return all[i].PinID < all[j].PinID
+	})
+	seen := make(map[string]struct{})
+	var out []*model.IndexerFile
+	for _, f := range all {
+		if _, ok := seen[f.PinID]; ok {
+			continue
+		}
+		seen[f.PinID] = struct{}{}
+		out = append(out, f)
+		if len(out) >= size {
+			break
+		}
+	}
+	hasMore := len(out) == size && len(all) > size
+	var nextTimestamp string
+	if len(out) > 0 {
+		last := out[len(out)-1]
+		nextTimestamp = fmt.Sprintf("%010d000000", last.Timestamp)
+	}
+	return out, nextTimestamp, hasMore
+}
+
+// GetFilesByExtension get file list by file extension (global), reverse time order; extension as query (array supported)
+// @Summary      Get files by extension
+// @Description  Query file list by file extension (e.g. .jpg, .png), reverse time order; extension can be repeated for multiple. Paginate with timestamp (16-digit).
+// @Tags         Indexer File Query
+// @Accept       json
+// @Produce      json
+// @Param        extension  query  []string  true   "File extension(s), supports multi (extension=.jpg&extension=.png) and csv (extension=.jpg,.png)"
+// @Param        timestamp  query  string    false  "Next page: 16-digit timestamp from previous response next_timestamp"
+// @Param        size       query  int       false  "Page size" default(20)
+// @Success      200        {object}  respond.Response{data=respond.IndexerFileListByExtensionResponse}
+// @Failure      500        {object}  respond.Response
+// @Router       /files/extension [get]
+func (h *IndexerQueryHandler) GetFilesByExtension(c *gin.Context) {
+	extensions := parseExtensionsQuery(c)
+	if len(extensions) == 0 {
+		respond.InvalidParam(c, "extension is required (query, supports: extension=.jpg&extension=.png or extension=.jpg,.png)")
+		return
+	}
+	timestamp := c.DefaultQuery("timestamp", "")
+	sizeStr := c.DefaultQuery("size", "20")
+	size, _ := strconv.Atoi(sizeStr)
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	var files []*model.IndexerFile
+	var nextTimestamp string
+	var hasMore bool
+	if len(extensions) == 1 {
+		var nextCursor string
+		var err error
+		files, nextCursor, hasMore, err = h.indexerFileService.ListFilesByExtension(extensions[0], timestamp, size)
+		if err != nil {
+			respond.ServerError(c, err.Error())
+			return
+		}
+		nextTimestamp = extractTimestamp16FromKey(nextCursor)
+	} else {
+		fetchSize := size * len(extensions)
+		if fetchSize > 500 {
+			fetchSize = 500
+		}
+		var filesByExt [][]*model.IndexerFile
+		for _, ext := range extensions {
+			list, _, _, err := h.indexerFileService.ListFilesByExtension(ext, timestamp, fetchSize)
+			if err != nil {
+				respond.ServerError(c, err.Error())
+				return
+			}
+			filesByExt = append(filesByExt, list)
+		}
+		files, nextTimestamp, hasMore = mergeFilesByExtension(filesByExt, size)
+	}
+	respond.Success(c, respond.ToIndexerFileListByExtensionResponse(files, nextTimestamp, hasMore, h.indexerFileService, getIndexerBaseUrl()))
+}
+
+// GetFilesByGlobalMetaIDAndExtension get file list by globalMetaID and file extension; extension as query (array supported)
+// @Summary      Get files by globalMetaID and extension
+// @Description  Query file list by globalMetaID and file extension(s), reverse time order; extension can be repeated. Paginate with timestamp (16-digit).
+// @Tags         Indexer File Query
+// @Accept       json
+// @Produce      json
+// @Param        metaidOrGlobalMetaId  path     string    true   "Global MetaID (path segment shared with metaid route)"
+// @Param        extension            query    []string  true  "File extension(s), supports multi (extension=.jpg&extension=.png) and csv (extension=.jpg,.png)"
+// @Param        timestamp            query    string    false "Next page: 16-digit timestamp from previous response next_timestamp"
+// @Param        size                 query    int       false "Page size" default(20)
+// @Success      200                  {object}  respond.Response{data=respond.IndexerFileListByExtensionResponse}
+// @Failure      500                  {object}  respond.Response
+// @Router       /files/metaid/{metaidOrGlobalMetaId}/extension [get]
+func (h *IndexerQueryHandler) GetFilesByGlobalMetaIDAndExtension(c *gin.Context) {
+	globalMetaID := c.Param("metaidOrGlobalMetaId")
+	if globalMetaID == "" {
+		respond.InvalidParam(c, "metaidOrGlobalMetaId is required")
+		return
+	}
+	extensions := parseExtensionsQuery(c)
+	if len(extensions) == 0 {
+		respond.InvalidParam(c, "extension is required (query, supports: extension=.jpg&extension=.png or extension=.jpg,.png)")
+		return
+	}
+	timestamp := c.DefaultQuery("timestamp", "")
+	sizeStr := c.DefaultQuery("size", "20")
+	size, _ := strconv.Atoi(sizeStr)
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	var files []*model.IndexerFile
+	var nextTimestamp string
+	var hasMore bool
+	if len(extensions) == 1 {
+		var nextCursor string
+		var err error
+		files, nextCursor, hasMore, err = h.indexerFileService.ListFilesByGlobalMetaIDAndExtension(globalMetaID, extensions[0], timestamp, size)
+		if err != nil {
+			respond.ServerError(c, err.Error())
+			return
+		}
+		nextTimestamp = extractTimestamp16FromKey(nextCursor)
+	} else {
+		fetchSize := size * len(extensions)
+		if fetchSize > 500 {
+			fetchSize = 500
+		}
+		var filesByExt [][]*model.IndexerFile
+		for _, ext := range extensions {
+			list, _, _, err := h.indexerFileService.ListFilesByGlobalMetaIDAndExtension(globalMetaID, ext, timestamp, fetchSize)
+			if err != nil {
+				respond.ServerError(c, err.Error())
+				return
+			}
+			filesByExt = append(filesByExt, list)
+		}
+		files, nextTimestamp, hasMore = mergeFilesByExtension(filesByExt, size)
+	}
+	respond.Success(c, respond.ToIndexerFileListByExtensionResponse(files, nextTimestamp, hasMore, h.indexerFileService, getIndexerBaseUrl()))
 }
 
 // GetLatestFileContentByFirstPinID get latest file content by first PIN ID

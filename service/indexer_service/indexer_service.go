@@ -878,39 +878,41 @@ func (s *IndexerService) processFileContentCreate(metaData *indexer.MetaIDData, 
 
 	// Calculate Creator MetaID (SHA256 of address)
 	creatorMetaID := calculateMetaID(creatorAddress)
+	globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
 
 	// Create database record
 	indexerFile := &model.IndexerFile{
-		FirstPinID:       firstPinID,
-		FirstPath:        firstPath,
-		PinID:            metaData.PinID,
-		TxID:             metaData.TxID,
-		Vout:             metaData.Vout,
-		Path:             metaData.Path,
-		Operation:        metaData.Operation,
-		ParentPath:       metaData.ParentPath,
-		Encryption:       metaData.Encryption,
-		Version:          metaData.Version,
-		ContentType:      metaData.ContentType,
-		ChunkType:        model.ChunkTypeSingle,
-		FileType:         fileType,
-		FileExtension:    fileExtension,
-		FileName:         fileName,
-		FileSize:         int64(len(fileContent)),
-		FileMd5:          fileMd5,
-		FileHash:         fileHash,
-		IsGzipCompressed: isCompressed,
-		StorageType:      storageType,
-		StoragePath:      storagePath,
-		ChainName:        metaData.ChainName,
-		BlockHeight:      height,
-		Timestamp:        timestamp,
-		CreatorMetaId:    creatorMetaID,
-		CreatorAddress:   creatorAddress, // Use real creator address
-		OwnerAddress:     metaData.OwnerAddress,
-		OwnerMetaId:      calculateMetaID(metaData.OwnerAddress),
-		Status:           model.StatusSuccess,
-		State:            0,
+		FirstPinID:          firstPinID,
+		FirstPath:           firstPath,
+		PinID:               metaData.PinID,
+		TxID:                metaData.TxID,
+		Vout:                metaData.Vout,
+		Path:                metaData.Path,
+		Operation:           metaData.Operation,
+		ParentPath:          metaData.ParentPath,
+		Encryption:          metaData.Encryption,
+		Version:             metaData.Version,
+		ContentType:         metaData.ContentType,
+		ChunkType:           model.ChunkTypeSingle,
+		FileType:            fileType,
+		FileExtension:       fileExtension,
+		FileName:            fileName,
+		FileSize:            int64(len(fileContent)),
+		FileMd5:             fileMd5,
+		FileHash:            fileHash,
+		IsGzipCompressed:    isCompressed,
+		StorageType:         storageType,
+		StoragePath:         storagePath,
+		ChainName:           metaData.ChainName,
+		BlockHeight:         height,
+		Timestamp:           timestamp,
+		CreatorMetaId:       creatorMetaID,
+		CreatorAddress:      creatorAddress, // Use real creator address
+		CreatorGlobalMetaId: globalMetaId,
+		OwnerAddress:        metaData.OwnerAddress,
+		OwnerMetaId:         calculateMetaID(metaData.OwnerAddress),
+		Status:              model.StatusSuccess,
+		State:               0,
 	}
 
 	// Save to database
@@ -983,6 +985,7 @@ func (s *IndexerService) processFileContentModify(metaData *indexer.MetaIDData, 
 	}
 
 	creatorMetaID := calculateMetaID(creatorAddress)
+	globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
 
 	// Use firstPinID from parameter (resolved from @pinId reference)
 	if firstPinID == "" {
@@ -991,36 +994,37 @@ func (s *IndexerService) processFileContentModify(metaData *indexer.MetaIDData, 
 
 	// Create database record
 	indexerFile := &model.IndexerFile{
-		FirstPinID:       firstPinID, // Reference to first create PIN
-		FirstPath:        firstPath,
-		PinID:            metaData.PinID,
-		TxID:             metaData.TxID,
-		Vout:             metaData.Vout,
-		Path:             metaData.Path,
-		Operation:        metaData.Operation,
-		ParentPath:       metaData.ParentPath,
-		Encryption:       metaData.Encryption,
-		Version:          metaData.Version,
-		ContentType:      metaData.ContentType,
-		ChunkType:        model.ChunkTypeSingle,
-		FileType:         fileType,
-		FileExtension:    fileExtension,
-		FileName:         fileName,
-		FileSize:         int64(len(fileContent)),
-		FileMd5:          fileMd5,
-		FileHash:         fileHash,
-		IsGzipCompressed: isCompressed,
-		StorageType:      storageType,
-		StoragePath:      storagePath,
-		ChainName:        metaData.ChainName,
-		BlockHeight:      height,
-		Timestamp:        timestamp,
-		CreatorMetaId:    creatorMetaID,
-		CreatorAddress:   creatorAddress,
-		OwnerAddress:     metaData.OwnerAddress,
-		OwnerMetaId:      calculateMetaID(metaData.OwnerAddress),
-		Status:           model.StatusSuccess,
-		State:            0,
+		FirstPinID:          firstPinID, // Reference to first create PIN
+		FirstPath:           firstPath,
+		PinID:               metaData.PinID,
+		TxID:                metaData.TxID,
+		Vout:                metaData.Vout,
+		Path:                metaData.Path,
+		Operation:           metaData.Operation,
+		ParentPath:          metaData.ParentPath,
+		Encryption:          metaData.Encryption,
+		Version:             metaData.Version,
+		ContentType:         metaData.ContentType,
+		ChunkType:           model.ChunkTypeSingle,
+		FileType:            fileType,
+		FileExtension:       fileExtension,
+		CreatorGlobalMetaId: globalMetaId,
+		FileName:            fileName,
+		FileSize:            int64(len(fileContent)),
+		FileMd5:             fileMd5,
+		FileHash:            fileHash,
+		IsGzipCompressed:    isCompressed,
+		StorageType:         storageType,
+		StoragePath:         storagePath,
+		ChainName:           metaData.ChainName,
+		BlockHeight:         height,
+		Timestamp:           timestamp,
+		CreatorMetaId:       creatorMetaID,
+		CreatorAddress:      creatorAddress,
+		OwnerAddress:        metaData.OwnerAddress,
+		OwnerMetaId:         calculateMetaID(metaData.OwnerAddress),
+		Status:              model.StatusSuccess,
+		State:               0,
 	}
 
 	if err := s.indexerFileDAO.Create(indexerFile); err != nil {
@@ -1048,81 +1052,6 @@ func (s *IndexerService) processFileContentModify(metaData *indexer.MetaIDData, 
 
 	return nil
 }
-
-// // processAvatarContent process and save avatar content
-// func (s *IndexerService) processAvatarContent(metaData *indexer.MetaIDData, height, timestamp int64) error {
-// 	// Get real creator address from CreatorInputLocation if available
-// 	creatorAddress := metaData.CreatorAddress
-// 	if metaData.CreatorInputLocation != "" {
-// 		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
-// 		if err != nil {
-// 			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
-// 				metaData.CreatorInputLocation, err)
-// 		} else {
-// 			creatorAddress = realAddress
-// 			log.Printf("Found real creator address for avatar: %s (from location: %s)", realAddress, metaData.CreatorInputLocation)
-// 		}
-// 	}
-
-// 	// Detect real content type from file content
-// 	realContentType := detectRealContentType(metaData.Content, metaData.ContentType)
-
-// 	// Extract file extension from real content type
-// 	fileExtension := extractAvatarFileExtension(realContentType, metaData.Content)
-
-// 	// Calculate file hashes
-// 	fileMd5 := calculateMD5(metaData.Content)
-// 	fileHash := calculateSHA256(metaData.Content)
-
-// 	// Detect file type from real content type
-// 	fileType := detectFileType(realContentType)
-
-// 	// Determine storage path: indexer/avatar/{chain}/{txid}/{pinid}{extension}
-// 	// Use pinID as filename to ensure uniqueness, with file extension
-// 	storagePath := fmt.Sprintf("indexer/avatar/%s/%s/%s%s",
-// 		metaData.ChainName,
-// 		metaData.TxID,
-// 		metaData.PinID,
-// 		fileExtension)
-
-// 	// Save file to storage
-// 	if err := s.storage.Save(storagePath, metaData.Content); err != nil {
-// 		return fmt.Errorf("failed to save avatar to storage: %w", err)
-// 	}
-
-// 	log.Printf("Avatar saved to storage: %s (size: %d bytes)", storagePath, len(metaData.Content))
-
-// 	// Calculate Creator MetaID (SHA256 of address)
-// 	creatorMetaID := calculateMetaID(creatorAddress)
-
-// 	// Create database record
-// 	indexerUserAvatar := &model.IndexerUserAvatar{
-// 		PinID:         metaData.PinID,
-// 		TxID:          metaData.TxID,
-// 		MetaId:        creatorMetaID,
-// 		Address:       creatorAddress, // Use real creator address
-// 		Avatar:        storagePath,
-// 		ContentType:   metaData.ContentType,
-// 		FileSize:      int64(len(metaData.Content)),
-// 		FileMd5:       fileMd5,
-// 		FileHash:      fileHash,
-// 		FileExtension: fileExtension,
-// 		FileType:      fileType,
-// 		ChainName:     metaData.ChainName,
-// 		BlockHeight:   height,
-// 		Timestamp:     timestamp,
-// 	}
-
-// 	// Save to database
-// 	if err := s.indexerUserAvatarDAO.Create(indexerUserAvatar); err != nil {
-// 		return fmt.Errorf("failed to save avatar to database: %w", err)
-// 	}
-
-// 	log.Printf("Avatar indexed successfully: PIN=%s, Path=%s, Type=%s, Ext=%s, Size=%d, MetaID=%s, Address=%s",
-// 		metaData.PinID, metaData.Path, fileType, fileExtension, len(metaData.Content), creatorMetaID, creatorAddress)
-
-// 	return nil
-// }
 
 // processUserNameContent process and save user name content
 func (s *IndexerService) processUserNameContent(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
@@ -1880,6 +1809,7 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, first
 
 		// Calculate Creator MetaID
 		creatorMetaID := calculateMetaID(creatorAddress)
+		globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
 
 		data, err := json.Marshal(metaFileIndex)
 		if err != nil {
@@ -1897,37 +1827,38 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, first
 
 		// Create database record for merged file
 		indexerFile := &model.IndexerFile{
-			FirstPinID:       fileFirstPinID,
-			FirstPath:        firstPath,
-			PinID:            indexPinID,
-			TxID:             metaData.TxID,
-			Vout:             metaData.Vout,
-			Path:             metaData.Path,
-			Operation:        metaData.Operation,
-			ParentPath:       metaData.ParentPath,
-			Encryption:       metaData.Encryption,
-			Version:          metaData.Version,
-			ContentType:      metaFileIndex.DataType,
-			Data:             string(data),
-			ChunkType:        model.ChunkTypeMulti,
-			FileType:         fileType,
-			FileExtension:    fileExtension,
-			FileName:         metaFileIndex.Name,
-			FileSize:         metaFileIndex.FileSize,
-			FileMd5:          fileMd5,
-			FileHash:         fileHash,
-			IsGzipCompressed: allChunksCompressed,
-			StorageType:      storageType,
-			StoragePath:      storagePath,
-			ChainName:        metaData.ChainName,
-			BlockHeight:      height,
-			Timestamp:        timestamp,
-			CreatorMetaId:    creatorMetaID,
-			CreatorAddress:   creatorAddress,
-			OwnerAddress:     metaData.OwnerAddress,
-			OwnerMetaId:      calculateMetaID(metaData.OwnerAddress),
-			Status:           model.StatusSuccess,
-			State:            0,
+			FirstPinID:          fileFirstPinID,
+			FirstPath:           firstPath,
+			PinID:               indexPinID,
+			TxID:                metaData.TxID,
+			Vout:                metaData.Vout,
+			Path:                metaData.Path,
+			Operation:           metaData.Operation,
+			ParentPath:          metaData.ParentPath,
+			Encryption:          metaData.Encryption,
+			Version:             metaData.Version,
+			ContentType:         metaFileIndex.DataType,
+			Data:                string(data),
+			ChunkType:           model.ChunkTypeMulti,
+			FileType:            fileType,
+			FileExtension:       fileExtension,
+			FileName:            metaFileIndex.Name,
+			FileSize:            metaFileIndex.FileSize,
+			FileMd5:             fileMd5,
+			FileHash:            fileHash,
+			IsGzipCompressed:    allChunksCompressed,
+			StorageType:         storageType,
+			StoragePath:         storagePath,
+			ChainName:           metaData.ChainName,
+			BlockHeight:         height,
+			Timestamp:           timestamp,
+			CreatorMetaId:       creatorMetaID,
+			CreatorAddress:      creatorAddress,
+			CreatorGlobalMetaId: globalMetaId,
+			OwnerAddress:        metaData.OwnerAddress,
+			OwnerMetaId:         calculateMetaID(metaData.OwnerAddress),
+			Status:              model.StatusSuccess,
+			State:               0,
 		}
 
 		// Save to database

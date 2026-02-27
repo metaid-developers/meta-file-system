@@ -465,6 +465,73 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "/files/extension": {
+            "get": {
+                "description": "Query file list by file extension (e.g. .jpg, .png), reverse time order; extension can be repeated for multiple. Paginate with timestamp (16-digit).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer File Query"
+                ],
+                "summary": "Get files by extension",
+                "parameters": [
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "File extension(s), e.g. extension=.jpg\u0026extension=.png",
+                        "name": "extension",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Next page: 16-digit timestamp from previous response next_timestamp",
+                        "name": "timestamp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerFileListByExtensionResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/files/latest/{firstPinId}": {
             "get": {
                 "description": "Query latest file details by first PIN ID",
@@ -515,9 +582,9 @@ const docTemplateindexer = `{
                 }
             }
         },
-        "/files/metaid/{metaId}": {
+        "/files/metaid/{metaidOrGlobalMetaId}": {
             "get": {
-                "description": "Query file list by creator MetaID with cursor pagination",
+                "description": "Query file list by creator MetaID or GlobalMetaID with cursor pagination (param is metaId or globalMetaId)",
                 "consumes": [
                     "application/json"
                 ],
@@ -527,12 +594,12 @@ const docTemplateindexer = `{
                 "tags": [
                     "Indexer File Query"
                 ],
-                "summary": "Get files by creator MetaID",
+                "summary": "Get files by creator MetaID or GlobalMetaID",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Creator MetaID",
-                        "name": "metaId",
+                        "description": "Creator MetaID or GlobalMetaID",
+                        "name": "metaidOrGlobalMetaId",
                         "in": "path",
                         "required": true
                     },
@@ -564,6 +631,80 @@ const docTemplateindexer = `{
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/meta-file-system_controller_respond.IndexerFileListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/metaid/{metaidOrGlobalMetaId}/extension": {
+            "get": {
+                "description": "Query file list by globalMetaID and file extension(s), reverse time order; extension can be repeated. Paginate with timestamp (16-digit).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer File Query"
+                ],
+                "summary": "Get files by globalMetaID and extension",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Global MetaID (path segment shared with metaid route)",
+                        "name": "metaidOrGlobalMetaId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "File extension(s), e.g. extension=.jpg\u0026extension=.png",
+                        "name": "extension",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Next page: 16-digit timestamp from previous response next_timestamp",
+                        "name": "timestamp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerFileListByExtensionResponse"
                                         }
                                     }
                                 }
@@ -1368,6 +1509,25 @@ const docTemplateindexer = `{
         }
     },
     "definitions": {
+        "meta-file-system_controller_respond.IndexerFileListByExtensionResponse": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meta-file-system_controller_respond.IndexerFileResponse"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "next_timestamp": {
+                    "type": "string",
+                    "example": "1699123456082917"
+                }
+            }
+        },
         "meta-file-system_controller_respond.IndexerFileListResponse": {
             "type": "object",
             "properties": {
@@ -1405,6 +1565,10 @@ const docTemplateindexer = `{
                 "creator_address": {
                     "type": "string",
                     "example": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+                },
+                "creator_global_meta_id": {
+                    "type": "string",
+                    "example": "idaddress..."
                 },
                 "creator_meta_id": {
                     "type": "string",
@@ -1471,6 +1635,9 @@ const docTemplateindexer = `{
                 "tx_id": {
                     "type": "string",
                     "example": "abc123def456789"
+                },
+                "user_info": {
+                    "$ref": "#/definitions/meta-file-system_controller_respond.MetaIDUserInfo"
                 }
             }
         },
@@ -1603,6 +1770,10 @@ const docTemplateindexer = `{
                 "name": {
                     "type": "string",
                     "example": "John Doe"
+                },
+                "nameId": {
+                    "type": "string",
+                    "example": "abc123def456i0"
                 }
             }
         },

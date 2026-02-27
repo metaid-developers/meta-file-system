@@ -101,6 +101,12 @@ func initAll() (*indexer_service.IndexerService, *http.Server, func()) {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// Run schema migrations (Pebble: backfill extension/global_meta indexes when version < latest)
+	migrateSvc := indexer_service.NewMigrateService()
+	if err := migrateSvc.Run(); err != nil {
+		log.Fatalf("Failed to run schema migrations: %v", err)
+	}
+
 	// Initialize Redis (optional, won't fail if disabled or unavailable)
 	if err := database.InitRedis(); err != nil {
 		log.Printf("⚠️  Redis initialization failed (cache will be disabled): %v", err)

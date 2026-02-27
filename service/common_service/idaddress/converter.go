@@ -89,7 +89,11 @@ func ConvertFromBitcoin(bitcoinAddr string) (string, error) {
 	}
 
 	// 尝试Bech32解码 (SegWit地址)
-	// 这里假设输入是传统地址，如果需要支持Bech32，需要添加相应的解码逻辑
+	hrp, witnessVersion, program, _, err := Bech32Decode(bitcoinAddr)
+	if err == nil {
+		return convertFromSegWitBitcoin(hrp, witnessVersion, program)
+	}
+
 	return "", fmt.Errorf("unsupported address format: %s", bitcoinAddr)
 }
 
@@ -113,6 +117,36 @@ func convertFromLegacyBitcoin(version byte, payload []byte) (string, error) {
 	}
 }
 
+// convertFromSegWitBitcoin 从 SegWit 比特币地址转换
+func convertFromSegWitBitcoin(hrp string, witnessVersion byte, program []byte) (string, error) {
+	// 只支持主网和测试网
+	if hrp != "bc" && hrp != "tb" {
+		return "", fmt.Errorf("unsupported network: %s", hrp)
+	}
+
+	// 根据见证版本和程序长度确定地址类型
+	switch witnessVersion {
+	case 0:
+		// SegWit v0
+		if len(program) == 20 {
+			// P2WPKH
+			return EncodeIDAddress(VersionP2WPKH, program)
+		} else if len(program) == 32 {
+			// P2WSH
+			return EncodeIDAddress(VersionP2WSH, program)
+		}
+		return "", fmt.Errorf("invalid witness v0 program length: %d", len(program))
+	case 1:
+		// Taproot (P2TR)
+		if len(program) == 32 {
+			return EncodeIDAddress(VersionP2TR, program)
+		}
+		return "", fmt.Errorf("invalid taproot program length: %d", len(program))
+	default:
+		return "", fmt.Errorf("unsupported witness version: %d", witnessVersion)
+	}
+}
+
 // ConvertToBitcoin 从ID地址转换为比特币地址
 func ConvertToBitcoin(idAddr string, network string) (string, error) {
 	info, err := DecodeIDAddress(idAddr)
@@ -120,25 +154,57 @@ func ConvertToBitcoin(idAddr string, network string) (string, error) {
 		return "", err
 	}
 
-	var version byte
+	// 确定 HRP
+	hrp := "bc"
+	if network == "testnet" {
+		hrp = "tb"
+	}
+
 	switch info.Version {
 	case VersionP2PKH:
+		// 传统 P2PKH 地址
+		var version byte
 		if network == "mainnet" {
 			version = 0x00
 		} else {
 			version = 0x6F
 		}
+		return Base58CheckEncode(version, info.Data), nil
+
 	case VersionP2SH:
+		// 传统 P2SH 地址
+		var version byte
 		if network == "mainnet" {
 			version = 0x05
 		} else {
 			version = 0xC4
 		}
+		return Base58CheckEncode(version, info.Data), nil
+
+	case VersionP2WPKH:
+		// SegWit v0 P2WPKH
+		if len(info.Data) != 20 {
+			return "", fmt.Errorf("invalid P2WPKH data length: %d", len(info.Data))
+		}
+		return Bech32Encode(hrp, 0, info.Data)
+
+	case VersionP2WSH:
+		// SegWit v0 P2WSH
+		if len(info.Data) != 32 {
+			return "", fmt.Errorf("invalid P2WSH data length: %d", len(info.Data))
+		}
+		return Bech32Encode(hrp, 0, info.Data)
+
+	case VersionP2TR:
+		// Taproot P2TR
+		if len(info.Data) != 32 {
+			return "", fmt.Errorf("invalid P2TR data length: %d", len(info.Data))
+		}
+		return Bech32Encode(hrp, 1, info.Data)
+
 	default:
 		return "", fmt.Errorf("cannot convert version %d to Bitcoin address", info.Version)
 	}
-
-	return Base58CheckEncode(version, info.Data), nil
 }
 
 // ConvertToDogecoin 从ID地址转换为狗狗币地址

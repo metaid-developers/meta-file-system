@@ -13,11 +13,21 @@ type Database interface {
 	ListIndexerFilesWithCursor(cursor int64, size int) ([]*model.IndexerFile, int64, error)
 	GetIndexerFilesByCreatorAddressWithCursor(address string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
 	GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
+	GetIndexerFilesByCreatorGlobalMetaIDWithCursor(globalMetaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
+	GetIndexerFilesByExtensionWithCursor(extension string, cursor string, size int) ([]*model.IndexerFile, string, error)
+	GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(globalMetaID string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error)
 	GetIndexerFilesCount() (int64, error)
 	GetIndexerFilesCountByChain(chainName string) (int64, error)
 	GetLatestFileInfoByFirstPinID(firstPinID string) (*model.IndexerFile, error)
 	AddFileInfoHistory(history *model.FileInfoHistory, firstPinID string) error
 	GetFileInfoHistory(firstPinID string) ([]model.FileInfoHistory, error)
+
+	// Schema version (for migrate)
+	GetIndexerSchemaVersion() (int, error)
+	SetIndexerSchemaVersion(version int) error
+	// Migrate helpers: iterate latest file info; write file to global_meta + extension indexes only
+	IterateLatestFileInfo(fn func(*model.IndexerFile) error) error
+	WriteFileToExtensionAndGlobalMetaIndexes(file *model.IndexerFile) error
 
 	// IndexerUserAvatar operations
 	CreateIndexerUserAvatar(avatar *model.IndexerUserAvatar) error

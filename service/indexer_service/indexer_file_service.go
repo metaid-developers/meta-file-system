@@ -129,6 +129,19 @@ func (s *IndexerFileService) GetFilesByCreatorMetaID(metaID string, cursor int64
 	return files, nextCursor, hasMore, nil
 }
 
+// GetFilesByCreatorGlobalMetaID get file list by creator GlobalMetaID with cursor pagination
+func (s *IndexerFileService) GetFilesByCreatorGlobalMetaID(globalMetaID string, cursor int64, size int) ([]*model.IndexerFile, int64, bool, error) {
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	files, nextCursor, err := s.indexerFileDAO.GetByCreatorGlobalMetaIDWithCursor(globalMetaID, cursor, size)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("failed to get files by creator GlobalMetaID: %w", err)
+	}
+	hasMore := len(files) == size
+	return files, nextCursor, hasMore, nil
+}
+
 // ListFiles get file list with cursor pagination
 // cursor: number of records to skip (0 for first page)
 // size: page size
@@ -146,6 +159,32 @@ func (s *IndexerFileService) ListFiles(cursor int64, size int) ([]*model.Indexer
 	// Determine has_more: if we got exactly size records, there might be more
 	hasMore := len(files) == size
 
+	return files, nextCursor, hasMore, nil
+}
+
+// ListFilesByExtension get file list by file extension (global), reverse time order, key-based cursor pagination
+func (s *IndexerFileService) ListFilesByExtension(extension string, cursor string, size int) ([]*model.IndexerFile, string, bool, error) {
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	files, nextCursor, err := s.indexerFileDAO.GetByExtensionWithCursor(extension, cursor, size)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("failed to list files by extension: %w", err)
+	}
+	hasMore := nextCursor != ""
+	return files, nextCursor, hasMore, nil
+}
+
+// ListFilesByGlobalMetaIDAndExtension get file list by globalMetaID and file extension, reverse time order, key-based cursor pagination
+func (s *IndexerFileService) ListFilesByGlobalMetaIDAndExtension(globalMetaID string, extension string, cursor string, size int) ([]*model.IndexerFile, string, bool, error) {
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	files, nextCursor, err := s.indexerFileDAO.GetByGlobalMetaIDAndExtensionWithCursor(globalMetaID, extension, cursor, size)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("failed to list files by globalMetaID and extension: %w", err)
+	}
+	hasMore := nextCursor != ""
 	return files, nextCursor, hasMore, nil
 }
 

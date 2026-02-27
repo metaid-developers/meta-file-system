@@ -35,13 +35,14 @@ type IndexerFile struct {
 	StoragePath string `gorm:"type:varchar(500)" json:"storage_path"` // Storage path
 
 	// Blockchain related fields
-	ChainName      string `gorm:"type:varchar(20);not null" json:"chain_name"`    // btc/mvc
-	BlockHeight    int64  `gorm:"index" json:"block_height"`                      // Block height
-	Timestamp      int64  `gorm:"index" json:"timestamp"`                         // Timestamp (seconds since epoch)
-	CreatorMetaId  string `gorm:"index;type:varchar(64)" json:"creator_meta_id"`  // Creator MetaID (SHA256 hash)
-	CreatorAddress string `gorm:"index;type:varchar(100)" json:"creator_address"` // Creator address
-	OwnerAddress   string `gorm:"index;type:varchar(100)" json:"owner_address"`   // Owner address (current)
-	OwnerMetaId    string `gorm:"index;type:varchar(64)" json:"owner_meta_id"`    // Owner MetaID (SHA256 hash)
+	ChainName           string `gorm:"type:varchar(20);not null" json:"chain_name"`    // btc/mvc
+	BlockHeight         int64  `gorm:"index" json:"block_height"`                      // Block height
+	Timestamp           int64  `gorm:"index" json:"timestamp"`                         // Timestamp (seconds since epoch)
+	CreatorMetaId       string `gorm:"index;type:varchar(64)" json:"creator_meta_id"`  // Creator MetaID (SHA256 hash)
+	CreatorAddress      string `gorm:"index;type:varchar(100)" json:"creator_address"` // Creator address
+	CreatorGlobalMetaId string `gorm:"-" json:"creator_global_meta_id,omitempty"`      // GlobalMetaID (IDAddress), for extension index; set by indexer, not stored in MySQL
+	OwnerAddress        string `gorm:"index;type:varchar(100)" json:"owner_address"`   // Owner address (current)
+	OwnerMetaId         string `gorm:"index;type:varchar(64)" json:"owner_meta_id"`    // Owner MetaID (SHA256 hash)
 
 	// Status fields
 	Status Status `gorm:"type:varchar(20);default:'success'" json:"status"` // success/failed

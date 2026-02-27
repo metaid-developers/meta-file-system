@@ -3,6 +3,8 @@ package database
 import (
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"meta-file-system/model"
@@ -125,6 +127,101 @@ func (m *MySQLDatabase) GetIndexerFilesByCreatorMetaIDWithCursor(metaID string, 
 
 	// Calculate nextCursor: cursor + number of records returned
 	nextCursor := cursor + int64(len(files))
+	return files, nextCursor, nil
+}
+
+func (m *MySQLDatabase) GetIndexerFilesByCreatorGlobalMetaIDWithCursor(globalMetaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
+	addrMap, err := m.GetGlobalMetaIdAddress(globalMetaID)
+	if err != nil || addrMap == nil || len(addrMap.Items) == 0 {
+		return nil, 0, nil
+	}
+	addrs := make([]string, 0, len(addrMap.Items))
+	for _, it := range addrMap.Items {
+		addrs = append(addrs, it.Address)
+	}
+	query := m.db.Where("creator_address IN ? AND status = ?", addrs, model.StatusSuccess)
+	if cursor > 0 {
+		query = query.Where("id < ?", cursor)
+	}
+	var files []*model.IndexerFile
+	err = query.Order("id DESC").Limit(size).Find(&files).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	nextCursor := cursor + int64(len(files))
+	return files, nextCursor, nil
+}
+
+func (m *MySQLDatabase) GetIndexerFilesByExtensionWithCursor(extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	var files []*model.IndexerFile
+	extNorm := strings.TrimSpace(strings.ToLower(extension))
+	if extNorm != "" && !strings.HasPrefix(extNorm, ".") {
+		extNorm = "." + extNorm
+	}
+	if extNorm == "" {
+		extNorm = "._"
+	}
+	query := m.db.Where("file_extension = ? AND status = ? AND state = 0", extNorm, model.StatusSuccess)
+	if cursor != "" {
+		// cursor 为上一页最后一条的 timestamp（或 id）；MySQL 用 id 分页更稳
+		var cursorID int64
+		if n, _ := strconv.ParseInt(cursor, 10, 64); n > 0 {
+			cursorID = n
+			query = query.Where("id < ?", cursorID)
+		}
+	}
+	err := query.Order("timestamp DESC, id DESC").Limit(size + 1).Find(&files).Error
+	if err != nil {
+		return nil, "", err
+	}
+	nextCursor := ""
+	if len(files) > size {
+		files = files[:size]
+		if files[len(files)-1].ID > 0 {
+			nextCursor = strconv.FormatInt(files[len(files)-1].ID, 10)
+		}
+	}
+	return files, nextCursor, nil
+}
+
+func (m *MySQLDatabase) GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(globalMetaID string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	if globalMetaID == "" {
+		return nil, "", fmt.Errorf("global_meta_id is required")
+	}
+	var files []*model.IndexerFile
+	extNorm := strings.TrimSpace(strings.ToLower(extension))
+	if extNorm != "" && !strings.HasPrefix(extNorm, ".") {
+		extNorm = "." + extNorm
+	}
+	if extNorm == "" {
+		extNorm = "._"
+	}
+	// MySQL 的 IndexerFile 无 global_meta_id 字段，用 creator_address 需查 GlobalMetaIdAddress 反查；为简单用 creator_address in (select address from mapping)
+	// 这里用 creator_meta_id 无法等价 global_meta_id。接口约定按 global_meta_id：MySQL 可先查 GetGlobalMetaIdAddress 得到 addresses，再 WHERE creator_address IN (...) AND file_extension = ?
+	// 为不引入复杂依赖，暂用 creator_address = 单地址（若 mapping 只有一条）或 IN 多地址。这里简化：用 first item 的 address 查，或全量 IN。
+	addrMap, err := m.GetGlobalMetaIdAddress(globalMetaID)
+	if err != nil || addrMap == nil || len(addrMap.Items) == 0 {
+		return nil, "", nil
+	}
+	addrs := make([]string, 0, len(addrMap.Items))
+	for _, it := range addrMap.Items {
+		addrs = append(addrs, it.Address)
+	}
+	query := m.db.Where("creator_address IN ? AND file_extension = ? AND status = ? AND state = 0", addrs, extNorm, model.StatusSuccess)
+	if cursor != "" {
+		if n, _ := strconv.ParseInt(cursor, 10, 64); n > 0 {
+			query = query.Where("id < ?", n)
+		}
+	}
+	err = query.Order("timestamp DESC, id DESC").Limit(size + 1).Find(&files).Error
+	if err != nil {
+		return nil, "", err
+	}
+	nextCursor := ""
+	if len(files) > size {
+		files = files[:size]
+		nextCursor = strconv.FormatInt(files[len(files)-1].ID, 10)
+	}
 	return files, nextCursor, nil
 }
 
@@ -272,6 +369,22 @@ func (m *MySQLDatabase) AddFileInfoHistory(history *model.FileInfoHistory, first
 
 func (m *MySQLDatabase) GetFileInfoHistory(firstPinID string) ([]model.FileInfoHistory, error) {
 	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetIndexerSchemaVersion() (int, error) {
+	return 0, nil
+}
+
+func (m *MySQLDatabase) SetIndexerSchemaVersion(version int) error {
+	return nil
+}
+
+func (m *MySQLDatabase) IterateLatestFileInfo(fn func(*model.IndexerFile) error) error {
+	return nil
+}
+
+func (m *MySQLDatabase) WriteFileToExtensionAndGlobalMetaIndexes(file *model.IndexerFile) error {
+	return nil
 }
 
 // UserInfo operations - not implemented for MySQL yet

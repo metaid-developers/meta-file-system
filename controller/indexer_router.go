@@ -89,7 +89,11 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 			files.GET("/creator/:address", indexerQueryHandler.GetByCreatorAddress)
 
 			// Get files by creator MetaID
-			files.GET("/metaid/:metaId", indexerQueryHandler.GetByCreatorMetaID)
+			files.GET("/metaid/:metaidOrGlobalMetaId", indexerQueryHandler.GetByCreatorMetaID)
+			// Get files by file extension (global), reverse time order; extension as query (array supported)
+			files.GET("/extension", indexerQueryHandler.GetFilesByExtension)
+			// Get files by globalMetaID and file extension; extension as query (array supported)
+			files.GET("/metaid/:metaidOrGlobalMetaId/extension", indexerQueryHandler.GetFilesByGlobalMetaIDAndExtension)
 		}
 
 		// Indexer user info query routes
@@ -130,6 +134,18 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 		// Statistics route
 		v1.GET("/stats", indexerQueryHandler.GetStats)
 
+		// Info routes (MetaID format, same as /api/info for Swagger basePath /api/v1)
+		infoV1 := v1.Group("/info")
+		{
+			infoV1.GET("/metaid/:metaidOrGlobalMetaId", indexerQueryHandler.GetMetaIDUserInfoByMetaID)
+			infoV1.GET("/address/:address", indexerQueryHandler.GetMetaIDUserInfoByAddress)
+			infoV1.GET("/globalmetaid/:globalMetaID", indexerQueryHandler.GetMetaIDUserInfoByGlobalMetaID)
+			infoV1.GET("/search", indexerQueryHandler.SearchMetaIDUserInfo)
+		}
+
+		// Thumbnail (avatar) - Swagger documents /api/v1/thumbnail/{pinId}
+		v1.GET("/thumbnail/:pinId", indexerQueryHandler.GetAvatarThumbnailByPinID)
+
 		// Admin routes
 		admin := v1.Group("/admin")
 		{
@@ -163,7 +179,7 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 		}
 	}
 
-	//avatar
+	// Avatar (legacy root paths, kept for backward compatibility)
 	r.GET("/content/:pinId", indexerQueryHandler.GetAvatarContentByPinID)
 	r.GET("/thumbnail/:pinId", indexerQueryHandler.GetAvatarThumbnailByPinID)
 

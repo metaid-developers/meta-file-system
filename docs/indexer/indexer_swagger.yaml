@@ -1,5 +1,18 @@
 basePath: /api/v1
 definitions:
+  meta-file-system_controller_respond.IndexerFileListByExtensionResponse:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileResponse'
+        type: array
+      has_more:
+        example: true
+        type: boolean
+      next_timestamp:
+        example: "1699123456082917"
+        type: string
+    type: object
   meta-file-system_controller_respond.IndexerFileListResponse:
     properties:
       files:
@@ -26,6 +39,9 @@ definitions:
         type: string
       creator_address:
         example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+        type: string
+      creator_global_meta_id:
+        example: idaddress...
         type: string
       creator_meta_id:
         example: abc123def456...
@@ -77,6 +93,8 @@ definitions:
       tx_id:
         example: abc123def456789
         type: string
+      user_info:
+        $ref: '#/definitions/meta-file-system_controller_respond.MetaIDUserInfo'
     type: object
   meta-file-system_controller_respond.IndexerMultiChainSyncStatusResponse:
     properties:
@@ -171,6 +189,9 @@ definitions:
         type: string
       name:
         example: John Doe
+        type: string
+      nameId:
+        example: abc123def456i0
         type: string
     type: object
   meta-file-system_controller_respond.RescanRequest:
@@ -776,6 +797,49 @@ paths:
       summary: Get files by creator address
       tags:
       - Indexer File Query
+  /files/extension:
+    get:
+      consumes:
+      - application/json
+      description: Query file list by file extension (e.g. .jpg, .png), reverse time
+        order; extension can be repeated for multiple. Paginate with timestamp (16-digit).
+      parameters:
+      - collectionFormat: csv
+        description: File extension(s), e.g. extension=.jpg&extension=.png
+        in: query
+        items:
+          type: string
+        name: extension
+        required: true
+        type: array
+      - description: 'Next page: 16-digit timestamp from previous response next_timestamp'
+        in: query
+        name: timestamp
+        type: string
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileListByExtensionResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get files by extension
+      tags:
+      - Indexer File Query
   /files/latest/{firstPinId}:
     get:
       consumes:
@@ -806,15 +870,16 @@ paths:
       summary: Get latest file by first PIN ID
       tags:
       - Indexer File Query
-  /files/metaid/{metaId}:
+  /files/metaid/{metaidOrGlobalMetaId}:
     get:
       consumes:
       - application/json
-      description: Query file list by creator MetaID with cursor pagination
+      description: Query file list by creator MetaID or GlobalMetaID with cursor pagination
+        (param is metaId or globalMetaId)
       parameters:
-      - description: Creator MetaID
+      - description: Creator MetaID or GlobalMetaID
         in: path
-        name: metaId
+        name: metaidOrGlobalMetaId
         required: true
         type: string
       - default: 0
@@ -843,7 +908,55 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
-      summary: Get files by creator MetaID
+      summary: Get files by creator MetaID or GlobalMetaID
+      tags:
+      - Indexer File Query
+  /files/metaid/{metaidOrGlobalMetaId}/extension:
+    get:
+      consumes:
+      - application/json
+      description: Query file list by globalMetaID and file extension(s), reverse
+        time order; extension can be repeated. Paginate with timestamp (16-digit).
+      parameters:
+      - description: Global MetaID (path segment shared with metaid route)
+        in: path
+        name: metaidOrGlobalMetaId
+        required: true
+        type: string
+      - collectionFormat: csv
+        description: File extension(s), e.g. extension=.jpg&extension=.png
+        in: query
+        items:
+          type: string
+        name: extension
+        required: true
+        type: array
+      - description: 'Next page: 16-digit timestamp from previous response next_timestamp'
+        in: query
+        name: timestamp
+        type: string
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileListByExtensionResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get files by globalMetaID and extension
       tags:
       - Indexer File Query
   /info/address/{address}:

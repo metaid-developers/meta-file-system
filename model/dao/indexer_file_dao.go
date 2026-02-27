@@ -60,6 +60,21 @@ func (dao *IndexerFileDAO) GetByCreatorMetaIDWithCursor(metaID string, cursor in
 	return dao.db.GetIndexerFilesByCreatorMetaIDWithCursor(metaID, cursor, size)
 }
 
+// GetByCreatorGlobalMetaIDWithCursor get file list by creator GlobalMetaID with cursor pagination
+func (dao *IndexerFileDAO) GetByCreatorGlobalMetaIDWithCursor(globalMetaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
+	return dao.db.GetIndexerFilesByCreatorGlobalMetaIDWithCursor(globalMetaID, cursor, size)
+}
+
+// GetByExtensionWithCursor get file list by file extension with key-based cursor (reverse time order)
+func (dao *IndexerFileDAO) GetByExtensionWithCursor(extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	return dao.db.GetIndexerFilesByExtensionWithCursor(extension, cursor, size)
+}
+
+// GetByGlobalMetaIDAndExtensionWithCursor get file list by globalMetaID and extension with key-based cursor (reverse time order)
+func (dao *IndexerFileDAO) GetByGlobalMetaIDAndExtensionWithCursor(globalMetaID string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	return dao.db.GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(globalMetaID, extension, cursor, size)
+}
+
 // GetFilesCount get total count of indexed files
 func (dao *IndexerFileDAO) GetFilesCount() (int64, error) {
 	return dao.db.GetIndexerFilesCount()

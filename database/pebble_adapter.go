@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -33,12 +35,16 @@ type PebbleConfig struct {
 // Collection names and their key-value formats
 const (
 	// File collections
-	collectionLatestFileInfo  = "latest_file_info"  // key: {first_pin_id}, value: JSON(IndexerFile) - 最新文件信息
-	collectionFilePinID       = "file_pin"          // key: {pin_id}, value: JSON(IndexerFile) - PinID 到 ID 的映射
-	collectionFileAddress     = "file_addr"         // key: {address}:{first_pin_id}, value: JSON(IndexerFile) - 按地址索引
-	collectionFileMetaID      = "file_meta"         // key: {meta_id}:{first_pin_id}, value: JSON(IndexerFile) - 按 MetaID 索引
-	collectionFileHash        = "file_hash"         // key: {hash}:{pin_id}, value: JSON(IndexerFile) - 按 Hash 索引
-	collectionFileInfoHistory = "file_info_history" // key: {first_pin_id}, value: JSON(List[{pin_id, path, operation, content_type, chain_name, block_height, timestamp}]) - 按地址索引
+	collectionLatestFileInfo                     = "latest_file_info"                        // key: {first_pin_id}, value: JSON(IndexerFile) - 最新文件信息
+	collectionFilePinID                          = "file_pin"                                // key: {pin_id}, value: JSON(IndexerFile) - PinID 到 ID 的映射
+	collectionFileAddress                        = "file_addr"                               // key: {address}:{first_pin_id}, value: JSON(IndexerFile) - 按地址索引
+	collectionFileMetaID                         = "file_meta"                               // key: {meta_id}:{first_pin_id}, value: JSON(IndexerFile) - 按 MetaID 索引
+	collectionFileGlobalMetaID                   = "file_global_meta"                        // key: {global_meta_id}:{first_pin_id}, value: JSON(IndexerFile) - 按 GlobalMetaID 索引
+	collectionFileHash                           = "file_hash"                               // key: {hash}:{pin_id}, value: JSON(IndexerFile) - 按 Hash 索引
+	collectionFileInfoHistory                    = "file_info_history"                       // key: {first_pin_id}, value: JSON(List[{pin_id, path, operation, content_type, chain_name, block_height, timestamp}]) - 按地址索引
+	collectionFileExtensionTimestamp             = "file_extension_timestamp"                // key: {extension}:{timestamp_16}, value: JSON(IndexerFile)
+	collectionGlobalMetaIDFileExtensionTimestamp = "global_meta_id_file_extension_timestamp" // key: {global_meta_id}:{extension}:{timestamp_16}, value: JSON(IndexerFile)
+	extensionPlaceholder                         = "._"                                      // 空扩展名在 key 中的占位符
 
 	collectionChainFileInfo = "chain_file_info" // key: {chain_name}:{first_pin_id}, value: JSON(IndexerFile) - 按链名称和第一个 PIN ID 索引
 
@@ -79,6 +85,8 @@ const (
 	// System collections
 	collectionSyncStatus = "sync_status" // key: {chain_name}, value: JSON(IndexerSyncStatus) - 同步状态
 	collectionCounters   = "counters"    // key: file/avatar/status, value: {max_id} - ID 计数器
+
+	collectionVersion = "version" // key: version, value: {version} - 版本号
 )
 
 // Counter keys
@@ -87,6 +95,9 @@ const (
 	keyAvatarCounter = "avatar"
 	keyStatusCounter = "status"
 )
+
+// Schema version key (in collectionVersion)
+const keySchemaVersion = "schema_version"
 
 // NewPebbleDatabase create PebbleDB database instance with multiple collections
 func NewPebbleDatabase(config interface{}) (Database, error) {
@@ -111,6 +122,9 @@ func NewPebbleDatabase(config interface{}) (Database, error) {
 		collectionFileHash,
 		collectionFileInfoHistory,
 		collectionChainFileInfo,
+		collectionFileGlobalMetaID,
+		collectionFileExtensionTimestamp,
+		collectionGlobalMetaIDFileExtensionTimestamp,
 		collectionAvatarPinID,
 		collectionAvatarMetaID,
 		collectionAvatarMetaIDTimestamp,
@@ -138,6 +152,7 @@ func NewPebbleDatabase(config interface{}) (Database, error) {
 		collectionPinInfo,
 		collectionSyncStatus,
 		collectionCounters,
+		collectionVersion,
 	}
 
 	// Open PebbleDB for each collection
@@ -201,6 +216,26 @@ func (p *PebbleDatabase) loadCounters() error {
 	}
 
 	return nil
+}
+
+// normalizeFileExtension 归一化扩展名：小写、带前导点；空则返回占位符
+func normalizeFileExtension(ext string) string {
+	ext = strings.TrimSpace(strings.ToLower(ext))
+	if ext == "" {
+		return extensionPlaceholder
+	}
+	if !strings.HasPrefix(ext, ".") {
+		return "." + ext
+	}
+	return ext
+}
+
+// makeTimestamp16 生成 16 位时间段：timestamp(10) + 6 位随机数，用于 extension 索引 key 唯一性
+func makeTimestamp16(ts int64) string {
+	if ts <= 0 {
+		ts = time.Now().Unix()
+	}
+	return fmt.Sprintf("%010d%06d", ts, rand.Intn(1000000))
 }
 
 // IndexerFile operations
@@ -304,6 +339,11 @@ func (p *PebbleDatabase) CreateIndexerFile(file *model.IndexerFile) error {
 		return err
 	}
 
+	// Store in GlobalMetaID + extension index collections (shared with migrate)
+	if err := p.writeFileToGlobalMetaAndExtensionIndexes(file, data); err != nil {
+		return err
+	}
+
 	// Store in Hash index collection
 	// key: hash:pin_id, value: JSON(IndexerFile)
 	hashKey := file.FileMd5 + ":" + file.PinID
@@ -349,6 +389,79 @@ func (p *PebbleDatabase) CreateIndexerFile(file *model.IndexerFile) error {
 	}
 
 	return nil
+}
+
+// writeFileToGlobalMetaAndExtensionIndexes 仅写入 file_global_meta、file_extension_timestamp、global_meta_id_file_extension_timestamp（用于 CreateIndexerFile 与 migrate 回填）
+func (p *PebbleDatabase) writeFileToGlobalMetaAndExtensionIndexes(file *model.IndexerFile, data []byte) error {
+	firstPinID := file.FirstPinID
+	if firstPinID == "" {
+		firstPinID = file.PinID
+	}
+	if file.CreatorGlobalMetaId != "" && firstPinID != "" {
+		globalMetaKey := file.CreatorGlobalMetaId + ":" + firstPinID
+		if err := p.collections[collectionFileGlobalMetaID].Set([]byte(globalMetaKey), data, pebble.Sync); err != nil {
+			return err
+		}
+	}
+	extNorm := normalizeFileExtension(file.FileExtension)
+	ts16 := makeTimestamp16(file.Timestamp)
+	extKey := extNorm + ":" + ts16
+	if err := p.collections[collectionFileExtensionTimestamp].Set([]byte(extKey), data, pebble.Sync); err != nil {
+		return err
+	}
+	if file.CreatorGlobalMetaId != "" {
+		gmeKey := file.CreatorGlobalMetaId + ":" + extNorm + ":" + ts16
+		if err := p.collections[collectionGlobalMetaIDFileExtensionTimestamp].Set([]byte(gmeKey), data, pebble.Sync); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *PebbleDatabase) GetIndexerSchemaVersion() (int, error) {
+	db := p.collections[collectionVersion]
+	val, closer, err := db.Get([]byte(keySchemaVersion))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return 0, nil
+		}
+		return 0, err
+	}
+	defer closer.Close()
+	v, _ := strconv.Atoi(string(val))
+	return v, nil
+}
+
+func (p *PebbleDatabase) SetIndexerSchemaVersion(version int) error {
+	db := p.collections[collectionVersion]
+	return db.Set([]byte(keySchemaVersion), []byte(strconv.Itoa(version)), pebble.Sync)
+}
+
+func (p *PebbleDatabase) IterateLatestFileInfo(fn func(*model.IndexerFile) error) error {
+	db := p.collections[collectionLatestFileInfo]
+	iter, err := db.NewIter(nil)
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	for iter.First(); iter.Valid(); iter.Next() {
+		var file model.IndexerFile
+		if err := json.Unmarshal(iter.Value(), &file); err != nil {
+			continue
+		}
+		if err := fn(&file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *PebbleDatabase) WriteFileToExtensionAndGlobalMetaIndexes(file *model.IndexerFile) error {
+	data, err := json.Marshal(file)
+	if err != nil {
+		return err
+	}
+	return p.writeFileToGlobalMetaAndExtensionIndexes(file, data)
 }
 
 func (p *PebbleDatabase) GetIndexerFileByPinID(pinID string) (*model.IndexerFile, error) {
@@ -464,6 +577,108 @@ func (p *PebbleDatabase) GetIndexerFilesByCreatorMetaIDWithCursor(metaID string,
 
 	sorted, nextCursor := paginateFilesByTimestampDesc(files, cursor, size)
 	return sorted, nextCursor, nil
+}
+
+func (p *PebbleDatabase) GetIndexerFilesByCreatorGlobalMetaIDWithCursor(globalMetaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error) {
+	db := p.collections[collectionFileGlobalMetaID]
+	prefix := globalMetaID + ":"
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte(prefix),
+		UpperBound: []byte(prefix + "~"),
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer iter.Close()
+
+	var files []*model.IndexerFile
+	for iter.First(); iter.Valid(); iter.Next() {
+		var file model.IndexerFile
+		if err := json.Unmarshal(iter.Value(), &file); err != nil {
+			continue
+		}
+		if file.Status == model.StatusSuccess {
+			fileCopy := file
+			files = append(files, &fileCopy)
+		}
+	}
+	sorted, nextCursor := paginateFilesByTimestampDesc(files, cursor, size)
+	return sorted, nextCursor, nil
+}
+
+// iterateExtensionKeys 在给定范围内倒序迭代（从新到旧），收集最多 size 条；返回 nextCursor 为本页最后一条的 key（空表示没有更多）
+func (p *PebbleDatabase) iterateExtensionKeys(db *pebble.DB, lowerBound, upperBound []byte, size int, onlySuccess bool) ([]*model.IndexerFile, string, error) {
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: lowerBound,
+		UpperBound: upperBound,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	defer iter.Close()
+
+	type item struct {
+		key  []byte
+		file *model.IndexerFile
+	}
+	var items []item
+	if !iter.Last() {
+		return nil, "", nil
+	}
+	for ; iter.Valid() && len(items) < size; iter.Prev() {
+		var file model.IndexerFile
+		if err := json.Unmarshal(iter.Value(), &file); err != nil {
+			continue
+		}
+		if onlySuccess && file.Status != model.StatusSuccess {
+			continue
+		}
+		key := append([]byte(nil), iter.Key()...)
+		fileCopy := file
+		items = append(items, item{key: key, file: &fileCopy})
+	}
+	var out []*model.IndexerFile
+	for _, it := range items {
+		out = append(out, it.file)
+	}
+	var nextCursor string
+	if len(items) == size && iter.Valid() {
+		nextCursor = string(items[len(items)-1].key)
+	}
+	return out, nextCursor, nil
+}
+
+func (p *PebbleDatabase) GetIndexerFilesByExtensionWithCursor(extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	extNorm := normalizeFileExtension(extension)
+	prefix := extNorm + ":"
+	lowerBound := []byte(prefix)
+	upperBound := []byte(prefix + "~")
+	if cursor != "" {
+		// cursor 为 16 位 timestamp，用于下一页 upperBound
+		upperBound = []byte(prefix + cursor)
+	}
+	return p.iterateExtensionKeys(p.collections[collectionFileExtensionTimestamp], lowerBound, upperBound, size, true)
+}
+
+func (p *PebbleDatabase) GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(globalMetaID string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	if globalMetaID == "" {
+		return nil, "", fmt.Errorf("global_meta_id is required")
+	}
+	extNorm := normalizeFileExtension(extension)
+	prefix := globalMetaID + ":" + extNorm + ":"
+	lowerBound := []byte(prefix)
+	upperBound := []byte(prefix + "~")
+	if cursor != "" {
+		// cursor 为 16 位 timestamp，用于下一页 upperBound
+		upperBound = []byte(prefix + cursor)
+	}
+	return p.iterateExtensionKeys(p.collections[collectionGlobalMetaIDFileExtensionTimestamp], lowerBound, upperBound, size, true)
 }
 
 func (p *PebbleDatabase) GetIndexerFilesCount() (int64, error) {

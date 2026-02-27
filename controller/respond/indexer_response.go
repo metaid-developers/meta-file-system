@@ -1,9 +1,11 @@
 package respond
 
 import (
+	"strings"
 	"time"
 
 	"meta-file-system/model"
+	common_service "meta-file-system/service/common_service"
 )
 
 // IndexerFileResponse file information response structure
@@ -22,14 +24,18 @@ type IndexerFileResponse struct {
 	FileMd5       string `json:"file_md5" example:"d41d8cd98f00b204e9800998ecf8427e"`
 	FileHash      string `json:"file_hash" example:"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"`
 	// StorageType    string    `json:"storage_type" example:"oss"`
-	StoragePath    string `json:"storage_path" example:"indexer/mvc/pinid123i0.jpg"`
-	ChainName      string `json:"chain_name" example:"mvc"`
-	BlockHeight    int64  `json:"block_height" example:"12345"`
-	Timestamp      int64  `json:"timestamp" example:"1699999999"`
-	CreatorMetaId  string `json:"creator_meta_id" example:"abc123def456..."`
-	CreatorAddress string `json:"creator_address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
-	OwnerMetaId    string `json:"owner_meta_id" example:"abc123def456..."`
-	OwnerAddress   string `json:"owner_address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
+	StoragePath          string          `json:"storage_path" example:"indexer/mvc/pinid123i0.jpg"`
+	ChainName            string          `json:"chain_name" example:"mvc"`
+	BlockHeight          int64           `json:"block_height" example:"12345"`
+	Timestamp            int64           `json:"timestamp" example:"1699999999"`
+	CreatorMetaId        string          `json:"creator_meta_id" example:"abc123def456..."`
+	CreatorAddress       string          `json:"creator_address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
+	CreatorGlobalMetaId  string          `json:"creator_global_meta_id" example:"idaddress..."`
+	UserInfo             *MetaIDUserInfo `json:"user_info,omitempty"`
+	OwnerMetaId          string          `json:"owner_meta_id" example:"abc123def456..."`
+	OwnerAddress         string          `json:"owner_address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
+	ContentUrl           string          `json:"content_url,omitempty" example:"https://example.com/api/v1/content/abc123i0"`                       // 预览链接 baseUrl + /api/v1/content/:pinId
+	AccelerateContentUrl string          `json:"accelerate_content_url,omitempty" example:"https://example.com/api/v1/accelerate/content/abc123i0"` // 下载/加速链接 baseUrl + /api/v1/accelerate/content/:pinId
 	// Status         string    `json:"status" example:"success"`
 	// CreatedAt      time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
 	// UpdatedAt      time.Time `json:"updated_at" example:"2024-01-01T00:00:00Z"`
@@ -127,6 +133,13 @@ type IndexerFileListResponse struct {
 	HasMore    bool                  `json:"has_more" example:"true"`
 }
 
+// IndexerFileListByExtensionResponse file list by extension response (timestamp-based pagination, 16-digit timestamp = 10-digit unix sec + 6 random)
+type IndexerFileListByExtensionResponse struct {
+	Files         []IndexerFileResponse `json:"files"`
+	NextTimestamp string                `json:"next_timestamp" example:"1699123456082917"`
+	HasMore       bool                  `json:"has_more" example:"true"`
+}
+
 // IndexerAvatarListResponse avatar list response structure
 type IndexerAvatarListResponse struct {
 	Avatars    []IndexerAvatarResponse `json:"avatars"`
@@ -148,50 +161,79 @@ type UserInfoListResponse struct {
 	Total      int64                    `json:"total" example:"1000"` // Total number of users
 }
 
-// ToIndexerFileResponse convert model to response
-func ToIndexerFileResponse(file *model.IndexerFile) IndexerFileResponse {
+// UserInfoResolver resolves creator user info by globalMetaId (used by ToIndexerFileResponse to fill UserInfo). Pass nil to skip fetching.
+type UserInfoResolver interface {
+	GetUserInfoByGlobalMetaID(globalMetaId, metaid string) (*model.IndexerUserInfo, error)
+}
+
+// ToIndexerFileResponse convert model to response; when resolver is not nil, fetches and fills UserInfo from creator. baseUrl optional, when set fills content_url and accelerate_content_url.
+func ToIndexerFileResponse(file *model.IndexerFile, resolver UserInfoResolver, baseUrl string) IndexerFileResponse {
 	if file == nil {
 		return IndexerFileResponse{}
 	}
-	return IndexerFileResponse{
-		// ID:             file.ID,
-		PinID:         file.PinID,
-		TxID:          file.TxID,
-		Path:          file.Path,
-		Operation:     file.Operation,
-		Encryption:    file.Encryption,
-		ContentType:   file.ContentType,
-		FileType:      file.FileType,
-		FileExtension: file.FileExtension,
-		FileName:      file.FileName,
-		FileSize:      file.FileSize,
-		FileMd5:       file.FileMd5,
-		FileHash:      file.FileHash,
-		// StorageType:    file.StorageType,
-		StoragePath:    file.StoragePath,
-		ChainName:      file.ChainName,
-		BlockHeight:    file.BlockHeight,
-		Timestamp:      file.Timestamp,
-		CreatorMetaId:  file.CreatorMetaId,
-		CreatorAddress: file.CreatorAddress,
-		OwnerMetaId:    file.OwnerMetaId,
-		OwnerAddress:   file.OwnerAddress,
-		// Status:         string(file.Status),
-		// CreatedAt:      file.CreatedAt,
-		// UpdatedAt:      file.UpdatedAt,
+	creatorGlobalMetaId := file.CreatorGlobalMetaId
+	if creatorGlobalMetaId == "" && file.CreatorAddress != "" {
+		creatorGlobalMetaId = common_service.ConvertToGlobalMetaId(file.CreatorAddress)
 	}
+	resp := IndexerFileResponse{
+		PinID:               file.PinID,
+		TxID:                file.TxID,
+		Path:                file.Path,
+		Operation:           file.Operation,
+		Encryption:          file.Encryption,
+		ContentType:         file.ContentType,
+		FileType:            file.FileType,
+		FileExtension:       file.FileExtension,
+		FileName:            file.FileName,
+		FileSize:            file.FileSize,
+		FileMd5:             file.FileMd5,
+		FileHash:            file.FileHash,
+		StoragePath:         file.StoragePath,
+		ChainName:           file.ChainName,
+		BlockHeight:         file.BlockHeight,
+		Timestamp:           file.Timestamp,
+		CreatorMetaId:       file.CreatorMetaId,
+		CreatorAddress:      file.CreatorAddress,
+		CreatorGlobalMetaId: creatorGlobalMetaId,
+		OwnerMetaId:         file.OwnerMetaId,
+		OwnerAddress:        file.OwnerAddress,
+	}
+	if baseUrl != "" && file.PinID != "" {
+		base := strings.TrimSuffix(baseUrl, "/")
+		resp.ContentUrl = base + "/api/v1/files/content/" + file.PinID
+		resp.AccelerateContentUrl = base + "/api/v1/files/accelerate/content/" + file.PinID
+	}
+	if resolver != nil && creatorGlobalMetaId != "" {
+		if userInfo, _ := resolver.GetUserInfoByGlobalMetaID(creatorGlobalMetaId, file.CreatorMetaId); userInfo != nil {
+			resp.UserInfo = ToMetaIDUserInfo(userInfo)
+		}
+	}
+	return resp
 }
 
-// ToIndexerFileListResponse convert file list to response
-func ToIndexerFileListResponse(files []*model.IndexerFile, nextCursor int64, hasMore bool) IndexerFileListResponse {
+// ToIndexerFileListResponse convert file list to response; resolver optional; baseUrl optional for content/accelerate URLs.
+func ToIndexerFileListResponse(files []*model.IndexerFile, nextCursor int64, hasMore bool, resolver UserInfoResolver, baseUrl string) IndexerFileListResponse {
 	var fileResponses []IndexerFileResponse
 	for _, file := range files {
-		fileResponses = append(fileResponses, ToIndexerFileResponse(file))
+		fileResponses = append(fileResponses, ToIndexerFileResponse(file, resolver, baseUrl))
 	}
 	return IndexerFileListResponse{
 		Files:      fileResponses,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
+	}
+}
+
+// ToIndexerFileListByExtensionResponse convert file list to extension response (nextTimestamp = 16-digit timestamp for next page); resolver and baseUrl optional.
+func ToIndexerFileListByExtensionResponse(files []*model.IndexerFile, nextTimestamp string, hasMore bool, resolver UserInfoResolver, baseUrl string) IndexerFileListByExtensionResponse {
+	var fileResponses []IndexerFileResponse
+	for _, file := range files {
+		fileResponses = append(fileResponses, ToIndexerFileResponse(file, resolver, baseUrl))
+	}
+	return IndexerFileListByExtensionResponse{
+		Files:         fileResponses,
+		NextTimestamp: nextTimestamp,
+		HasMore:       hasMore,
 	}
 }
 
