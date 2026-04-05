@@ -14,6 +14,7 @@ func TestExtractFileBaseName(t *testing.T) {
 		{name: "empty", fileName: "", want: ""},
 		{name: "double suffix", fileName: "archive.tar.gz", want: "archive.tar"},
 		{name: "path input", fileName: "a/b/JayChou.Live.mp3", want: "JayChou.Live"},
+		{name: "windows path", fileName: "a\\b\\JayChou.Live.mp3", want: "JayChou.Live"},
 		{name: "trim whitespace", fileName: "  Jay.mp3  ", want: "Jay"},
 	}
 
