@@ -16,6 +16,7 @@ type Database interface {
 	GetIndexerFilesByCreatorGlobalMetaIDWithCursor(globalMetaID string, cursor int64, size int) ([]*model.IndexerFile, int64, error)
 	GetIndexerFilesByExtensionWithCursor(extension string, cursor string, size int) ([]*model.IndexerFile, string, error)
 	GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(globalMetaID string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error)
+	GetIndexerFilesByKeywordAndExtensionWithCursor(keyword string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error)
 	GetIndexerFilesCount() (int64, error)
 	GetIndexerFilesCountByChain(chainName string) (int64, error)
 	GetLatestFileInfoByFirstPinID(firstPinID string) (*model.IndexerFile, error)

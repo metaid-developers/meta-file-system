@@ -681,6 +681,69 @@ func (p *PebbleDatabase) GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(glo
 	return p.iterateExtensionKeys(p.collections[collectionGlobalMetaIDFileExtensionTimestamp], lowerBound, upperBound, size, true)
 }
 
+func (p *PebbleDatabase) GetIndexerFilesByKeywordAndExtensionWithCursor(keyword string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	extNorm := normalizeFileExtension(extension)
+	prefix := extNorm + ":"
+	lowerBound := []byte(prefix)
+	upperBound := []byte(prefix + "~")
+	if cursor != "" {
+		upperBound = []byte(prefix + cursor)
+	}
+
+	db := p.collections[collectionFileExtensionTimestamp]
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: lowerBound,
+		UpperBound: upperBound,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	defer iter.Close()
+
+	type match struct {
+		key  []byte
+		file *model.IndexerFile
+	}
+	var matches []match
+
+	if !iter.Last() {
+		return nil, "", nil
+	}
+
+	for ; iter.Valid() && len(matches) < size+1; iter.Prev() {
+		var file model.IndexerFile
+		if err := json.Unmarshal(iter.Value(), &file); err != nil {
+			continue
+		}
+		if file.Status != model.StatusSuccess {
+			continue
+		}
+		if !fileBaseNameContainsKeyword(file.FileName, keyword) {
+			continue
+		}
+
+		keyCopy := append([]byte(nil), iter.Key()...)
+		fileCopy := file
+		matches = append(matches, match{key: keyCopy, file: &fileCopy})
+	}
+
+	var out []*model.IndexerFile
+	for _, m := range matches {
+		out = append(out, m.file)
+	}
+
+	if len(out) <= size {
+		return out, "", nil
+	}
+
+	nextCursor := extractTimestamp16FromCursorKey(string(matches[size-1].key))
+	return out[:size], nextCursor, nil
+}
+
 func (p *PebbleDatabase) GetIndexerFilesCount() (int64, error) {
 	var count int64
 

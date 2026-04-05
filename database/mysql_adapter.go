@@ -225,6 +225,10 @@ func (m *MySQLDatabase) GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(glob
 	return files, nextCursor, nil
 }
 
+func (m *MySQLDatabase) GetIndexerFilesByKeywordAndExtensionWithCursor(keyword string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	return nil, "", fmt.Errorf("keyword+extension search not implemented for mysql")
+}
+
 func (m *MySQLDatabase) GetIndexerFilesCount() (int64, error) {
 	var count int64
 	err := m.db.Model(&model.IndexerFile{}).
