@@ -13,12 +13,15 @@ func TestExtractFileBaseName(t *testing.T) {
 		{name: "no extension", fileName: "周杰伦", want: "周杰伦"},
 		{name: "empty", fileName: "", want: ""},
 		{name: "double suffix", fileName: "archive.tar.gz", want: "archive.tar"},
+		{name: "path input", fileName: "a/b/JayChou.Live.mp3", want: "JayChou.Live"},
 	}
 
 	for _, tc := range cases {
-		if got := extractFileBaseName(tc.fileName); got != tc.want {
-			t.Fatalf("extractFileBaseName(%q) = %q, want %q", tc.fileName, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractFileBaseName(tc.fileName); got != tc.want {
+				t.Fatalf("extractFileBaseName(%q) = %q, want %q", tc.fileName, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -38,9 +41,11 @@ func TestFileBaseNameContainsKeyword(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := fileBaseNameContainsKeyword(tc.fileName, tc.keyword); got != tc.want {
-			t.Fatalf("fileBaseNameContainsKeyword(%q, %q) = %v, want %v", tc.fileName, tc.keyword, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := fileBaseNameContainsKeyword(tc.fileName, tc.keyword); got != tc.want {
+				t.Fatalf("fileBaseNameContainsKeyword(%q, %q) = %v, want %v", tc.fileName, tc.keyword, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -57,8 +62,10 @@ func TestExtractTimestamp16FromCursorKey(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := extractTimestamp16FromCursorKey(tc.key); got != tc.want {
-			t.Fatalf("extractTimestamp16FromCursorKey(%q) = %q, want %q", tc.key, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractTimestamp16FromCursorKey(tc.key); got != tc.want {
+				t.Fatalf("extractTimestamp16FromCursorKey(%q) = %q, want %q", tc.key, got, tc.want)
+			}
+		})
 	}
 }
