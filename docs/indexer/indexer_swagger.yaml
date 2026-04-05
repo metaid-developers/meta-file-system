@@ -28,6 +28,10 @@ definitions:
     type: object
   meta-file-system_controller_respond.IndexerFileResponse:
     properties:
+      accelerate_content_url:
+        description: 下载/加速链接 baseUrl + /api/v1/accelerate/content/:pinId
+        example: https://example.com/api/v1/accelerate/content/abc123i0
+        type: string
       block_height:
         example: 12345
         type: integer
@@ -36,6 +40,10 @@ definitions:
         type: string
       content_type:
         example: image/jpeg
+        type: string
+      content_url:
+        description: 预览链接 baseUrl + /api/v1/content/:pinId
+        example: https://example.com/api/v1/content/abc123i0
         type: string
       creator_address:
         example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
@@ -175,6 +183,10 @@ definitions:
       avatarId:
         example: xyz789i0
         type: string
+      bio:
+        items:
+          type: integer
+        type: array
       chatpubkey:
         example: 02abc123...
         type: string
@@ -332,6 +344,14 @@ definitions:
       avatarPinId:
         description: 头像 PIN ID
         type: string
+      bio:
+        description: 用户简介（JSON）
+        items:
+          type: integer
+        type: array
+      bioPinId:
+        description: 用户简介 PIN ID
+        type: string
       blockHeight:
         description: 区块高度
         type: integer
@@ -405,6 +425,32 @@ definitions:
         description: 时间戳
         type: integer
     type: object
+  model.UserBioInfo:
+    properties:
+      bio:
+        description: 用户简介（JSON）
+        items:
+          type: integer
+        type: array
+      blockHeight:
+        description: 区块高度
+        type: integer
+      chainName:
+        description: 链名称
+        type: string
+      firstPath:
+        description: 第一个 PIN 的路径
+        type: string
+      firstPinId:
+        description: 第一个 PIN ID
+        type: string
+      pinId:
+        description: PIN ID
+        type: string
+      timestamp:
+        description: 时间戳
+        type: integer
+    type: object
   model.UserChatPublicKeyInfo:
     properties:
       blockHeight:
@@ -435,6 +481,11 @@ definitions:
         description: 用户头像历史记录
         items:
           $ref: '#/definitions/model.UserAvatarInfo'
+        type: array
+      bioHistory:
+        description: 用户简介历史记录
+        items:
+          $ref: '#/definitions/model.UserBioInfo'
         type: array
       chatPublicKeyHistory:
         description: 用户聊天公钥历史记录
@@ -805,7 +856,8 @@ paths:
         order; extension can be repeated for multiple. Paginate with timestamp (16-digit).
       parameters:
       - collectionFormat: csv
-        description: File extension(s), e.g. extension=.jpg&extension=.png
+        description: File extension(s), supports multi (extension=.jpg&extension=.png)
+          and csv (extension=.jpg,.png)
         in: query
         items:
           type: string
@@ -838,6 +890,55 @@ paths:
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
       summary: Get files by extension
+      tags:
+      - Indexer File Query
+  /files/keyword/{keyword}/extension:
+    get:
+      consumes:
+      - application/json
+      description: Query file list whose file base name contains keyword in file extension(s),
+        reverse time order; extension can be repeated. Paginate with timestamp (16-digit).
+      parameters:
+      - description: Keyword contained in file base name
+        in: path
+        name: keyword
+        required: true
+        type: string
+      - collectionFormat: csv
+        description: File extension(s), supports multi (extension=.jpg&extension=.png)
+          and csv (extension=.jpg,.png)
+        in: query
+        items:
+          type: string
+        name: extension
+        required: true
+        type: array
+      - description: 'Next page: 16-digit timestamp from previous response next_timestamp'
+        in: query
+        name: timestamp
+        type: string
+      - default: 20
+        description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_controller_respond.IndexerFileListByExtensionResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/meta-file-system_controller_respond.Response'
+      summary: Get files by keyword and extension
       tags:
       - Indexer File Query
   /files/latest/{firstPinId}:
@@ -924,7 +1025,8 @@ paths:
         required: true
         type: string
       - collectionFormat: csv
-        description: File extension(s), e.g. extension=.jpg&extension=.png
+        description: File extension(s), supports multi (extension=.jpg&extension=.png)
+          and csv (extension=.jpg,.png)
         in: query
         items:
           type: string

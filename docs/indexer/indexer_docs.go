@@ -485,7 +485,81 @@ const docTemplateindexer = `{
                             "type": "string"
                         },
                         "collectionFormat": "csv",
-                        "description": "File extension(s), e.g. extension=.jpg\u0026extension=.png",
+                        "description": "File extension(s), supports multi (extension=.jpg\u0026extension=.png) and csv (extension=.jpg,.png)",
+                        "name": "extension",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Next page: 16-digit timestamp from previous response next_timestamp",
+                        "name": "timestamp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_controller_respond.IndexerFileListByExtensionResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/files/keyword/{keyword}/extension": {
+            "get": {
+                "description": "Query file list whose file base name contains keyword in file extension(s), reverse time order; extension can be repeated. Paginate with timestamp (16-digit).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer File Query"
+                ],
+                "summary": "Get files by keyword and extension",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Keyword contained in file base name",
+                        "name": "keyword",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "File extension(s), supports multi (extension=.jpg\u0026extension=.png) and csv (extension=.jpg,.png)",
                         "name": "extension",
                         "in": "query",
                         "required": true
@@ -673,7 +747,7 @@ const docTemplateindexer = `{
                             "type": "string"
                         },
                         "collectionFormat": "csv",
-                        "description": "File extension(s), e.g. extension=.jpg\u0026extension=.png",
+                        "description": "File extension(s), supports multi (extension=.jpg\u0026extension=.png) and csv (extension=.jpg,.png)",
                         "name": "extension",
                         "in": "query",
                         "required": true
@@ -1550,6 +1624,11 @@ const docTemplateindexer = `{
         "meta-file-system_controller_respond.IndexerFileResponse": {
             "type": "object",
             "properties": {
+                "accelerate_content_url": {
+                    "description": "下载/加速链接 baseUrl + /api/v1/accelerate/content/:pinId",
+                    "type": "string",
+                    "example": "https://example.com/api/v1/accelerate/content/abc123i0"
+                },
                 "block_height": {
                     "type": "integer",
                     "example": 12345
@@ -1561,6 +1640,11 @@ const docTemplateindexer = `{
                 "content_type": {
                     "type": "string",
                     "example": "image/jpeg"
+                },
+                "content_url": {
+                    "description": "预览链接 baseUrl + /api/v1/content/:pinId",
+                    "type": "string",
+                    "example": "https://example.com/api/v1/content/abc123i0"
                 },
                 "creator_address": {
                     "type": "string",
@@ -1750,6 +1834,12 @@ const docTemplateindexer = `{
                 "avatarId": {
                     "type": "string",
                     "example": "xyz789i0"
+                },
+                "bio": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "chatpubkey": {
                     "type": "string",
@@ -1965,6 +2055,17 @@ const docTemplateindexer = `{
                     "description": "头像 PIN ID",
                     "type": "string"
                 },
+                "bio": {
+                    "description": "用户简介（JSON）",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "bioPinId": {
+                    "description": "用户简介 PIN ID",
+                    "type": "string"
+                },
                 "blockHeight": {
                     "description": "区块高度",
                     "type": "integer"
@@ -2064,6 +2165,42 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "model.UserBioInfo": {
+            "type": "object",
+            "properties": {
+                "bio": {
+                    "description": "用户简介（JSON）",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "blockHeight": {
+                    "description": "区块高度",
+                    "type": "integer"
+                },
+                "chainName": {
+                    "description": "链名称",
+                    "type": "string"
+                },
+                "firstPath": {
+                    "description": "第一个 PIN 的路径",
+                    "type": "string"
+                },
+                "firstPinId": {
+                    "description": "第一个 PIN ID",
+                    "type": "string"
+                },
+                "pinId": {
+                    "description": "PIN ID",
+                    "type": "string"
+                },
+                "timestamp": {
+                    "description": "时间戳",
+                    "type": "integer"
+                }
+            }
+        },
         "model.UserChatPublicKeyInfo": {
             "type": "object",
             "properties": {
@@ -2105,6 +2242,13 @@ const docTemplateindexer = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.UserAvatarInfo"
+                    }
+                },
+                "bioHistory": {
+                    "description": "用户简介历史记录",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.UserBioInfo"
                     }
                 },
                 "chatPublicKeyHistory": {
