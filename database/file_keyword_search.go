@@ -15,6 +15,9 @@ func extractFileBaseName(fileName string) string {
 	trimmed = strings.TrimSpace(trimmed)
 
 	ext := filepath.Ext(trimmed)
+	if strings.HasPrefix(trimmed, ".") && strings.Count(trimmed, ".") == 1 {
+		return trimmed
+	}
 	if ext == "" {
 		return trimmed
 	}
