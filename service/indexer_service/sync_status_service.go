@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	"meta-file-system/conf"
 	"meta-file-system/indexer"
@@ -19,12 +21,18 @@ type SyncStatusService struct {
 	scanner       *indexer.BlockScanner
 	coordinator   *indexer.MultiChainCoordinator
 	isMultiChain  bool
+
+	cacheMu              sync.Mutex
+	latestHeightsCache   map[string]int64
+	latestHeightsUpdated time.Time
+	cacheTTL             time.Duration
 }
 
 // NewSyncStatusService create sync status service instance
 func NewSyncStatusService() *SyncStatusService {
 	return &SyncStatusService{
 		syncStatusDAO: dao.NewIndexerSyncStatusDAO(),
+		cacheTTL:      5 * time.Second,
 	}
 }
 
@@ -83,6 +91,17 @@ func (s *SyncStatusService) GetLatestBlockHeight() (int64, error) {
 
 // GetLatestBlockHeightsForAllChains get latest block heights for all chains (multi-chain mode)
 func (s *SyncStatusService) GetLatestBlockHeightsForAllChains() (map[string]int64, error) {
+	s.cacheMu.Lock()
+	if s.cacheTTL > 0 && s.latestHeightsCache != nil && time.Since(s.latestHeightsUpdated) < s.cacheTTL {
+		cached := make(map[string]int64, len(s.latestHeightsCache))
+		for k, v := range s.latestHeightsCache {
+			cached[k] = v
+		}
+		s.cacheMu.Unlock()
+		return cached, nil
+	}
+	s.cacheMu.Unlock()
+
 	latestHeights := make(map[string]int64)
 
 	if s.isMultiChain && s.coordinator != nil {
@@ -152,6 +171,20 @@ func (s *SyncStatusService) GetLatestBlockHeightsForAllChains() (map[string]int6
 			latestHeights["mvc"] = height
 		}
 	}
+
+	s.cacheMu.Lock()
+	if s.latestHeightsCache == nil {
+		s.latestHeightsCache = make(map[string]int64, len(latestHeights))
+	} else {
+		for k := range s.latestHeightsCache {
+			delete(s.latestHeightsCache, k)
+		}
+	}
+	for k, v := range latestHeights {
+		s.latestHeightsCache[k] = v
+	}
+	s.latestHeightsUpdated = time.Now()
+	s.cacheMu.Unlock()
 
 	return latestHeights, nil
 }

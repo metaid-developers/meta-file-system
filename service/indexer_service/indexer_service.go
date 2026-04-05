@@ -688,6 +688,16 @@ func (s *IndexerService) handleTransaction(tx interface{}, metaDataTx *indexer.M
 				log.Printf("Failed to process user avatar info content for PIN %s: %v", metaData.PinID, err)
 				continue
 			}
+		} else if isUserBioPath(firstPath) {
+			// Check if this is a user bio PIN
+			log.Printf("Processing user bio PIN: %s (firstPath: %s, path: %s, operation: %s)",
+				metaData.PinID, firstPath, metaData.Path, metaData.Operation)
+
+			// Process user bio content
+			if err := s.processUserBioContent(metaData, firstPinID, firstPath, height, timestamp); err != nil {
+				log.Printf("Failed to process user bio content for PIN %s: %v", metaData.PinID, err)
+				continue
+			}
 		} else if isUserChatPublicKeyPath(firstPath) {
 			// Check if this is a user chat public key PIN
 			log.Printf("Processing user chat public key PIN: %s (firstPath: %s, path: %s, operation: %s)",
@@ -737,6 +747,12 @@ func isUserAvatarInfoPath(path string) bool {
 	// This is for avatar info text, not avatar file
 	// Usually path like /info/avatar with text content
 	return strings.HasPrefix(path, "/info/avatar") || strings.Contains(path, "/info/avatar")
+}
+
+// isUserBioPath check if path is a user bio path
+func isUserBioPath(path string) bool {
+	// Check if path starts with /info/bio or contains /info/bio
+	return strings.HasPrefix(strings.ToLower(path), "/info/bio") || strings.Contains(strings.ToLower(path), "/info/bio")
 }
 
 // isUserChatPublicKeyPath check if path is a user chat public key path
@@ -1249,6 +1265,94 @@ func (s *IndexerService) processUserAvatarInfoContent(metaData *indexer.MetaIDDa
 
 	log.Printf("User avatar info indexed successfully: PIN=%s, Avatar=%s, URL=%s, Type=%s, Ext=%s, Size=%d, MetaID=%s, Address=%s",
 		metaData.PinID, storagePath, avatarUrl, fileType, fileExtension, len(metaData.Content), creatorMetaID, creatorAddress)
+
+	return nil
+}
+
+// processUserBioContent process and save user bio content
+func (s *IndexerService) processUserBioContent(metaData *indexer.MetaIDData, firstPinID, firstPath string, height, timestamp int64) error {
+	// Get real creator address from CreatorInputLocation if available
+	creatorAddress := metaData.CreatorAddress
+	if metaData.CreatorInputLocation != "" {
+		realAddress, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType)
+		if err != nil {
+			log.Printf("Failed to get creator address from location %s: %v, using fallback address",
+				metaData.CreatorInputLocation, err)
+		} else {
+			creatorAddress = realAddress
+			log.Printf("Found real creator address for user bio: %s (from location: %s)", realAddress, metaData.CreatorInputLocation)
+		}
+	}
+
+	// Calculate Creator MetaID (SHA256 of address)
+	creatorMetaID := calculateMetaID(creatorAddress)
+
+	// Save MetaID-Address mapping for bidirectional lookup
+	if err := database.DB.SaveMetaIdAddress(creatorMetaID, creatorAddress); err != nil {
+		log.Printf("Failed to save MetaID-Address mapping: %v", err)
+	}
+
+	// Save GlobalMetaIdAddress mapping
+	globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
+	if globalMetaId != "" {
+		if err := database.DB.SaveGlobalMetaIdAddress(globalMetaId, creatorMetaID, creatorAddress); err != nil {
+			log.Printf("Failed to save GlobalMetaIdAddress mapping: %v", err)
+		}
+	}
+
+	// Save MetaID-Timestamp mapping (only earliest timestamp)
+	if err := database.DB.SaveMetaIdTimestamp(creatorMetaID, timestamp); err != nil {
+		log.Printf("Failed to save MetaID-Timestamp mapping: %v", err)
+	}
+
+	// Extract bio content (JSON preferred; fallback to JSON string)
+	bioJSON := metaData.Content
+	if !json.Valid(bioJSON) {
+		encoded, err := json.Marshal(string(metaData.Content))
+		if err != nil {
+			log.Printf("Failed to marshal bio content for PIN %s: %v", metaData.PinID, err)
+			bioJSON = []byte("null")
+		} else {
+			bioJSON = encoded
+		}
+	}
+
+	// Create user bio info
+	userBioInfo := &model.UserBioInfo{
+		FirstPinID:  firstPinID,
+		FirstPath:   firstPath,
+		Bio:         bioJSON,
+		PinID:       metaData.PinID,
+		ChainName:   metaData.ChainName,
+		BlockHeight: height,
+		Timestamp:   timestamp,
+	}
+
+	// Save to database - latest info
+	if err := database.DB.CreateOrUpdateLatestUserBioInfo(userBioInfo, creatorMetaID); err != nil {
+		return fmt.Errorf("failed to save user bio info to database: %w", err)
+	}
+
+	// Save to database - history
+	if err := database.DB.AddUserBioInfoHistory(userBioInfo, creatorMetaID); err != nil {
+		log.Printf("Failed to add user bio info to history: %v", err)
+	}
+
+	// Save to GlobalMetaId collections
+	if globalMetaId != "" {
+		// Save to database - latest info by GlobalMetaId
+		if err := database.DB.CreateOrUpdateLatestUserBioInfoByGlobalMetaId(userBioInfo, globalMetaId); err != nil {
+			log.Printf("Failed to save user bio info to GlobalMetaId collection: %v", err)
+		}
+
+		// Save to database - history by GlobalMetaId
+		if err := database.DB.AddUserBioInfoHistoryByGlobalMetaId(userBioInfo, globalMetaId); err != nil {
+			log.Printf("Failed to add user bio info to GlobalMetaId history: %v", err)
+		}
+	}
+
+	log.Printf("User bio indexed successfully: PIN=%s, MetaID=%s, Address=%s",
+		metaData.PinID, creatorMetaID, creatorAddress)
 
 	return nil
 }

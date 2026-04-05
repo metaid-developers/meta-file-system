@@ -1,6 +1,7 @@
 package respond
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -356,15 +357,16 @@ func ToUserInfoListResponse(users []*model.IndexerUserInfo, nextCursor int64, ha
 
 // MetaIDUserInfo MetaID user info response (compatible with external API format)
 type MetaIDUserInfo struct {
-	GlobalMetaId string `json:"globalMetaId" example:"idaddress..."`
-	Metaid       string `json:"metaid" example:"abc123def456..."`
-	Name         string `json:"name" example:"John Doe"`
-	NameId       string `json:"nameId" example:"abc123def456i0"`
-	Address      string `json:"address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
-	Avatar       string `json:"avatar" example:"https://oss.example.com/avatar.jpg"`
-	AvatarId     string `json:"avatarId" example:"xyz789i0"`
-	Chatpubkey   string `json:"chatpubkey" example:"02abc123..."`
-	ChatpubkeyId string `json:"chatpubkeyId" example:"def456i0"`
+	GlobalMetaId string          `json:"globalMetaId" example:"idaddress..."`
+	Metaid       string          `json:"metaid" example:"abc123def456..."`
+	Name         string          `json:"name" example:"John Doe"`
+	NameId       string          `json:"nameId" example:"abc123def456i0"`
+	Address      string          `json:"address" example:"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"`
+	Avatar       string          `json:"avatar" example:"https://oss.example.com/avatar.jpg"`
+	AvatarId     string          `json:"avatarId" example:"xyz789i0"`
+	Bio          json.RawMessage `json:"bio"`
+	Chatpubkey   string          `json:"chatpubkey" example:"02abc123..."`
+	ChatpubkeyId string          `json:"chatpubkeyId" example:"def456i0"`
 }
 
 // ToMetaIDUserInfo convert IndexerUserInfo to MetaIDUserInfo
@@ -378,6 +380,7 @@ func ToMetaIDUserInfo(userInfo *model.IndexerUserInfo) *MetaIDUserInfo {
 		// Avatar:       userInfo.Avatar,
 		Avatar:       "/content/" + userInfo.AvatarPinId,
 		AvatarId:     userInfo.AvatarPinId,
+		Bio:          userInfo.Bio,
 		Chatpubkey:   userInfo.ChatPublicKey,
 		ChatpubkeyId: userInfo.ChatPublicKeyPinId,
 	}

@@ -65,9 +65,11 @@ const (
 	collectionGlobalMetaIdAddress         = "global_meta_id_address"           // key: {global_meta_id}, value: JSON({global_meta_id, items: [{meta_id, address}]}) - 按 GlobalMetaID 索引
 	collectionLatestUserNameInfo          = "latest_user_name_info"            // key: {meta_id} Or {address}, value: JSON({name, pin_id, chain_name, block_height, timestamp}) - 按 MetaID 索引
 	collectionLatestUserAvatarInfo        = "latest_user_avatar_info"          // key: {meta_id} Or {address}, value: JSON({avatar, pin_id, chain_name, block_height, timestamp}) - 按 MetaID 索引
+	collectionLatestUserBioInfo           = "latest_user_bio_info"             // key: {meta_id} Or {address}, value: JSON({bio, pin_id, chain_name, block_height, timestamp}) - 按 MetaID 索引
 	collectionLatestUserChatPublicKeyInfo = "latest_user_chat_public_key_info" // key: {meta_id} Or {address}, value: JSON({chat_public_key, pin_id, block_height, timestamp}) - 按 MetaID 或地址和区块高度索引
 	collectionUserNameInfoHistory         = "user_name_info_history"           // key: {meta_id} Or {address}, value: JSON(List[{name, pin_id, chain_name, block_height, timestamp}]) - 按 MetaID 或地址和区块高度索引
 	collectionUserAvatarInfoHistory       = "user_avatar_info_history"         // key: {meta_id} Or {address}, value: JSON(List[{avatar, pin_id, chain_name, block_height, timestamp}]) - 按 MetaID 或地址和区块高度索引
+	collectionUserBioInfoHistory          = "user_bio_info_history"            // key: {meta_id} Or {address}, value: JSON(List[{bio, pin_id, chain_name, block_height, timestamp}]) - 按 MetaID 或地址和区块高度索引
 	collectionUserChatPublicKeyHistory    = "user_chat_public_key_history"     // key: {meta_id} Or {address}, value: JSON(List[{chat_public_key, pin_id, chain_name, block_height, timestamp}]) - 按 MetaID 或地址和区块高度索引
 	collectionMetaIdTimestamp             = "meta_id_timestamp"                // key: {timestamp}:{meta_id}, value: JSON({meta_id, timestamp}) - 按 MetaID 和时间戳索引
 	collectionUserAvatarInfo              = "user_avatar_info"                 // key: {pinId}, value: JSON({avatar, pin_id, chain_name, block_height, timestamp}) - 按 MetaID 索引
@@ -76,6 +78,8 @@ const (
 	collectionUserNameInfoHistoryByGlobalMetaId         = "user_name_info_history_by_global_meta_id"           // key: {global_meta_id}, value: JSON(List[{name, pin_id, chain_name, block_height, timestamp}]) - 按 GlobalMetaID 索引
 	collectionLatestUserAvatarInfoByGlobalMetaId        = "latest_user_avatar_info_by_global_meta_id"          // key: {global_meta_id}, value: JSON({avatar, pin_id, chain_name, block_height, timestamp}) - 按 GlobalMetaID 索引
 	collectionUserAvatarInfoHistoryByGlobalMetaId       = "user_avatar_info_history_by_global_meta_id"         // key: {global_meta_id}, value: JSON(List[{avatar, pin_id, chain_name, block_height, timestamp}]) - 按 GlobalMetaID 索引
+	collectionLatestUserBioInfoByGlobalMetaId           = "latest_user_bio_info_by_global_meta_id"             // key: {global_meta_id}, value: JSON({bio, pin_id, chain_name, block_height, timestamp}) - 按 GlobalMetaID 索引
+	collectionUserBioInfoHistoryByGlobalMetaId          = "user_bio_info_history_by_global_meta_id"            // key: {global_meta_id}, value: JSON(List[{bio, pin_id, chain_name, block_height, timestamp}]) - 按 GlobalMetaID 索引
 	collectionLatestUserChatPublicKeyInfoByGlobalMetaId = "latest_user_chat_public_key_info_by_global_meta_id" // key: {global_meta_id}, value: JSON({chat_public_key, pin_id, block_height, timestamp}) - 按 GlobalMetaID 索引
 	collectionUserChatPublicKeyHistoryByGlobalMetaId    = "user_chat_public_key_history_by_global_meta_id"     // key: {global_meta_id}, value: JSON(List[{chat_public_key, pin_id, chain_name, block_height, timestamp}]) - 按 GlobalMetaID 索引
 
@@ -138,15 +142,19 @@ func NewPebbleDatabase(config interface{}) (Database, error) {
 		collectionMetaIdTimestamp,
 		collectionLatestUserNameInfo,
 		collectionLatestUserAvatarInfo,
+		collectionLatestUserBioInfo,
 		collectionLatestUserChatPublicKeyInfo,
 		collectionUserNameInfoHistory,
 		collectionUserAvatarInfoHistory,
+		collectionUserBioInfoHistory,
 		collectionUserChatPublicKeyHistory,
 		collectionUserAvatarInfo,
 		collectionLatestUserNameInfoByGlobalMetaId,
 		collectionUserNameInfoHistoryByGlobalMetaId,
 		collectionLatestUserAvatarInfoByGlobalMetaId,
 		collectionUserAvatarInfoHistoryByGlobalMetaId,
+		collectionLatestUserBioInfoByGlobalMetaId,
+		collectionUserBioInfoHistoryByGlobalMetaId,
 		collectionLatestUserChatPublicKeyInfoByGlobalMetaId,
 		collectionUserChatPublicKeyHistoryByGlobalMetaId,
 		collectionPinInfo,
@@ -1807,6 +1815,275 @@ func (p *PebbleDatabase) GetUserAvatarInfoHistoryByGlobalMetaId(globalMetaId str
 	return history, nil
 }
 
+// CreateOrUpdateLatestUserBioInfo create or update latest user bio info
+func (p *PebbleDatabase) CreateOrUpdateLatestUserBioInfo(info *model.UserBioInfo, metaID string) error {
+	data, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	db := p.collections[collectionLatestUserBioInfo]
+
+	// Check if there's an existing bio info
+	existingData, closer, err := db.Get([]byte(metaID))
+	if err != nil && err != pebble.ErrNotFound {
+		return err
+	}
+
+	shouldUpdate := false
+	if err == pebble.ErrNotFound {
+		// No existing info, this is the first one
+		shouldUpdate = true
+	} else {
+		// Compare timestamp with existing info
+		defer closer.Close()
+		var existingInfo model.UserBioInfo
+		if err := json.Unmarshal(existingData, &existingInfo); err != nil {
+			return err
+		}
+
+		// Update if new info has a later timestamp
+		if info.Timestamp > existingInfo.Timestamp {
+			shouldUpdate = true
+		}
+	}
+
+	if shouldUpdate {
+		if err := db.Set([]byte(metaID), data, pebble.Sync); err != nil {
+			return err
+		}
+		log.Printf("Latest user bio updated for MetaID: %s (timestamp: %d)", metaID, info.Timestamp)
+
+		// Update cache: query and cache full user info
+		go p.updateUserInfoCache(metaID)
+	}
+
+	return nil
+}
+
+// GetLatestUserBioInfo get latest user bio info by MetaID or Address
+func (p *PebbleDatabase) GetLatestUserBioInfo(key string) (*model.UserBioInfo, error) {
+	db := p.collections[collectionLatestUserBioInfo]
+
+	data, closer, err := db.Get([]byte(key))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var info model.UserBioInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
+// AddUserBioInfoHistory add user bio info to history
+func (p *PebbleDatabase) AddUserBioInfoHistory(info *model.UserBioInfo, metaID string) error {
+	db := p.collections[collectionUserBioInfoHistory]
+
+	// Get existing history
+	var history []model.UserBioInfo
+	existingData, closer, err := db.Get([]byte(metaID))
+	if err == nil {
+		defer closer.Close()
+		if err := json.Unmarshal(existingData, &history); err != nil {
+			return err
+		}
+	} else if err != pebble.ErrNotFound {
+		return err
+	}
+
+	// Check if this PinID already exists in history (deduplicate)
+	exists := false
+	for i, h := range history {
+		if h.PinID == info.PinID {
+			// Update existing entry
+			history[i] = *info
+			exists = true
+			log.Printf("Updated existing user bio history entry: PinID=%s, MetaID=%s", info.PinID, metaID)
+			break
+		}
+	}
+
+	// Append new info if not exists
+	if !exists {
+		history = append(history, *info)
+		log.Printf("Added new user bio history entry: PinID=%s, MetaID=%s", info.PinID, metaID)
+	}
+
+	// Sort by timestamp desc
+	sort.Slice(history, func(i, j int) bool {
+		return history[i].Timestamp > history[j].Timestamp
+	})
+
+	// Save history
+	data, err := json.Marshal(history)
+	if err != nil {
+		return err
+	}
+
+	return db.Set([]byte(metaID), data, pebble.Sync)
+}
+
+// GetUserBioInfoHistory get user bio info history by MetaID or Address
+func (p *PebbleDatabase) GetUserBioInfoHistory(key string) ([]model.UserBioInfo, error) {
+	db := p.collections[collectionUserBioInfoHistory]
+
+	data, closer, err := db.Get([]byte(key))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var history []model.UserBioInfo
+	if err := json.Unmarshal(data, &history); err != nil {
+		return nil, err
+	}
+
+	return history, nil
+}
+
+// CreateOrUpdateLatestUserBioInfoByGlobalMetaId create or update latest user bio info by GlobalMetaId
+func (p *PebbleDatabase) CreateOrUpdateLatestUserBioInfoByGlobalMetaId(info *model.UserBioInfo, globalMetaId string) error {
+	data, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	db := p.collections[collectionLatestUserBioInfoByGlobalMetaId]
+
+	// Check if there's an existing bio info
+	existingData, closer, err := db.Get([]byte(globalMetaId))
+	if err != nil && err != pebble.ErrNotFound {
+		return err
+	}
+
+	shouldUpdate := false
+	if err == pebble.ErrNotFound {
+		// No existing info, this is the first one
+		shouldUpdate = true
+	} else {
+		// Compare timestamp with existing info
+		defer closer.Close()
+		var existingInfo model.UserBioInfo
+		if err := json.Unmarshal(existingData, &existingInfo); err != nil {
+			return err
+		}
+
+		// Update if new info has a later timestamp
+		if info.Timestamp > existingInfo.Timestamp {
+			shouldUpdate = true
+		}
+	}
+
+	if shouldUpdate {
+		if err := db.Set([]byte(globalMetaId), data, pebble.Sync); err != nil {
+			return err
+		}
+		log.Printf("Latest user bio updated for GlobalMetaId: %s (timestamp: %d)", globalMetaId, info.Timestamp)
+	}
+
+	return nil
+}
+
+// GetLatestUserBioInfoByGlobalMetaId get latest user bio info by GlobalMetaId
+func (p *PebbleDatabase) GetLatestUserBioInfoByGlobalMetaId(globalMetaId string) (*model.UserBioInfo, error) {
+	db := p.collections[collectionLatestUserBioInfoByGlobalMetaId]
+
+	data, closer, err := db.Get([]byte(globalMetaId))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var info model.UserBioInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
+// AddUserBioInfoHistoryByGlobalMetaId add user bio info to history by GlobalMetaId
+func (p *PebbleDatabase) AddUserBioInfoHistoryByGlobalMetaId(info *model.UserBioInfo, globalMetaId string) error {
+	db := p.collections[collectionUserBioInfoHistoryByGlobalMetaId]
+
+	// Get existing history
+	var history []model.UserBioInfo
+	existingData, closer, err := db.Get([]byte(globalMetaId))
+	if err == nil {
+		defer closer.Close()
+		if err := json.Unmarshal(existingData, &history); err != nil {
+			return err
+		}
+	} else if err != pebble.ErrNotFound {
+		return err
+	}
+
+	// Check if this PinID already exists in history (deduplicate)
+	exists := false
+	for i, h := range history {
+		if h.PinID == info.PinID {
+			// Update existing entry
+			history[i] = *info
+			exists = true
+			log.Printf("Updated existing user bio history entry: PinID=%s, GlobalMetaId=%s", info.PinID, globalMetaId)
+			break
+		}
+	}
+
+	// Append new info if not exists
+	if !exists {
+		history = append(history, *info)
+		log.Printf("Added new user bio history entry: PinID=%s, GlobalMetaId=%s", info.PinID, globalMetaId)
+	}
+
+	// Sort by timestamp desc
+	sort.Slice(history, func(i, j int) bool {
+		return history[i].Timestamp > history[j].Timestamp
+	})
+
+	// Save history
+	data, err := json.Marshal(history)
+	if err != nil {
+		return err
+	}
+
+	return db.Set([]byte(globalMetaId), data, pebble.Sync)
+}
+
+// GetUserBioInfoHistoryByGlobalMetaId get user bio info history by GlobalMetaId
+func (p *PebbleDatabase) GetUserBioInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserBioInfo, error) {
+	db := p.collections[collectionUserBioInfoHistoryByGlobalMetaId]
+
+	data, closer, err := db.Get([]byte(globalMetaId))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var history []model.UserBioInfo
+	if err := json.Unmarshal(data, &history); err != nil {
+		return nil, err
+	}
+
+	return history, nil
+}
+
 // CreateOrUpdateLatestUserChatPublicKeyInfo create or update latest user chat public key info
 func (p *PebbleDatabase) CreateOrUpdateLatestUserChatPublicKeyInfo(info *model.UserChatPublicKeyInfo, metaID string) error {
 	data, err := json.Marshal(info)
@@ -2081,6 +2358,7 @@ func (p *PebbleDatabase) GetUserInfoHistoryByKey(key string) (*model.UserInfoHis
 	result := &model.UserInfoHistory{
 		NameHistory:          []model.UserNameInfo{},
 		AvatarHistory:        []model.UserAvatarInfo{},
+		BioHistory:           []model.UserBioInfo{},
 		ChatPublicKeyHistory: []model.UserChatPublicKeyInfo{},
 	}
 
@@ -2102,6 +2380,15 @@ func (p *PebbleDatabase) GetUserInfoHistoryByKey(key string) (*model.UserInfoHis
 		result.AvatarHistory = avatarHistory
 	}
 
+	// Get bio history
+	bioHistory, err := p.GetUserBioInfoHistory(key)
+	if err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("failed to get bio history: %w", err)
+	}
+	if err == nil {
+		result.BioHistory = bioHistory
+	}
+
 	// Get chat public key history
 	chatPublicKeyHistory, err := p.GetUserChatPublicKeyHistory(key)
 	if err != nil && err != ErrNotFound {
@@ -2111,8 +2398,8 @@ func (p *PebbleDatabase) GetUserInfoHistoryByKey(key string) (*model.UserInfoHis
 		result.ChatPublicKeyHistory = chatPublicKeyHistory
 	}
 
-	// If all three are empty, return ErrNotFound
-	if len(result.NameHistory) == 0 && len(result.AvatarHistory) == 0 && len(result.ChatPublicKeyHistory) == 0 {
+	// If all are empty, return ErrNotFound
+	if len(result.NameHistory) == 0 && len(result.AvatarHistory) == 0 && len(result.BioHistory) == 0 && len(result.ChatPublicKeyHistory) == 0 {
 		return nil, ErrNotFound
 	}
 
@@ -2674,6 +2961,9 @@ func (p *PebbleDatabase) updateUserInfoCache(metaID string) {
 	// Get latest user avatar
 	avatarInfo, _ := p.GetLatestUserAvatarInfo(metaID)
 
+	// Get latest user bio
+	bioInfo, _ := p.GetLatestUserBioInfo(metaID)
+
 	// Get latest user chat public key
 	chatPubKeyInfo, _ := p.GetLatestUserChatPublicKeyInfo(metaID)
 
@@ -2701,6 +2991,16 @@ func (p *PebbleDatabase) updateUserInfoCache(metaID string) {
 			userInfo.Timestamp = avatarInfo.Timestamp
 			userInfo.BlockHeight = avatarInfo.BlockHeight
 			userInfo.ChainName = avatarInfo.ChainName
+		}
+	}
+
+	if bioInfo != nil {
+		userInfo.Bio = bioInfo.Bio
+		userInfo.BioPinId = bioInfo.PinID
+		if bioInfo.Timestamp > userInfo.Timestamp {
+			userInfo.Timestamp = bioInfo.Timestamp
+			userInfo.BlockHeight = bioInfo.BlockHeight
+			userInfo.ChainName = bioInfo.ChainName
 		}
 	}
 

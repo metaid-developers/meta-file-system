@@ -5,8 +5,10 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -44,9 +46,17 @@ func bindJSONWithOptionalGzip(c *gin.Context, obj interface{}) error {
 		}
 		defer gzipReader.Close()
 
-		bodyBytes, err := io.ReadAll(gzipReader)
+		maxBytes := maxJSONBodyBytes()
+		reader := io.Reader(gzipReader)
+		if maxBytes > 0 {
+			reader = io.LimitReader(gzipReader, maxBytes+1)
+		}
+		bodyBytes, err := io.ReadAll(reader)
 		if err != nil {
 			return err
+		}
+		if maxBytes > 0 && int64(len(bodyBytes)) > maxBytes {
+			return fmt.Errorf("gzip body too large")
 		}
 
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -55,6 +65,33 @@ func bindJSONWithOptionalGzip(c *gin.Context, obj interface{}) error {
 	}
 
 	return c.ShouldBindJSON(obj)
+}
+
+const uploadBodyOverheadBytes int64 = 2 * 1024 * 1024 // 2MB overhead for multipart/json/base64 wrappers
+
+// limitRequestBody caps request body size to mitigate memory exhaustion.
+func limitRequestBody(c *gin.Context, maxBytes int64) {
+	if maxBytes <= 0 {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+}
+
+// maxMultipartBodyBytes returns a safe upper bound for multipart requests.
+func maxMultipartBodyBytes() int64 {
+	if conf.Cfg == nil || conf.Cfg.Uploader.MaxFileSize <= 0 {
+		return 0
+	}
+	return conf.Cfg.Uploader.MaxFileSize + uploadBodyOverheadBytes
+}
+
+// maxJSONBodyBytes returns a safe upper bound for JSON/base64 requests.
+func maxJSONBodyBytes() int64 {
+	if conf.Cfg == nil || conf.Cfg.Uploader.MaxFileSize <= 0 {
+		return 0
+	}
+	// Base64 expands data by ~4/3; allow headroom for JSON + gzip.
+	return conf.Cfg.Uploader.MaxFileSize*2 + uploadBodyOverheadBytes
 }
 
 // UploadFileRequest upload file request
@@ -120,6 +157,8 @@ type PreUploadResponseData struct {
 // @Failure      500  {object}  respond.Response  "Server error"
 // @Router       /files/pre-upload [post]
 func (h *UploadHandler) PreUpload(c *gin.Context) {
+	limitRequestBody(c, maxMultipartBodyBytes())
+
 	// Read file content
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -131,6 +170,10 @@ func (h *UploadHandler) PreUpload(c *gin.Context) {
 	content, err := ioutil.ReadAll(file)
 	if err != nil {
 		respond.ServerError(c, "failed to read file")
+		return
+	}
+	if conf.Cfg != nil && conf.Cfg.Uploader.MaxFileSize > 0 && int64(len(content)) > conf.Cfg.Uploader.MaxFileSize {
+		respond.InvalidParam(c, "file size exceeds limit")
 		return
 	}
 
@@ -246,6 +289,8 @@ func (h *UploadHandler) PreUpload(c *gin.Context) {
 // @Failure      500  {object}  respond.Response  "Server error"
 // @Router       /files/direct-upload [post]
 func (h *UploadHandler) DirectUpload(c *gin.Context) {
+	limitRequestBody(c, maxMultipartBodyBytes())
+
 	// Read file content
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -257,6 +302,10 @@ func (h *UploadHandler) DirectUpload(c *gin.Context) {
 	content, err := ioutil.ReadAll(file)
 	if err != nil {
 		respond.ServerError(c, "failed to read file")
+		return
+	}
+	if conf.Cfg != nil && conf.Cfg.Uploader.MaxFileSize > 0 && int64(len(content)) > conf.Cfg.Uploader.MaxFileSize {
+		respond.InvalidParam(c, "file size exceeds limit")
 		return
 	}
 
@@ -437,6 +486,8 @@ type EstimateChunkedUploadRequest struct {
 // @Failure      500      {object}  respond.Response  "Server error"
 // @Router       /files/estimate-chunked-upload [post]
 func (h *UploadHandler) EstimateChunkedUpload(c *gin.Context) {
+	limitRequestBody(c, maxJSONBodyBytes())
+
 	var req EstimateChunkedUploadRequest
 	if err := bindJSONWithOptionalGzip(c, &req); err != nil {
 		respond.InvalidParam(c, err.Error())
@@ -518,6 +569,8 @@ type ChunkedUploadRequest struct {
 // @Failure      500      {object}  respond.Response  "Server error"
 // @Router       /files/chunked-upload [post]
 func (h *UploadHandler) ChunkedUpload(c *gin.Context) {
+	limitRequestBody(c, maxJSONBodyBytes())
+
 	var req ChunkedUploadRequest
 	if err := bindJSONWithOptionalGzip(c, &req); err != nil {
 		respond.InvalidParam(c, err.Error())
@@ -601,6 +654,8 @@ type ChunkedUploadForTaskRequest struct {
 // @Failure      500      {object}  respond.Response  "Server error"
 // @Router       /files/chunked-upload-task [post]
 func (h *UploadHandler) ChunkedUploadForTask(c *gin.Context) {
+	limitRequestBody(c, maxJSONBodyBytes())
+
 	var req ChunkedUploadForTaskRequest
 	if err := bindJSONWithOptionalGzip(c, &req); err != nil {
 		respond.InvalidParam(c, err.Error())
@@ -767,6 +822,8 @@ type UploadPartRequest struct {
 // @Failure      500      {object}  respond.Response  "Server error"
 // @Router       /files/multipart/upload-part [post]
 func (h *UploadHandler) UploadPart(c *gin.Context) {
+	limitRequestBody(c, maxJSONBodyBytes())
+
 	var req UploadPartRequest
 	if err := bindJSONWithOptionalGzip(c, &req); err != nil {
 		respond.InvalidParam(c, err.Error())

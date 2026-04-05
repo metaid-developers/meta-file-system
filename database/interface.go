@@ -62,6 +62,11 @@ type Database interface {
 	GetUserAvatarInfoByPinID(pinID string) (*model.UserAvatarInfo, error)
 	AddUserAvatarInfoHistory(info *model.UserAvatarInfo, metaID string) error
 	GetUserAvatarInfoHistory(key string) ([]model.UserAvatarInfo, error)
+	// User Bio
+	CreateOrUpdateLatestUserBioInfo(info *model.UserBioInfo, metaID string) error
+	GetLatestUserBioInfo(key string) (*model.UserBioInfo, error)
+	AddUserBioInfoHistory(info *model.UserBioInfo, metaID string) error
+	GetUserBioInfoHistory(key string) ([]model.UserBioInfo, error)
 	// User Chat Public Key
 	CreateOrUpdateLatestUserChatPublicKeyInfo(info *model.UserChatPublicKeyInfo, metaID string) error
 	GetLatestUserChatPublicKeyInfo(key string) (*model.UserChatPublicKeyInfo, error)
@@ -77,6 +82,11 @@ type Database interface {
 	GetLatestUserAvatarInfoByGlobalMetaId(globalMetaId string) (*model.UserAvatarInfo, error)
 	AddUserAvatarInfoHistoryByGlobalMetaId(info *model.UserAvatarInfo, globalMetaId string) error
 	GetUserAvatarInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserAvatarInfo, error)
+	// User Bio by GlobalMetaId
+	CreateOrUpdateLatestUserBioInfoByGlobalMetaId(info *model.UserBioInfo, globalMetaId string) error
+	GetLatestUserBioInfoByGlobalMetaId(globalMetaId string) (*model.UserBioInfo, error)
+	AddUserBioInfoHistoryByGlobalMetaId(info *model.UserBioInfo, globalMetaId string) error
+	GetUserBioInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserBioInfo, error)
 	// User Chat Public Key by GlobalMetaId
 	CreateOrUpdateLatestUserChatPublicKeyInfoByGlobalMetaId(info *model.UserChatPublicKeyInfo, globalMetaId string) error
 	GetLatestUserChatPublicKeyInfoByGlobalMetaId(globalMetaId string) (*model.UserChatPublicKeyInfo, error)

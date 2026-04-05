@@ -24,6 +24,10 @@
 # configuration files
 /conf/conf_*
 !conf/conf_example.yaml
+conf_pro.yaml
+
+# local ops (deployment scripts/docs with server info)
+ops_local/
 
 
 # data directories

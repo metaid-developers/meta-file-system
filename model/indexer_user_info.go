@@ -1,19 +1,23 @@
 package model
 
+import "encoding/json"
+
 // IndexerUserInfo 用户信息模型
 type IndexerUserInfo struct {
-	GlobalMetaId       string `json:"globalMetaId"`       // 全局 MetaID
-	MetaId             string `json:"metaId"`             // 用户 MetaID
-	Address            string `json:"address"`            // 用户地址
-	Name               string `json:"name"`               // 用户名称
-	NamePinId          string `json:"namePinId"`          // 用户名称 PIN ID
-	Avatar             string `json:"avatar"`             // 头像路径
-	AvatarPinId        string `json:"avatarPinId"`        // 头像 PIN ID
-	ChatPublicKey      string `json:"chatPublicKey"`      // 聊天公钥
-	ChatPublicKeyPinId string `json:"chatPublicKeyPinId"` // 聊天公钥 PIN ID
-	ChainName          string `json:"chainName"`          // 链名称
-	BlockHeight        int64  `json:"blockHeight"`        // 区块高度
-	Timestamp          int64  `json:"timestamp"`          // 时间戳
+	GlobalMetaId       string          `json:"globalMetaId"`       // 全局 MetaID
+	MetaId             string          `json:"metaId"`             // 用户 MetaID
+	Address            string          `json:"address"`            // 用户地址
+	Name               string          `json:"name"`               // 用户名称
+	NamePinId          string          `json:"namePinId"`          // 用户名称 PIN ID
+	Avatar             string          `json:"avatar"`             // 头像路径
+	AvatarPinId        string          `json:"avatarPinId"`        // 头像 PIN ID
+	Bio                json.RawMessage `json:"bio"`                // 用户简介（JSON）
+	BioPinId           string          `json:"bioPinId"`           // 用户简介 PIN ID
+	ChatPublicKey      string          `json:"chatPublicKey"`      // 聊天公钥
+	ChatPublicKeyPinId string          `json:"chatPublicKeyPinId"` // 聊天公钥 PIN ID
+	ChainName          string          `json:"chainName"`          // 链名称
+	BlockHeight        int64           `json:"blockHeight"`        // 区块高度
+	Timestamp          int64           `json:"timestamp"`          // 时间戳
 }
 
 // UserNameInfo 用户名称信息
@@ -46,6 +50,17 @@ type UserAvatarInfo struct {
 	FileType      string `json:"fileType"`      // File type (image/video/audio/document/other)
 }
 
+// UserBioInfo 用户简介信息
+type UserBioInfo struct {
+	Bio         json.RawMessage `json:"bio"`         // 用户简介（JSON）
+	FirstPinID  string          `json:"firstPinId"`  // 第一个 PIN ID
+	FirstPath   string          `json:"firstPath"`   // 第一个 PIN 的路径
+	PinID       string          `json:"pinId"`       // PIN ID
+	ChainName   string          `json:"chainName"`   // 链名称
+	BlockHeight int64           `json:"blockHeight"` // 区块高度
+	Timestamp   int64           `json:"timestamp"`   // 时间戳
+}
+
 // UserChatPublicKeyInfo 用户聊天公钥信息
 type UserChatPublicKeyInfo struct {
 	ChatPublicKey string `json:"chatPublicKey"` // 聊天公钥
@@ -61,5 +76,6 @@ type UserChatPublicKeyInfo struct {
 type UserInfoHistory struct {
 	NameHistory          []UserNameInfo          `json:"nameHistory"`          // 用户名称历史记录
 	AvatarHistory        []UserAvatarInfo        `json:"avatarHistory"`        // 用户头像历史记录
+	BioHistory           []UserBioInfo           `json:"bioHistory"`           // 用户简介历史记录
 	ChatPublicKeyHistory []UserChatPublicKeyInfo `json:"chatPublicKeyHistory"` // 用户聊天公钥历史记录
 }

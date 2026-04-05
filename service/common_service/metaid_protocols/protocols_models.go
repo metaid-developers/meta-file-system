@@ -54,6 +54,7 @@ const (
 	MonitorMetaIdInfoNameContentType          = "name"
 	MonitorMetaIdInfoAvatarContentType        = "avatar"
 	MonitorMetaIdInfoChatPublicKeyContentType = "chatpubkey"
+	MonitorMetaIdInfoBioContentType           = "bio"
 )
 
 var (
@@ -66,6 +67,7 @@ var (
 		fmt.Sprintf("/info/%s", strings.ToLower(MonitorMetaIdInfoNameContentType)),
 		fmt.Sprintf("/info/%s", strings.ToLower(MonitorMetaIdInfoAvatarContentType)),
 		fmt.Sprintf("/info/%s", strings.ToLower(MonitorMetaIdInfoChatPublicKeyContentType)),
+		fmt.Sprintf("/info/%s", strings.ToLower(MonitorMetaIdInfoBioContentType)),
 	}
 )
 

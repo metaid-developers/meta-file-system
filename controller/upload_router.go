@@ -28,7 +28,7 @@ func SetupUploadRouter(stor storage.Storage) (*gin.Engine, *upload_service.Uploa
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Content-Length", "Accept-Encoding", "X-CSRF-Token", "Authorization", "Accept", "Cache-Control", "X-Requested-With"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
-		AllowCredentials: true,
+		AllowCredentials: false, // Avoid wildcard-origin credentials, keep behavior consistent across browsers
 		MaxAge:           12 * 3600, // 12 hours
 	}))
 

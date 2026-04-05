@@ -1338,7 +1338,6 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 			log.Printf("Broadcasting chunk funding transaction: %s", chunkFundingTxHash)
 			broadcastFundingTxID, err := node.BroadcastTx(chain, chunkFundingTxHex)
 			if err != nil {
-				fmt.Printf("tx hex: %s\n", chunkFundingTxHex)
 				log.Printf("Failed to broadcast chunk funding transaction: %v", err)
 				// Mark file as failed
 				if updateErr := tx.Model(&model.File{}).Where("file_id = ?", fileId).Update("status", model.StatusFailed).Error; updateErr != nil {
@@ -1358,7 +1357,6 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 				log.Printf("Broadcasting chunk transaction %d/%d: %s", i+1, chunkNumber, chunkTxIds[i])
 				broadcastChunkTxID, err := node.BroadcastTx(chain, chunkTxHex)
 				if err != nil {
-					fmt.Printf("tx hex: %s\n", chunkTxHex)
 					log.Printf("Failed to broadcast chunk transaction %d: %v", i, err)
 					// Mark file as failed
 					if updateErr := tx.Model(&model.File{}).Where("file_id = ?", fileId).Update("status", model.StatusFailed).Error; updateErr != nil {
@@ -1392,7 +1390,6 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 			log.Printf("Broadcasting index transaction: %s", indexTxId)
 			broadcastIndexTxID, err := node.BroadcastTx(chain, indexTxHex)
 			if err != nil {
-				fmt.Printf("tx hex: %s\n", indexTxHex)
 				log.Printf("Failed to broadcast index transaction: %v", err)
 				// Mark file as failed
 				if updateErr := tx.Model(&model.File{}).Where("file_id = ?", fileId).Update("status", model.StatusFailed).Error; updateErr != nil {
@@ -1523,10 +1520,7 @@ func (s *UploadService) ChunkedUploadInDoge(req *ChunkedUploadRequest) (*Chunked
 
 	chunkFundingTxHex := strings.TrimSpace(req.ChunkPreTxHex)
 	chunkFundingTxId := common.GetDogeTxhashFromRaw(chunkFundingTxHex)
-	fmt.Printf("chunkFundingTxHex: %s\n", chunkFundingTxHex)
-	fmt.Printf("chunkFundingTxId: %s\n", chunkFundingTxId)
-	fmt.Printf("chunkFundingTx: %+v\n", chunkFundingTx)
-	fmt.Printf("chunkFundingTx.TxOut: %+v\n", chunkFundingTx.TxOut)
+	log.Printf("DOGE chunk funding tx prepared: txId=%s outputs=%d", chunkFundingTxId, len(chunkFundingTx.TxOut))
 
 	availableUtxos := make([]*common.TxInputUtxo, 0, len(chunkFundingTx.TxOut))
 	for i, txOut := range chunkFundingTx.TxOut {
