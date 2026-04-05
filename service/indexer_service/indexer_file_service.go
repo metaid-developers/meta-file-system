@@ -188,6 +188,19 @@ func (s *IndexerFileService) ListFilesByGlobalMetaIDAndExtension(globalMetaID st
 	return files, nextCursor, hasMore, nil
 }
 
+// ListFilesByKeywordAndExtension get file list by keyword and file extension, reverse time order, key-based cursor pagination
+func (s *IndexerFileService) ListFilesByKeywordAndExtension(keyword string, extension string, cursor string, size int) ([]*model.IndexerFile, string, bool, error) {
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	files, nextCursor, err := s.indexerFileDAO.GetByKeywordAndExtensionWithCursor(keyword, extension, cursor, size)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("failed to list files by keyword and extension: %w", err)
+	}
+	hasMore := nextCursor != ""
+	return files, nextCursor, hasMore, nil
+}
+
 // GetLatestFileContentByFirstPinID get latest file content by first PIN ID
 func (s *IndexerFileService) GetLatestFileContentByFirstPinID(firstPinID string) ([]byte, string, string, error) {
 	// Get latest file info by firstPinID
@@ -362,6 +375,12 @@ func (s *IndexerFileService) GetUserInfoByGlobalMetaID(globalMetaId, metaid stri
 		return nil, fmt.Errorf("failed to get user avatar info: %w", err)
 	}
 
+	// Get latest user bio
+	bioInfo, err := database.DB.GetLatestUserBioInfoByGlobalMetaId(globalMetaId)
+	if err != nil && !errors.Is(err, database.ErrNotFound) {
+		return nil, fmt.Errorf("failed to get user bio info: %w", err)
+	}
+
 	// Get latest user chat public key
 	chatPubKeyInfo, err := database.DB.GetLatestUserChatPublicKeyInfoByGlobalMetaId(globalMetaId)
 	if err != nil && !errors.Is(err, database.ErrNotFound) {
@@ -426,6 +445,17 @@ func (s *IndexerFileService) GetUserInfoByGlobalMetaID(globalMetaId, metaid stri
 			userInfo.Timestamp = avatarInfo.Timestamp
 			userInfo.BlockHeight = avatarInfo.BlockHeight
 			userInfo.ChainName = avatarInfo.ChainName
+		}
+	}
+
+	if bioInfo != nil {
+		userInfo.Bio = bioInfo.Bio
+		userInfo.BioPinId = bioInfo.PinID
+		// Use bio's timestamp if it's later
+		if bioInfo.Timestamp < userInfo.Timestamp {
+			userInfo.Timestamp = bioInfo.Timestamp
+			userInfo.BlockHeight = bioInfo.BlockHeight
+			userInfo.ChainName = bioInfo.ChainName
 		}
 	}
 

@@ -28,7 +28,7 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Content-Length", "Accept-Encoding", "X-CSRF-Token", "Authorization", "Accept", "Cache-Control", "X-Requested-With"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
-		AllowCredentials: true,
+		AllowCredentials: false, // Avoid wildcard-origin credentials, keep behavior consistent across browsers
 		MaxAge:           12 * 3600, // 12 hours
 	}))
 
@@ -94,6 +94,8 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 			files.GET("/extension", indexerQueryHandler.GetFilesByExtension)
 			// Get files by globalMetaID and file extension; extension as query (array supported)
 			files.GET("/metaid/:metaidOrGlobalMetaId/extension", indexerQueryHandler.GetFilesByGlobalMetaIDAndExtension)
+			// Get files by keyword and file extension (global); extension as query (array supported)
+			files.GET("/keyword/:keyword/extension", indexerQueryHandler.GetFilesByKeywordAndExtension)
 		}
 
 		// Indexer user info query routes

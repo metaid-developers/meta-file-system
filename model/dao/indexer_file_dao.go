@@ -75,6 +75,11 @@ func (dao *IndexerFileDAO) GetByGlobalMetaIDAndExtensionWithCursor(globalMetaID 
 	return dao.db.GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(globalMetaID, extension, cursor, size)
 }
 
+// GetByKeywordAndExtensionWithCursor get file list by keyword and extension with key-based cursor (reverse time order)
+func (dao *IndexerFileDAO) GetByKeywordAndExtensionWithCursor(keyword string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
+	return dao.db.GetIndexerFilesByKeywordAndExtensionWithCursor(keyword, extension, cursor, size)
+}
+
 // GetFilesCount get total count of indexed files
 func (dao *IndexerFileDAO) GetFilesCount() (int64, error) {
 	return dao.db.GetIndexerFilesCount()

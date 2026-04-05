@@ -441,6 +441,72 @@ func (h *IndexerQueryHandler) GetFilesByGlobalMetaIDAndExtension(c *gin.Context)
 	respond.Success(c, respond.ToIndexerFileListByExtensionResponse(files, nextTimestamp, hasMore, h.indexerFileService, getIndexerBaseUrl()))
 }
 
+// GetFilesByKeywordAndExtension get file list by keyword and file extension; extension as query (array supported)
+// @Summary      Get files by keyword and extension
+// @Description  Query file list whose file base name contains keyword in file extension(s), reverse time order; extension can be repeated. Paginate with timestamp (16-digit).
+// @Tags         Indexer File Query
+// @Accept       json
+// @Produce      json
+// @Param        keyword    path     string    true   "Keyword contained in file base name"
+// @Param        extension  query    []string  true   "File extension(s), supports multi (extension=.jpg&extension=.png) and csv (extension=.jpg,.png)"
+// @Param        timestamp  query    string    false  "Next page: 16-digit timestamp from previous response next_timestamp"
+// @Param        size       query    int       false  "Page size" default(20)
+// @Success      200        {object}  respond.Response{data=respond.IndexerFileListByExtensionResponse}
+// @Failure      500        {object}  respond.Response
+// @Router       /files/keyword/{keyword}/extension [get]
+func (h *IndexerQueryHandler) GetFilesByKeywordAndExtension(c *gin.Context) {
+	keyword := strings.TrimSpace(c.Param("keyword"))
+	if keyword == "" {
+		respond.InvalidParam(c, "keyword is required")
+		return
+	}
+
+	extensions := parseExtensionsQuery(c)
+	if len(extensions) == 0 {
+		respond.InvalidParam(c, "extension is required (query, supports: extension=.jpg&extension=.png or extension=.jpg,.png)")
+		return
+	}
+
+	timestamp := c.DefaultQuery("timestamp", "")
+	sizeStr := c.DefaultQuery("size", "20")
+	size, _ := strconv.Atoi(sizeStr)
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	var files []*model.IndexerFile
+	var nextTimestamp string
+	var hasMore bool
+
+	if len(extensions) == 1 {
+		var nextCursor string
+		var err error
+		files, nextCursor, hasMore, err = h.indexerFileService.ListFilesByKeywordAndExtension(keyword, extensions[0], timestamp, size)
+		if err != nil {
+			respond.ServerError(c, err.Error())
+			return
+		}
+		nextTimestamp = extractTimestamp16FromKey(nextCursor)
+	} else {
+		fetchSize := size * len(extensions)
+		if fetchSize > 500 {
+			fetchSize = 500
+		}
+		var filesByExt [][]*model.IndexerFile
+		for _, ext := range extensions {
+			list, _, _, err := h.indexerFileService.ListFilesByKeywordAndExtension(keyword, ext, timestamp, fetchSize)
+			if err != nil {
+				respond.ServerError(c, err.Error())
+				return
+			}
+			filesByExt = append(filesByExt, list)
+		}
+		files, nextTimestamp, hasMore = mergeFilesByExtension(filesByExt, size)
+	}
+
+	respond.Success(c, respond.ToIndexerFileListByExtensionResponse(files, nextTimestamp, hasMore, h.indexerFileService, getIndexerBaseUrl()))
+}
+
 // GetLatestFileContentByFirstPinID get latest file content by first PIN ID
 // @Summary      Get latest file content
 // @Description  Get latest file content by first PIN ID

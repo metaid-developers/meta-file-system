@@ -226,7 +226,75 @@ func (m *MySQLDatabase) GetIndexerFilesByGlobalMetaIDAndExtensionWithCursor(glob
 }
 
 func (m *MySQLDatabase) GetIndexerFilesByKeywordAndExtensionWithCursor(keyword string, extension string, cursor string, size int) ([]*model.IndexerFile, string, error) {
-	return nil, "", fmt.Errorf("keyword+extension search not implemented for mysql")
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	trimmedKeyword := strings.TrimSpace(keyword)
+	if trimmedKeyword == "" {
+		return nil, "", fmt.Errorf("keyword is required")
+	}
+
+	extNorm := strings.TrimSpace(strings.ToLower(extension))
+	if extNorm != "" && !strings.HasPrefix(extNorm, ".") {
+		extNorm = "." + extNorm
+	}
+	if extNorm == "" {
+		extNorm = "._"
+	}
+
+	var idCursor int64
+	if cursor != "" {
+		if n, _ := strconv.ParseInt(cursor, 10, 64); n > 0 {
+			idCursor = n
+		}
+	}
+
+	scanBatchSize := size * 4
+	if scanBatchSize < size+1 {
+		scanBatchSize = size + 1
+	}
+	if scanBatchSize > 500 {
+		scanBatchSize = 500
+	}
+
+	matches := make([]*model.IndexerFile, 0, size+1)
+	for len(matches) < size+1 {
+		query := m.db.Where("file_extension = ? AND status = ? AND state = 0", extNorm, model.StatusSuccess)
+		if idCursor > 0 {
+			query = query.Where("id < ?", idCursor)
+		}
+
+		var batch []*model.IndexerFile
+		if err := query.Order("timestamp DESC, id DESC").Limit(scanBatchSize).Find(&batch).Error; err != nil {
+			return nil, "", err
+		}
+		if len(batch) == 0 {
+			break
+		}
+
+		for _, file := range batch {
+			if !fileBaseNameContainsKeyword(file.FileName, trimmedKeyword) {
+				continue
+			}
+			matches = append(matches, file)
+			if len(matches) >= size+1 {
+				break
+			}
+		}
+
+		idCursor = batch[len(batch)-1].ID
+		if len(batch) < scanBatchSize {
+			break
+		}
+	}
+
+	if len(matches) <= size {
+		return matches, "", nil
+	}
+
+	nextCursor := strconv.FormatInt(matches[size-1].ID, 10)
+	return matches[:size], nextCursor, nil
 }
 
 func (m *MySQLDatabase) GetIndexerFilesCount() (int64, error) {
@@ -428,6 +496,22 @@ func (m *MySQLDatabase) GetUserAvatarInfoHistory(key string) ([]model.UserAvatar
 	return nil, ErrNotImplemented
 }
 
+func (m *MySQLDatabase) CreateOrUpdateLatestUserBioInfo(info *model.UserBioInfo, metaID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetLatestUserBioInfo(key string) (*model.UserBioInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddUserBioInfoHistory(info *model.UserBioInfo, metaID string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetUserBioInfoHistory(key string) ([]model.UserBioInfo, error) {
+	return nil, ErrNotImplemented
+}
+
 func (m *MySQLDatabase) CreateOrUpdateLatestUserChatPublicKeyInfo(info *model.UserChatPublicKeyInfo, metaID string) error {
 	return ErrNotImplemented
 }
@@ -475,6 +559,22 @@ func (m *MySQLDatabase) AddUserAvatarInfoHistoryByGlobalMetaId(info *model.UserA
 }
 
 func (m *MySQLDatabase) GetUserAvatarInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserAvatarInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) CreateOrUpdateLatestUserBioInfoByGlobalMetaId(info *model.UserBioInfo, globalMetaId string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetLatestUserBioInfoByGlobalMetaId(globalMetaId string) (*model.UserBioInfo, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) AddUserBioInfoHistoryByGlobalMetaId(info *model.UserBioInfo, globalMetaId string) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetUserBioInfoHistoryByGlobalMetaId(globalMetaId string) ([]model.UserBioInfo, error) {
 	return nil, ErrNotImplemented
 }
 
