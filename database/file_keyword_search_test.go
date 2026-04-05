@@ -14,6 +14,7 @@ func TestExtractFileBaseName(t *testing.T) {
 		{name: "empty", fileName: "", want: ""},
 		{name: "double suffix", fileName: "archive.tar.gz", want: "archive.tar"},
 		{name: "path input", fileName: "a/b/JayChou.Live.mp3", want: "JayChou.Live"},
+		{name: "trim whitespace", fileName: "  Jay.mp3  ", want: "Jay"},
 	}
 
 	for _, tc := range cases {
@@ -34,6 +35,7 @@ func TestFileBaseNameContainsKeyword(t *testing.T) {
 	}{
 		{name: "unicode match", fileName: "周杰伦-夜曲.mp3", keyword: "周杰伦", want: true},
 		{name: "case insensitive", fileName: "JayChou.Live.mp3", keyword: "live", want: true},
+		{name: "trim keyword whitespace", fileName: "JayChou.Live.mp3", keyword: "  live  ", want: true},
 		{name: "no extension still matches", fileName: "周杰伦", keyword: "周杰伦", want: true},
 		{name: "empty file name", fileName: "", keyword: "周杰伦", want: false},
 		{name: "blank keyword", fileName: "周杰伦-夜曲.mp3", keyword: "   ", want: false},

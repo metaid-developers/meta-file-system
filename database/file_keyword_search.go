@@ -11,7 +11,7 @@ func extractFileBaseName(fileName string) string {
 		return ""
 	}
 
-	trimmed = filepath.Base(trimmed)
+	trimmed = stripPathSegments(trimmed)
 
 	ext := filepath.Ext(trimmed)
 	if ext == "" {
@@ -19,6 +19,17 @@ func extractFileBaseName(fileName string) string {
 	}
 
 	return strings.TrimSuffix(trimmed, ext)
+}
+
+func stripPathSegments(name string) string {
+	idx := strings.LastIndex(name, "/")
+	if backslash := strings.LastIndex(name, "\\"); backslash > idx {
+		idx = backslash
+	}
+	if idx >= 0 {
+		return name[idx+1:]
+	}
+	return name
 }
 
 func fileBaseNameContainsKeyword(fileName, keyword string) bool {
@@ -37,15 +48,16 @@ func fileBaseNameContainsKeyword(fileName, keyword string) bool {
 	return strings.Contains(lowerBase, lowerKeyword)
 }
 
+// extractTimestamp16FromCursorKey returns everything after the final colon without validating the timestamp format.
 func extractTimestamp16FromCursorKey(key string) string {
 	if key == "" {
 		return ""
 	}
 
-	slash := strings.LastIndex(key, ":")
-	if slash < 0 {
+	colonIdx := strings.LastIndex(key, ":")
+	if colonIdx < 0 {
 		return key
 	}
 
-	return key[slash+1:]
+	return key[colonIdx+1:]
 }
