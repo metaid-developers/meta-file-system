@@ -28,7 +28,7 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Content-Length", "Accept-Encoding", "X-CSRF-Token", "Authorization", "Accept", "Cache-Control", "X-Requested-With"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
-		AllowCredentials: false, // Avoid wildcard-origin credentials, keep behavior consistent across browsers
+		AllowCredentials: false,     // Avoid wildcard-origin credentials, keep behavior consistent across browsers
 		MaxAge:           12 * 3600, // 12 hours
 	}))
 
@@ -148,17 +148,19 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 		// Thumbnail (avatar) - Swagger documents /api/v1/thumbnail/{pinId}
 		v1.GET("/thumbnail/:pinId", indexerQueryHandler.GetAvatarThumbnailByPinID)
 
-		// Admin routes
-		admin := v1.Group("/admin")
-		{
-			// Rescan blocks
-			admin.POST("/rescan", indexerQueryHandler.RescanBlocks)
+		if conf.Cfg.Indexer.AdminEnabled {
+			// Admin routes
+			admin := v1.Group("/admin")
+			{
+				// Rescan blocks
+				admin.POST("/rescan", indexerQueryHandler.RescanBlocks)
 
-			// Get rescan status
-			admin.GET("/rescan/status", indexerQueryHandler.GetRescanStatus)
+				// Get rescan status
+				admin.GET("/rescan/status", indexerQueryHandler.GetRescanStatus)
 
-			// Stop rescan
-			admin.POST("/rescan/stop", indexerQueryHandler.StopRescan)
+				// Stop rescan
+				admin.POST("/rescan/stop", indexerQueryHandler.StopRescan)
+			}
 		}
 	}
 

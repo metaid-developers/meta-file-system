@@ -20,6 +20,7 @@ indexer:
   btc_init_block_height: 800000  # BTC chain initial block height (used when start_height=0 and no data in DB)
   doge_init_block_height: 4000000  # DOGE chain initial block height (used when start_height=0 and no data in DB)
   swagger_base_url: "localhost:7281"  # Swagger API base URL (shown in Swagger UI)
+  admin_enabled: false  # Enable /api/v1/admin/* routes such as block rescan
   zmq_enabled: false  # Enable ZMQ real-time monitoring
   zmq_address: "tcp://127.0.0.1:28332"  # ZMQ server address (for BTC/MVC node)
   large_block_size_mb: 200  # Blocks larger than this (MB) are loaded tx-by-tx to avoid OOM; 0 = 50
@@ -113,5 +114,4 @@ redis:
   password: ""  # Empty for no password
   db: 1
   cache_ttl: 1800  # Cache TTL in seconds (30 minutes)
-
 

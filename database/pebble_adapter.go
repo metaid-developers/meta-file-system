@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"meta-file-system/model"
+	common_service "meta-file-system/service/common_service"
 
 	"github.com/cockroachdb/pebble"
 )
@@ -2941,20 +2942,7 @@ func (p *PebbleDatabase) GetPinInfoByPinID(pinID string) (*model.IndexerPinInfo,
 	return &pinInfo, nil
 }
 
-// updateUserInfoCache update user info cache after data change
-func (p *PebbleDatabase) updateUserInfoCache(metaID string) {
-	// This runs in a goroutine, don't block the main flow
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("⚠️  Panic in updateUserInfoCache: %v", r)
-		}
-	}()
-
-	if !IsRedisEnabled() {
-		return // Redis not available, skip
-	}
-
-	// Query complete user info from database
+func (p *PebbleDatabase) buildUserInfoCachePayload(metaID string) (*model.IndexerUserInfo, *model.UserNameInfo) {
 	// Get latest user name
 	nameInfo, _ := p.GetLatestUserNameInfo(metaID)
 
@@ -2972,8 +2960,9 @@ func (p *PebbleDatabase) updateUserInfoCache(metaID string) {
 
 	// Build IndexerUserInfo
 	userInfo := &model.IndexerUserInfo{
-		MetaId:  metaID,
-		Address: address,
+		GlobalMetaId: common_service.ConvertToGlobalMetaId(address),
+		MetaId:       metaID,
+		Address:      address,
 	}
 
 	if nameInfo != nil {
@@ -3014,15 +3003,46 @@ func (p *PebbleDatabase) updateUserInfoCache(metaID string) {
 		}
 	}
 
-	// Update cache by MetaID
-	if err := SetCache("user:metaid:"+metaID, userInfo); err != nil {
-		log.Printf("⚠️  Failed to update cache for MetaID %s: %v", metaID, err)
+	return userInfo, nameInfo
+}
+
+func userInfoCacheKeys(userInfo *model.IndexerUserInfo) []string {
+	if userInfo == nil {
+		return nil
 	}
 
-	// Update cache by Address (if available)
-	if address != "" {
-		if err := SetCache("user:address:"+address, userInfo); err != nil {
-			log.Printf("⚠️  Failed to update cache for address %s: %v", address, err)
+	keys := make([]string, 0, 3)
+	if userInfo.MetaId != "" {
+		keys = append(keys, "user:metaid:"+userInfo.MetaId)
+	}
+	if userInfo.GlobalMetaId != "" {
+		keys = append(keys, "user:globalmetaid:"+userInfo.GlobalMetaId)
+	}
+	if userInfo.Address != "" {
+		keys = append(keys, "user:address:"+userInfo.Address)
+	}
+
+	return keys
+}
+
+// updateUserInfoCache update user info cache after data change
+func (p *PebbleDatabase) updateUserInfoCache(metaID string) {
+	// This runs in a goroutine, don't block the main flow
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("⚠️  Panic in updateUserInfoCache: %v", r)
+		}
+	}()
+
+	if !IsRedisEnabled() {
+		return // Redis not available, skip
+	}
+
+	userInfo, nameInfo := p.buildUserInfoCachePayload(metaID)
+
+	for _, key := range userInfoCacheKeys(userInfo) {
+		if err := SetCache(key, userInfo); err != nil {
+			log.Printf("⚠️  Failed to update cache for key %s: %v", key, err)
 		}
 	}
 

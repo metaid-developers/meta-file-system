@@ -113,6 +113,7 @@ type IndexerConfig struct {
 	BtcInitBlockHeight  int64  // BTC chain initial block height to start scanning from
 	DogeInitBlockHeight int64  // DOGE chain initial block height to start scanning from
 	SwaggerBaseUrl      string // Swagger API base URL (e.g., "example.com:7281")
+	AdminEnabled        bool   // Enable indexer admin routes, including block rescan
 	ZmqEnabled          bool   // Enable ZMQ real-time monitoring
 	ZmqAddress          string // ZMQ server address (e.g., "tcp://127.0.0.1:28332")
 
@@ -148,11 +149,11 @@ type UploaderChainConfig struct {
 
 // UploaderConfig uploader configuration
 type UploaderConfig struct {
-	MaxFileSize    int64                  // Global default (MB), used when chain does not specify
-	FeeRate        int64                  // Global default
-	ChunkSize      int64                  // Global default (MB)
-	SwaggerBaseUrl string                 // Swagger API base URL (e.g., "example.com:7282")
-	Chains         []UploaderChainConfig  // Per-chain config (RPC + params), RpcConfigMap populated from here
+	MaxFileSize    int64                 // Global default (MB), used when chain does not specify
+	FeeRate        int64                 // Global default
+	ChunkSize      int64                 // Global default (MB)
+	SwaggerBaseUrl string                // Swagger API base URL (e.g., "example.com:7282")
+	Chains         []UploaderChainConfig // Per-chain config (RPC + params), RpcConfigMap populated from here
 }
 
 // RpcConfig RPC configuration
@@ -235,6 +236,7 @@ func InitConfig() error {
 			BtcInitBlockHeight:  viper.GetInt64("indexer.btc_init_block_height"),
 			DogeInitBlockHeight: viper.GetInt64("indexer.doge_init_block_height"),
 			SwaggerBaseUrl:      viper.GetString("indexer.swagger_base_url"),
+			AdminEnabled:        viper.GetBool("indexer.admin_enabled"),
 			ZmqEnabled:          viper.GetBool("indexer.zmq_enabled"),
 			ZmqAddress:          viper.GetString("indexer.zmq_address"),
 			LargeBlockSizeMB:    viper.GetInt("indexer.large_block_size_mb"),

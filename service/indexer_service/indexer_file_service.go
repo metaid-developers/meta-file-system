@@ -354,7 +354,7 @@ func (s *IndexerFileService) GetUserInfoByGlobalMetaID(globalMetaId, metaid stri
 	cacheKey := "user:globalmetaid:" + globalMetaId
 	var cachedUser model.IndexerUserInfo
 	if err := database.GetCache(cacheKey, &cachedUser); err == nil {
-		if cachedUser.GlobalMetaId != "" && (cachedUser.Address != "" && strings.HasPrefix(cachedUser.MetaId, "1")) {
+		if cachedUser.GlobalMetaId != "" && cachedUser.Address != "" && cachedUser.MetaId != "" {
 			// Cache hit
 			return &cachedUser, nil
 		}
