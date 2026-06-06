@@ -67,13 +67,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4'           # Limit to 4 CPU cores
+          cpus: '2'           # Limit to 2 CPU cores
           memory: 6G          # Limit to 6GB memory
         reservations:
           cpus: '2'           # Reserve at least 2 CPU cores
           memory: 4G          # Reserve at least 4GB memory
     # Alternative for non-swarm mode (Docker Compose v2 compatibility)
-    cpus: 4
+    cpus: 2
     mem_limit: 6g
     mem_reservation: 4g
     healthcheck:
@@ -92,4 +92,3 @@ networks:
   meta-file-system-network:
     driver: bridge
     name: meta-file-system-indexer-network  # Independent network for indexer
-
