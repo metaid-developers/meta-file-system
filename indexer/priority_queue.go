@@ -83,6 +83,18 @@ func (q *BlockEventQueue) Size() int {
 	return q.Len()
 }
 
+// ChainCounts returns the number of queued events per chain (thread-safe).
+func (q *BlockEventQueue) ChainCounts() map[string]int {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	counts := make(map[string]int)
+	for _, event := range q.items {
+		counts[event.ChainName]++
+	}
+	return counts
+}
+
 // PopEventForChain removes and returns the first event for a specific chain (thread-safe)
 // Used for deadlock prevention - allows processing slow chain events out of order
 func (q *BlockEventQueue) PopEventForChain(chainName string) *BlockEvent {

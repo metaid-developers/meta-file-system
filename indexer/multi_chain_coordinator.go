@@ -479,29 +479,50 @@ func (c *MultiChainCoordinator) processQueuedEvents() {
 // processSlowChainEvents processes events from slow chains even if time ordering isn't met
 // This prevents deadlock when fast chain fills the queue waiting for slow chain
 func (c *MultiChainCoordinator) processSlowChainEvents() {
-	c.progressMu.RLock()
-
-	// Find the slowest chain (lowest timestamp progress)
-	var slowestChain string
-	var slowestProgress int64 = 9999999999999
-	for chainName, progress := range c.chainProgress {
-		if progress < slowestProgress {
-			slowestProgress = progress
-			slowestChain = chainName
-		}
-	}
-	c.progressMu.RUnlock()
+	progress := c.chainProgressSnapshot()
+	slowestChain, slowestProgress := slowestChainByProgress(progress)
 
 	if slowestChain == "" {
 		return
 	}
 
-	// Process up to 5 events from the slow chain
+	// Process up to 5 events from queued chains. Prefer the slowest chain, but
+	// fall back to a chain that actually has queued events so a full queue can drain.
 	processed := 0
+	processedByChain := make(map[string]int)
+	targetChain := slowestChain
 	for processed < 5 {
-		event := c.eventQueue.PopEventForChain(slowestChain)
+		event := c.eventQueue.PopEventForChain(targetChain)
 		if event == nil {
-			break
+			if targetChain == slowestChain {
+				log.Printf("⚠️  Slowest chain [%s] has no queued events during deadlock prevention (progress=%d, queue=%d); falling back to queued chain",
+					slowestChain, slowestProgress, c.eventQueue.Size())
+			} else {
+				log.Printf("⚠️  Fallback chain [%s] has no queued events during deadlock prevention; trying another queued chain",
+					targetChain)
+			}
+
+			targetChain = slowestQueuedChain(progress, c.eventQueue.ChainCounts())
+			if targetChain == "" {
+				event = c.eventQueue.PopEvent()
+				if event == nil {
+					break
+				}
+				targetChain = event.ChainName
+				log.Printf("🔁 [%s] Processing block %d as earliest queued fallback to free queue",
+					event.ChainName, event.Height)
+			} else {
+				event = c.eventQueue.PopEventForChain(targetChain)
+				if event == nil {
+					log.Printf("⚠️  Queued fallback chain [%s] had no event when popped; trying earliest queued event",
+						targetChain)
+					event = c.eventQueue.PopEvent()
+					if event == nil {
+						break
+					}
+					targetChain = event.ChainName
+				}
+			}
 		}
 
 		log.Printf("🔓 [%s] Processing block %d (bypassing time ordering to free queue)",
@@ -514,13 +535,56 @@ func (c *MultiChainCoordinator) processSlowChainEvents() {
 			c.statsMu.Lock()
 			c.processedBlocks[event.ChainName]++
 			c.statsMu.Unlock()
+			processedByChain[event.ChainName]++
 			processed++
 		}
 	}
 
 	if processed > 0 {
-		log.Printf("✅ Processed %d events from slow chain [%s] to prevent deadlock", processed, slowestChain)
+		log.Printf("✅ Processed %d events from queued chains %v to prevent deadlock (slowest chain: %s)",
+			processed, processedByChain, slowestChain)
 	}
+}
+
+func (c *MultiChainCoordinator) chainProgressSnapshot() map[string]int64 {
+	c.progressMu.RLock()
+	defer c.progressMu.RUnlock()
+
+	progress := make(map[string]int64, len(c.chainProgress))
+	for chainName, timestamp := range c.chainProgress {
+		progress[chainName] = timestamp
+	}
+	return progress
+}
+
+func slowestChainByProgress(progress map[string]int64) (string, int64) {
+	var slowestChain string
+	var slowestProgress int64
+	for chainName, timestamp := range progress {
+		if slowestChain == "" || timestamp < slowestProgress ||
+			(timestamp == slowestProgress && chainName < slowestChain) {
+			slowestChain = chainName
+			slowestProgress = timestamp
+		}
+	}
+	return slowestChain, slowestProgress
+}
+
+func slowestQueuedChain(progress map[string]int64, queuedCounts map[string]int) string {
+	var selectedChain string
+	var selectedProgress int64
+	for chainName, count := range queuedCounts {
+		if count <= 0 {
+			continue
+		}
+		timestamp := progress[chainName]
+		if selectedChain == "" || timestamp < selectedProgress ||
+			(timestamp == selectedProgress && chainName < selectedChain) {
+			selectedChain = chainName
+			selectedProgress = timestamp
+		}
+	}
+	return selectedChain
 }
 
 // getOtherChainsInfo returns info about other chains (must be called with stateTrackingMu locked)
