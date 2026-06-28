@@ -80,6 +80,10 @@ func SetupUploadRouter(stor storage.Storage) (*gin.Engine, *upload_service.Uploa
 		})
 	})
 
+	// Deep health check: staged dependency probes
+	// (config / database / storage / multipart / merge_broadcast).
+	r.GET("/health/deep", handler.DeepHealthCheck(stor))
+
 	// Ignore Chrome DevTools requests
 	r.GET("/.well-known/*any", func(c *gin.Context) {
 		c.Status(204) // No Content
