@@ -309,12 +309,18 @@ definitions:
         example: 0
         type: integer
       data: {}
+      errorCode:
+        example: upstream_node_unreachable
+        type: string
       message:
         example: success
         type: string
       processingTime:
         example: 123
         type: integer
+      requestId:
+        example: 9b1c...
+        type: string
     type: object
   meta-file-system_controller_respond.UserInfoListResponse:
     properties:
@@ -332,6 +338,19 @@ definitions:
         items:
           $ref: '#/definitions/model.IndexerUserInfo'
         type: array
+    type: object
+  meta-file-system_service_indexer_service.FileStatus:
+    properties:
+      blockHeight:
+        type: integer
+      chainName:
+        type: string
+      fileName:
+        type: string
+      fileSize:
+        type: integer
+      status:
+        type: string
     type: object
   model.IndexerUserInfo:
     properties:
@@ -1059,6 +1078,33 @@ paths:
           schema:
             $ref: '#/definitions/meta-file-system_controller_respond.Response'
       summary: Get files by globalMetaID and extension
+      tags:
+      - Indexer File Query
+  /files/status/{pinId}:
+    get:
+      consumes:
+      - application/json
+      description: Report whether a file pin is merged / pending (on chain but not
+        indexed yet) / not_found
+      parameters:
+      - description: PIN ID
+        in: path
+        name: pinId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/meta-file-system_controller_respond.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/meta-file-system_service_indexer_service.FileStatus'
+              type: object
+      summary: Get file index status by PIN ID
       tags:
       - Indexer File Query
   /info/address/{address}:

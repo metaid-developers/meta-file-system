@@ -794,6 +794,50 @@ const docTemplateindexer = `{
                 }
             }
         },
+        "/files/status/{pinId}": {
+            "get": {
+                "description": "Report whether a file pin is merged / pending (on chain but not indexed yet) / not_found",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Indexer File Query"
+                ],
+                "summary": "Get file index status by PIN ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PIN ID",
+                        "name": "pinId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/meta-file-system_controller_respond.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/meta-file-system_service_indexer_service.FileStatus"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/files/{pinId}": {
             "get": {
                 "description": "Query file details by PIN ID",
@@ -2006,6 +2050,10 @@ const docTemplateindexer = `{
                     "example": 0
                 },
                 "data": {},
+                "errorCode": {
+                    "type": "string",
+                    "example": "upstream_node_unreachable"
+                },
                 "message": {
                     "type": "string",
                     "example": "success"
@@ -2013,6 +2061,10 @@ const docTemplateindexer = `{
                 "processingTime": {
                     "type": "integer",
                     "example": 123
+                },
+                "requestId": {
+                    "type": "string",
+                    "example": "9b1c..."
                 }
             }
         },
@@ -2037,6 +2089,26 @@ const docTemplateindexer = `{
                     "items": {
                         "$ref": "#/definitions/model.IndexerUserInfo"
                     }
+                }
+            }
+        },
+        "meta-file-system_service_indexer_service.FileStatus": {
+            "type": "object",
+            "properties": {
+                "blockHeight": {
+                    "type": "integer"
+                },
+                "chainName": {
+                    "type": "string"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "fileSize": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },
