@@ -64,6 +64,7 @@ type IndexerService struct {
 	fileDAO              *dao.FileDAO
 	indexerFileDAO       *dao.IndexerFileDAO
 	indexerFileChunkDAO  *dao.IndexerFileChunkDAO
+	pendingIndexFileDAO  *dao.PendingIndexFileDAO
 	indexerUserAvatarDAO *dao.IndexerUserAvatarDAO
 	syncStatusDAO        *dao.IndexerSyncStatusDAO
 	storage              storage.Storage
@@ -155,6 +156,7 @@ func NewIndexerServiceWithChain(storage storage.Storage, chainType indexer.Chain
 		fileDAO:              dao.NewFileDAO(),
 		indexerFileDAO:       dao.NewIndexerFileDAO(),
 		indexerFileChunkDAO:  dao.NewIndexerFileChunkDAO(),
+		pendingIndexFileDAO:  dao.NewPendingIndexFileDAO(),
 		indexerUserAvatarDAO: dao.NewIndexerUserAvatarDAO(),
 		syncStatusDAO:        dao.NewIndexerSyncStatusDAO(),
 		storage:              storage,
@@ -186,6 +188,7 @@ func NewMultiChainIndexerService(storage storage.Storage, chainConfigs []conf.Ch
 		fileDAO:              dao.NewFileDAO(),
 		indexerFileDAO:       dao.NewIndexerFileDAO(),
 		indexerFileChunkDAO:  dao.NewIndexerFileChunkDAO(),
+		pendingIndexFileDAO:  dao.NewPendingIndexFileDAO(),
 		indexerUserAvatarDAO: dao.NewIndexerUserAvatarDAO(),
 		syncStatusDAO:        dao.NewIndexerSyncStatusDAO(),
 		storage:              storage,
@@ -509,6 +512,11 @@ func (s *IndexerService) onBlockComplete(height int64) error {
 	if err := s.syncStatusDAO.UpdateCurrentSyncHeight(chainName, height); err != nil {
 		return fmt.Errorf("failed to update sync height: %w", err)
 	}
+
+	// Retry any deferred multi-chunk index merges whose chunks have since
+	// landed in this or earlier blocks. Bounded + synchronous; no-op when the
+	// pending set is empty.
+	s.retryPendingIndexMerges(chainName)
 
 	return nil
 }
@@ -1840,120 +1848,175 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, first
 		}
 	}
 
-	// If all chunks are available, merge and save complete file
+	// If all chunks are available, merge and save the complete file now.
+	// Otherwise persist a PendingIndexFile so onBlockComplete can retry the
+	// merge once the missing chunks land (instead of silently dropping it).
 	if allChunksAvailable && len(chunks) > 0 {
-		log.Printf("All chunks available, merging file: index PIN=%s", indexPinID)
-
-		// Check if all chunks are gzip compressed
-		allChunksCompressed := true
-		for _, chunk := range chunks {
-			if !chunk.IsGzipCompressed {
-				allChunksCompressed = false
-				break
-			}
+		if err := s.mergeAndSaveIndex(metaData, &metaFileIndex, creatorAddress, chunks, firstPinID, firstPath, height, timestamp); err != nil {
+			return err
 		}
+	} else {
+		log.Printf("Not all chunks available yet for index PIN=%s. Chunks found: %d/%d. Deferring merge; will retry on later blocks.",
+			indexPinID, len(chunks), metaFileIndex.ChunkNumber)
 
-		// Merge chunks in order
-		var mergedContent []byte
-		for _, chunk := range chunks {
-			// Load chunk content from storage
-			chunkContent, err := s.storage.Get(chunk.StoragePath)
-			if err != nil {
-				return fmt.Errorf("failed to load chunk from storage: %w", err)
-			}
-			mergedContent = append(mergedContent, chunkContent...)
-		}
-
-		// Verify merged file hash
-		mergedHash := calculateSHA256(mergedContent)
-		if mergedHash != metaFileIndex.Sha256 {
-			log.Printf("Warning: Merged file hash mismatch. Expected: %s, Got: %s", metaFileIndex.Sha256, mergedHash)
-			// Continue anyway, but log the warning
-		}
-
-		// Verify file size
-		if int64(len(mergedContent)) != metaFileIndex.FileSize {
-			log.Printf("Warning: Merged file size mismatch. Expected: %d, Got: %d", metaFileIndex.FileSize, len(mergedContent))
-		}
-
-		// Detect real content type
-		realContentType := detectRealContentType(mergedContent, metaFileIndex.DataType)
-
-		// Extract file extension
-		fileExtension := contentTypeToExtension(realContentType)
-		if fileExtension == "" && metaFileIndex.Name != "" {
-			// Try to get extension from name
-			fileExtension = filepath.Ext(metaFileIndex.Name)
-		}
-
-		// Calculate file hashes
-		fileMd5 := calculateMD5(mergedContent)
-		fileHash := calculateSHA256(mergedContent)
-
-		// Detect file type
-		fileType := detectFileType(realContentType)
-
-		// Determine storage path: indexer/{chain}/{indexPinID}{extension}
-		storagePath := fmt.Sprintf("indexer/%s/%s%s",
-			metaData.ChainName,
-			indexPinID,
-			fileExtension)
-
-		// Save merged file to storage
-		storageType := "local"
-		if conf.Cfg.Storage.Type == "oss" {
-			storageType = "oss"
-		}
-
-		if err := s.storage.Save(storagePath, mergedContent); err != nil {
-			return fmt.Errorf("failed to save merged file to storage: %w", err)
-		}
-
-		log.Printf("Merged file saved to storage: %s (size: %d bytes)", storagePath, len(mergedContent))
-
-		// Calculate Creator MetaID
-		creatorMetaID := calculateMetaID(creatorAddress)
-		globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
-
-		data, err := json.Marshal(metaFileIndex)
+		metaDataJSON, err := json.Marshal(metaData)
 		if err != nil {
-			return fmt.Errorf("failed to marshal metaFileIndex: %w", err)
+			return fmt.Errorf("failed to marshal metaData for pending index: %w", err)
 		}
+		indexJSON, err := json.Marshal(metaFileIndex)
+		if err != nil {
+			return fmt.Errorf("failed to marshal index JSON for pending index: %w", err)
+		}
+		// firstPinID for create == indexPinID (mirrors mergeAndSaveIndex below).
+		pendingFirstPinID := firstPinID
+		if pendingFirstPinID == "" || metaData.Operation == "create" {
+			pendingFirstPinID = indexPinID
+		}
+		pending := &model.PendingIndexFile{
+			PinID:       indexPinID,
+			FirstPinID:  pendingFirstPinID,
+			FirstPath:   firstPath,
+			TxID:        metaData.TxID,
+			ChainName:   metaData.ChainName,
+			BlockHeight: height,
+			Timestamp:   timestamp,
+			MetaData:    string(metaDataJSON),
+			IndexJSON:   string(indexJSON),
+		}
+		if err := s.pendingIndexFileDAO.Create(pending); err != nil {
+			return fmt.Errorf("failed to save pending index for deferred merge: %w", err)
+		}
+	}
 
-		// Determine firstPinID based on operation
-		fileFirstPinID := firstPinID
-		if fileFirstPinID == "" {
-			fileFirstPinID = indexPinID // Fallback to indexPinID
-		}
-		if metaData.Operation == "create" {
-			fileFirstPinID = indexPinID // For create, firstPinID = PinID
-		}
+	return nil
+}
 
-		// Create database record for merged file
-		indexerFile := &model.IndexerFile{
-			FirstPinID:          fileFirstPinID,
-			FirstPath:           firstPath,
-			PinID:               indexPinID,
-			TxID:                metaData.TxID,
-			Vout:                metaData.Vout,
-			Path:                metaData.Path,
-			Operation:           metaData.Operation,
-			ParentPath:          metaData.ParentPath,
-			Encryption:          metaData.Encryption,
-			Version:             metaData.Version,
-			ContentType:         metaFileIndex.DataType,
-			Data:                string(data),
-			ChunkType:           model.ChunkTypeMulti,
-			FileType:            fileType,
-			FileExtension:       fileExtension,
-			FileName:            metaFileIndex.Name,
-			FileSize:            metaFileIndex.FileSize,
-			FileMd5:             fileMd5,
-			FileHash:            fileHash,
-			IsGzipCompressed:    allChunksCompressed,
-			StorageType:         storageType,
-			StoragePath:         storagePath,
-			ChainName:           metaData.ChainName,
+// mergeAndSaveIndex merges the already-verified-available chunks of a multi-
+// chunk file into one file, saves it to storage, and writes the IndexerFile
+// record. Shared by processIndexContent (live path) and retryPendingIndexMerges
+// (deferred path). chunks must be ordered per the index chunkList and all
+// present; the caller is responsible for the availability check.
+func (s *IndexerService) mergeAndSaveIndex(
+	metaData *indexer.MetaIDData,
+	metaFileIndex *metaid_protocols.MetaFileIndex,
+	creatorAddress string,
+	chunks []*model.IndexerFileChunk,
+	firstPinID, firstPath string,
+	height, timestamp int64,
+) error {
+	indexPinID := metaData.PinID
+	log.Printf("All chunks available, merging file: index PIN=%s", indexPinID)
+
+	// Check if all chunks are gzip compressed
+	allChunksCompressed := true
+	for _, chunk := range chunks {
+		if !chunk.IsGzipCompressed {
+			allChunksCompressed = false
+			break
+		}
+	}
+
+	// Merge chunks in order
+	var mergedContent []byte
+	for _, chunk := range chunks {
+		// Load chunk content from storage
+		chunkContent, err := s.storage.Get(chunk.StoragePath)
+		if err != nil {
+			return fmt.Errorf("failed to load chunk from storage: %w", err)
+		}
+		mergedContent = append(mergedContent, chunkContent...)
+	}
+
+	// Verify merged file hash
+	mergedHash := calculateSHA256(mergedContent)
+	if mergedHash != metaFileIndex.Sha256 {
+		log.Printf("Warning: Merged file hash mismatch. Expected: %s, Got: %s", metaFileIndex.Sha256, mergedHash)
+		// Continue anyway, but log the warning
+	}
+
+	// Verify file size
+	if int64(len(mergedContent)) != metaFileIndex.FileSize {
+		log.Printf("Warning: Merged file size mismatch. Expected: %d, Got: %d", metaFileIndex.FileSize, len(mergedContent))
+	}
+
+	// Detect real content type
+	realContentType := detectRealContentType(mergedContent, metaFileIndex.DataType)
+
+	// Extract file extension
+	fileExtension := contentTypeToExtension(realContentType)
+	if fileExtension == "" && metaFileIndex.Name != "" {
+		// Try to get extension from name
+		fileExtension = filepath.Ext(metaFileIndex.Name)
+	}
+
+	// Calculate file hashes
+	fileMd5 := calculateMD5(mergedContent)
+	fileHash := calculateSHA256(mergedContent)
+
+	// Detect file type
+	fileType := detectFileType(realContentType)
+
+	// Determine storage path: indexer/{chain}/{indexPinID}{extension}
+	storagePath := fmt.Sprintf("indexer/%s/%s%s",
+		metaData.ChainName,
+		indexPinID,
+		fileExtension)
+
+	// Save merged file to storage
+	storageType := "local"
+	if conf.Cfg.Storage.Type == "oss" {
+		storageType = "oss"
+	}
+
+	if err := s.storage.Save(storagePath, mergedContent); err != nil {
+		return fmt.Errorf("failed to save merged file to storage: %w", err)
+	}
+
+	log.Printf("Merged file saved to storage: %s (size: %d bytes)", storagePath, len(mergedContent))
+
+	// Calculate Creator MetaID
+	creatorMetaID := calculateMetaID(creatorAddress)
+	globalMetaId := common_service.ConvertToGlobalMetaId(creatorAddress)
+
+	data, err := json.Marshal(metaFileIndex)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metaFileIndex: %w", err)
+	}
+
+	// Determine firstPinID based on operation
+	fileFirstPinID := firstPinID
+	if fileFirstPinID == "" {
+		fileFirstPinID = indexPinID // Fallback to indexPinID
+	}
+	if metaData.Operation == "create" {
+		fileFirstPinID = indexPinID // For create, firstPinID = PinID
+	}
+
+	// Create database record for merged file
+	indexerFile := &model.IndexerFile{
+		FirstPinID:          fileFirstPinID,
+		FirstPath:           firstPath,
+		PinID:               indexPinID,
+		TxID:                metaData.TxID,
+		Vout:                metaData.Vout,
+		Path:                metaData.Path,
+		Operation:           metaData.Operation,
+		ParentPath:          metaData.ParentPath,
+		Encryption:          metaData.Encryption,
+		Version:             metaData.Version,
+		ContentType:         metaFileIndex.DataType,
+		Data:                string(data),
+		ChunkType:           model.ChunkTypeMulti,
+		FileType:            fileType,
+		FileExtension:       fileExtension,
+		FileName:            metaFileIndex.Name,
+		FileSize:            metaFileIndex.FileSize,
+		FileMd5:             fileMd5,
+		FileHash:            fileHash,
+		IsGzipCompressed:    allChunksCompressed,
+		StorageType:         storageType,
+		StoragePath:         storagePath,
+		ChainName:           metaData.ChainName,
 			BlockHeight:         height,
 			Timestamp:           timestamp,
 			CreatorMetaId:       creatorMetaID,
@@ -1988,14 +2051,69 @@ func (s *IndexerService) processIndexContent(metaData *indexer.MetaIDData, first
 
 		log.Printf("Merged file indexed successfully (%s): PIN=%s, FirstPIN=%s, Name=%s, Type=%s, Size=%d",
 			metaData.Operation, indexPinID, fileFirstPinID, metaFileIndex.Name, fileType, metaFileIndex.FileSize)
-	} else {
-		log.Printf("Not all chunks available yet for index PIN=%s. Chunks found: %d/%d",
-			indexPinID, len(chunks), metaFileIndex.ChunkNumber)
-		// We still save the index information, but the file will be merged later when all chunks are available
-		// For now, we just log that chunks are missing
-	}
 
 	return nil
+}
+
+// retryPendingIndexMerges attempts to merge any deferred index pins for a chain
+// whose chunks have since arrived. Called from onBlockComplete (once per block
+// during live scanning). Synchronous and bounded: it scans the pending set for
+// the chain (small — records are deleted on success) and re-runs the
+// availability check + mergeAndSaveIndex for each. On success the pending
+// record is deleted; if chunks are still missing it is left for a later block.
+func (s *IndexerService) retryPendingIndexMerges(chainName string) {
+	pending, err := s.pendingIndexFileDAO.ListByChain(chainName)
+	if err != nil {
+		log.Printf("retryPendingIndexMerges: list pending for %s: %v", chainName, err)
+		return
+	}
+	if len(pending) == 0 {
+		return
+	}
+
+	for _, p := range pending {
+		var metaData indexer.MetaIDData
+		if err := json.Unmarshal([]byte(p.MetaData), &metaData); err != nil {
+			log.Printf("retryPendingIndexMerges: parse metaData for %s: %v", p.PinID, err)
+			continue
+		}
+		var metaFileIndex metaid_protocols.MetaFileIndex
+		if err := json.Unmarshal([]byte(p.IndexJSON), &metaFileIndex); err != nil {
+			log.Printf("retryPendingIndexMerges: parse index JSON for %s: %v", p.PinID, err)
+			continue
+		}
+
+		// Re-check chunk availability (same logic as processIndexContent).
+		var chunks []*model.IndexerFileChunk
+		allAvailable := true
+		for _, chunkInfo := range metaFileIndex.ChunkList {
+			chunk, err := s.indexerFileChunkDAO.GetByPinID(chunkInfo.PinId)
+			if err != nil || chunk == nil {
+				allAvailable = false
+				break
+			}
+			chunks = append(chunks, chunk)
+		}
+		if !allAvailable || len(chunks) == 0 {
+			continue // still missing; leave for a later block
+		}
+
+		// Resolve creator address from the stored metaData, same as the live path.
+		creatorAddress := metaData.CreatorAddress
+		if metaData.CreatorInputLocation != "" {
+			if real, err := s.parser.FindCreatorAddressFromCreatorInputLocation(metaData.CreatorInputLocation, metaData.CreatorInputTxVinLocation, s.chainType); err == nil {
+				creatorAddress = real
+			}
+		}
+
+		if err := s.mergeAndSaveIndex(&metaData, &metaFileIndex, creatorAddress, chunks, p.FirstPinID, p.FirstPath, p.BlockHeight, p.Timestamp); err != nil {
+			log.Printf("retryPendingIndexMerges: merge %s failed: %v", p.PinID, err)
+			continue // keep the pending record; will retry next block
+		}
+		if err := s.pendingIndexFileDAO.Delete(p.PinID); err != nil {
+			log.Printf("retryPendingIndexMerges: delete pending %s after merge: %v", p.PinID, err)
+		}
+	}
 }
 
 // RescanBlocksAsync asynchronously rescans blocks within a specified range
