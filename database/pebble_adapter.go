@@ -87,6 +87,9 @@ const (
 	// PinInfo collections
 	collectionPinInfo = "pin_info" // key: {pin_id}, value: JSON({path, operation, content_type, chain_name, block_height, timestamp}) - 按 PIN ID 索引
 
+	// PendingIndexFile collections (deferred multi-chunk index merges)
+	collectionPendingIndexFile = "pending_index_file" // key: {index_pin_id}, value: JSON(PendingIndexFile) - chunk-miss 重试记录
+
 	// System collections
 	collectionSyncStatus = "sync_status" // key: {chain_name}, value: JSON(IndexerSyncStatus) - 同步状态
 	collectionCounters   = "counters"    // key: file/avatar/status, value: {max_id} - ID 计数器
@@ -159,6 +162,7 @@ func NewPebbleDatabase(config interface{}) (Database, error) {
 		collectionLatestUserChatPublicKeyInfoByGlobalMetaId,
 		collectionUserChatPublicKeyHistoryByGlobalMetaId,
 		collectionPinInfo,
+		collectionPendingIndexFile,
 		collectionSyncStatus,
 		collectionCounters,
 		collectionVersion,
@@ -2940,6 +2944,78 @@ func (p *PebbleDatabase) GetPinInfoByPinID(pinID string) (*model.IndexerPinInfo,
 	}
 
 	return &pinInfo, nil
+}
+
+// CreatePendingIndexFile stores a deferred multi-chunk index merge record,
+// keyed by index pinId. It overwrites any existing record for the same pinId
+// (idempotent across rescans).
+func (p *PebbleDatabase) CreatePendingIndexFile(pending *model.PendingIndexFile) error {
+	data, err := json.Marshal(pending)
+	if err != nil {
+		return err
+	}
+	db := p.collections[collectionPendingIndexFile]
+	if err := db.Set([]byte(pending.PinID), data, pebble.Sync); err != nil {
+		return err
+	}
+	log.Printf("Pending index file saved: PinID=%s, ChainName=%s, BlockHeight=%d", pending.PinID, pending.ChainName, pending.BlockHeight)
+	return nil
+}
+
+// GetPendingIndexFileByPinID returns the deferred index merge record for the
+// given index pinId, or ErrNotFound when none exists.
+func (p *PebbleDatabase) GetPendingIndexFileByPinID(pinID string) (*model.PendingIndexFile, error) {
+	db := p.collections[collectionPendingIndexFile]
+	data, closer, err := db.Get([]byte(pinID))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	var pending model.PendingIndexFile
+	if err := json.Unmarshal(data, &pending); err != nil {
+		return nil, err
+	}
+	return &pending, nil
+}
+
+// ListPendingIndexFilesByChain returns all deferred index merge records for a
+// chain. The collection is small (records are deleted once their merge
+// succeeds), so a full scan with an in-memory filter is fine.
+func (p *PebbleDatabase) ListPendingIndexFilesByChain(chainName string) ([]*model.PendingIndexFile, error) {
+	db := p.collections[collectionPendingIndexFile]
+	iter, err := db.NewIter(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	var out []*model.PendingIndexFile
+	for iter.First(); iter.Valid(); iter.Next() {
+		var pending model.PendingIndexFile
+		if err := json.Unmarshal(iter.Value(), &pending); err != nil {
+			continue
+		}
+		if pending.ChainName == chainName {
+			p := pending
+			out = append(out, &p)
+		}
+	}
+	return out, nil
+}
+
+// DeletePendingIndexFile removes a deferred index merge record (called after a
+// successful merge). Missing records are not an error.
+func (p *PebbleDatabase) DeletePendingIndexFile(pinID string) error {
+	db := p.collections[collectionPendingIndexFile]
+	if err := db.Delete([]byte(pinID), pebble.Sync); err != nil {
+		return err
+	}
+	log.Printf("Pending index file deleted: PinID=%s", pinID)
+	return nil
 }
 
 func (p *PebbleDatabase) buildUserInfoCachePayload(metaID string) (*model.IndexerUserInfo, *model.UserNameInfo) {

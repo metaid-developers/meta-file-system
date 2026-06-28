@@ -608,6 +608,24 @@ func (m *MySQLDatabase) GetPinInfoByPinID(pinID string) (*model.IndexerPinInfo, 
 	return nil, ErrNotImplemented
 }
 
+// PendingIndexFile operations - indexer-only store; not implemented for MySQL
+// (indexer uses Pebble in production). Stubs satisfy the Database interface.
+func (m *MySQLDatabase) CreatePendingIndexFile(pending *model.PendingIndexFile) error {
+	return ErrNotImplemented
+}
+
+func (m *MySQLDatabase) GetPendingIndexFileByPinID(pinID string) (*model.PendingIndexFile, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) ListPendingIndexFilesByChain(chainName string) ([]*model.PendingIndexFile, error) {
+	return nil, ErrNotImplemented
+}
+
+func (m *MySQLDatabase) DeletePendingIndexFile(pinID string) error {
+	return ErrNotImplemented
+}
+
 // MetaIdAddress operations - not implemented for MySQL yet
 func (m *MySQLDatabase) SaveMetaIdAddress(metaID, address string) error {
 	return ErrNotImplemented

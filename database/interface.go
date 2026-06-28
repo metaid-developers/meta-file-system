@@ -99,6 +99,12 @@ type Database interface {
 	CreateOrUpdatePinInfo(pinInfo *model.IndexerPinInfo) error
 	GetPinInfoByPinID(pinID string) (*model.IndexerPinInfo, error)
 
+	// PendingIndexFile operations (indexer-only; Pebble impl, MySQL stub)
+	CreatePendingIndexFile(p *model.PendingIndexFile) error
+	GetPendingIndexFileByPinID(pinID string) (*model.PendingIndexFile, error)
+	ListPendingIndexFilesByChain(chainName string) ([]*model.PendingIndexFile, error)
+	DeletePendingIndexFile(pinID string) error
+
 	// MetaIdAddress operations
 	SaveMetaIdAddress(metaID, address string) error
 	GetAddressByMetaID(metaID string) (string, error)
