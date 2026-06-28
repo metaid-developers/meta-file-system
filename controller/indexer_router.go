@@ -64,11 +64,15 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 		// Indexer file query routes (using cursor pagination)
 		files := v1.Group("/files")
 		{
-			// Get file list (cursor pagination)
-			files.GET("", indexerQueryHandler.ListFiles)
+		// Get file list (cursor pagination)
+		files.GET("", indexerQueryHandler.ListFiles)
 
-			// Get file by PIN ID
-			files.GET("/:pinId", indexerQueryHandler.GetByPinID)
+		// Get file index status by PIN ID (registered before /:pinId to avoid a
+		// Gin radix-tree conflict with the parameterized route below).
+		files.GET("/status/:pinId", indexerQueryHandler.GetFileStatus)
+
+		// Get file by PIN ID
+		files.GET("/:pinId", indexerQueryHandler.GetByPinID)
 
 			// Get file content by PIN ID
 			files.GET("/content/:pinId", indexerQueryHandler.GetFileContent)

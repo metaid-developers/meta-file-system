@@ -99,6 +99,29 @@ func (h *IndexerQueryHandler) GetByPinID(c *gin.Context) {
 	respond.Success(c, respond.ToIndexerFileResponse(file, h.indexerFileService, getIndexerBaseUrl()))
 }
 
+// GetFileStatus report the indexing state of a pinId.
+// @Summary      Get file index status by PIN ID
+// @Description  Report whether a file pin is merged / pending (on chain but not indexed yet) / not_found
+// @Tags         Indexer File Query
+// @Accept       json
+// @Produce      json
+// @Param        pinId  path      string  true  "PIN ID"
+// @Success      200    {object}  respond.Response{data=indexer_service.FileStatus}
+// @Router       /files/status/{pinId} [get]
+func (h *IndexerQueryHandler) GetFileStatus(c *gin.Context) {
+	pinID := c.Param("pinId")
+	if pinID == "" {
+		respond.InvalidParam(c, "pinId is required")
+		return
+	}
+	status, err := h.indexerFileService.GetFileStatus(pinID)
+	if err != nil {
+		respond.ServerError(c, err.Error())
+		return
+	}
+	respond.Success(c, status)
+}
+
 // GetPinInfoByPinID get PIN information by PIN ID from collectionPinInfo
 // @Summary      Get PIN info by PIN ID
 // @Description  Query PIN details from collectionPinInfo by PIN ID

@@ -31,6 +31,7 @@ const (
 type IndexerFileService struct {
 	indexerFileDAO       *dao.IndexerFileDAO
 	indexerUserAvatarDAO *dao.IndexerUserAvatarDAO
+	pendingIndexFileDAO  *dao.PendingIndexFileDAO
 	storage              storage.Storage
 }
 
@@ -39,6 +40,7 @@ func NewIndexerFileService(storage storage.Storage) *IndexerFileService {
 	return &IndexerFileService{
 		indexerFileDAO:       dao.NewIndexerFileDAO(),
 		indexerUserAvatarDAO: dao.NewIndexerUserAvatarDAO(),
+		pendingIndexFileDAO:  dao.NewPendingIndexFileDAO(),
 		storage:              storage,
 	}
 }
@@ -87,6 +89,68 @@ func (s *IndexerFileService) GetFileByPinID(pinID string) (*model.IndexerFile, e
 		return nil, errors.New("file not found")
 	}
 	return file, nil
+}
+
+// FileStatus result of GetFileStatus. Status is one of:
+//   - "merged":     the IndexerFile record exists (file is servable via content).
+//   - "pending":    the pin was seen on chain (IndexerPinInfo) but not merged
+//                   yet — either waiting for a block / scan, or a deferred
+//                   multi-chunk merge (PendingIndexFile present).
+//   - "not_found":  the pin was never seen by this indexer.
+type FileStatus struct {
+	Status      string `json:"status"`
+	ChainName   string `json:"chainName,omitempty"`
+	BlockHeight int64  `json:"blockHeight,omitempty"`
+	FileSize    int64  `json:"fileSize,omitempty"`
+	FileName    string `json:"fileName,omitempty"`
+}
+
+// File status string constants returned by GetFileStatus.
+const (
+	FileStatusMerged   = "merged"
+	FileStatusPending  = "pending"
+	FileStatusNotFound = "not_found"
+)
+
+// GetFileStatus reports the indexing state of a pinId without fetching file
+// bytes. It distinguishes merged / pending / not_found so callers (e.g. the OAC
+// verify step) can tell "still indexing" from "never seen", instead of treating
+// a content 404 as a generic failure.
+func (s *IndexerFileService) GetFileStatus(pinID string) (*FileStatus, error) {
+	if pinID == "" {
+		return nil, errors.New("pinID is empty")
+	}
+
+	// 1) Merged? -> IndexerFile exists.
+	if file, err := s.indexerFileDAO.GetByPinID(pinID); err == nil && file != nil {
+		return &FileStatus{
+			Status:      FileStatusMerged,
+			ChainName:   file.ChainName,
+			BlockHeight: file.BlockHeight,
+			FileSize:    file.FileSize,
+			FileName:    file.FileName,
+		}, nil
+	}
+
+	// 2) Seen on chain but not merged? -> IndexerPinInfo exists (pending), or a
+	//    deferred multi-chunk merge is waiting (PendingIndexFile exists).
+	if pending, err := s.pendingIndexFileDAO.GetByPinID(pinID); err == nil && pending != nil {
+		return &FileStatus{
+			Status:      FileStatusPending,
+			ChainName:   pending.ChainName,
+			BlockHeight: pending.BlockHeight,
+		}, nil
+	}
+	if pinInfo, err := s.GetPinInfoByPinID(pinID); err == nil && pinInfo != nil {
+		return &FileStatus{
+			Status:      FileStatusPending,
+			ChainName:   pinInfo.ChainName,
+			BlockHeight: pinInfo.BlockHeight,
+		}, nil
+	}
+
+	// 3) Never seen.
+	return &FileStatus{Status: FileStatusNotFound}, nil
 }
 
 // GetFilesByCreatorAddress get file list by creator address with cursor pagination
