@@ -10,10 +10,22 @@ definitions:
     - key
     - uploadId
     type: object
+  controller_handler.ChainConfigItem:
+    properties:
+      chunkSize:
+        type: integer
+      feeRate:
+        type: integer
+      maxFileSize:
+        type: integer
+    type: object
   controller_handler.ChunkedUploadForTaskRequest:
     properties:
       address:
         example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+        type: string
+      chain:
+        example: mvc
         type: string
       chunkPreTxHex:
         example: 0100000...
@@ -50,7 +62,6 @@ definitions:
     - address
     - chunkPreTxHex
     - fileName
-    - indexPreTxHex
     - metaId
     - path
     type: object
@@ -155,6 +166,10 @@ definitions:
     type: object
   controller_handler.ConfigResponse:
     properties:
+      chains:
+        additionalProperties:
+          $ref: '#/definitions/controller_handler.ChainConfigItem'
+        type: object
       maxFileSize:
         example: 10485760
         type: integer
@@ -164,6 +179,9 @@ definitions:
     type: object
   controller_handler.EstimateChunkedUploadRequest:
     properties:
+      chain:
+        example: mvc
+        type: string
       content:
         type: string
       contentType:
@@ -280,12 +298,18 @@ definitions:
         example: 0
         type: integer
       data: {}
+      errorCode:
+        example: upstream_node_unreachable
+        type: string
       message:
         example: success
         type: string
       processingTime:
         example: 123
         type: integer
+      requestId:
+        example: 9b1c...
+        type: string
     type: object
   meta-file-system_controller_respond.UploadTask:
     properties:
@@ -368,8 +392,13 @@ definitions:
       chunkNumber:
         description: Number of chunks
         type: integer
+      chunkRevealTxIds:
+        description: 'DOGE: reveal tx id per chunk for index'
+        items:
+          type: string
+        type: array
       chunkTxIds:
-        description: Chunk transaction IDs (ordered)
+        description: Chunk transaction IDs (flat, for broadcast)
         items:
           type: string
         type: array
@@ -388,11 +417,16 @@ definitions:
         description: File MD5 hash
         type: string
       indexTx:
-        description: Index transaction hex
+        description: Index transaction hex (MVC single tx)
         type: string
       indexTxId:
         description: Index transaction ID
         type: string
+      indexTxs:
+        description: 'DOGE: index txs [commitHex, revealHex]'
+        items:
+          type: string
+        type: array
       message:
         description: Additional message
         type: string
@@ -414,6 +448,9 @@ definitions:
     type: object
   meta-file-system_service_upload_service.EstimateChunkedUploadResponse:
     properties:
+      chain:
+        description: Blockchain used for estimate (mvc, doge, etc.)
+        type: string
       chunkFees:
         description: Fee per chunk
         items:
@@ -499,7 +536,7 @@ paths:
       consumes:
       - application/json
       description: Get upload service configuration information, including max file
-        size and swagger base URL
+        size, swagger base URL, and per-chain config
       produces:
       - application/json
       responses:

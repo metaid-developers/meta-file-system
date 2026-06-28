@@ -26,7 +26,7 @@ const docTemplateuploader = `{
     "paths": {
         "/config": {
             "get": {
-                "description": "Get upload service configuration information, including max file size and swagger base URL",
+                "description": "Get upload service configuration information, including max file size, swagger base URL, and per-chain config",
                 "consumes": [
                     "application/json"
                 ],
@@ -950,13 +950,26 @@ const docTemplateuploader = `{
                 }
             }
         },
+        "controller_handler.ChainConfigItem": {
+            "type": "object",
+            "properties": {
+                "chunkSize": {
+                    "type": "integer"
+                },
+                "feeRate": {
+                    "type": "integer"
+                },
+                "maxFileSize": {
+                    "type": "integer"
+                }
+            }
+        },
         "controller_handler.ChunkedUploadForTaskRequest": {
             "type": "object",
             "required": [
                 "address",
                 "chunkPreTxHex",
                 "fileName",
-                "indexPreTxHex",
                 "metaId",
                 "path"
             ],
@@ -964,6 +977,10 @@ const docTemplateuploader = `{
                 "address": {
                     "type": "string",
                     "example": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+                },
+                "chain": {
+                    "type": "string",
+                    "example": "mvc"
                 },
                 "chunkPreTxHex": {
                     "type": "string",
@@ -1150,6 +1167,12 @@ const docTemplateuploader = `{
         "controller_handler.ConfigResponse": {
             "type": "object",
             "properties": {
+                "chains": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/controller_handler.ChainConfigItem"
+                    }
+                },
                 "maxFileSize": {
                     "type": "integer",
                     "example": 10485760
@@ -1167,6 +1190,10 @@ const docTemplateuploader = `{
                 "path"
             ],
             "properties": {
+                "chain": {
+                    "type": "string",
+                    "example": "mvc"
+                },
                 "content": {
                     "type": "string"
                 },
@@ -1325,6 +1352,10 @@ const docTemplateuploader = `{
                     "example": 0
                 },
                 "data": {},
+                "errorCode": {
+                    "type": "string",
+                    "example": "upstream_node_unreachable"
+                },
                 "message": {
                     "type": "string",
                     "example": "success"
@@ -1332,6 +1363,10 @@ const docTemplateuploader = `{
                 "processingTime": {
                     "type": "integer",
                     "example": 123
+                },
+                "requestId": {
+                    "type": "string",
+                    "example": "9b1c..."
                 }
             }
         },
@@ -1456,8 +1491,15 @@ const docTemplateuploader = `{
                     "description": "Number of chunks",
                     "type": "integer"
                 },
+                "chunkRevealTxIds": {
+                    "description": "DOGE: reveal tx id per chunk for index",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "chunkTxIds": {
-                    "description": "Chunk transaction IDs (ordered)",
+                    "description": "Chunk transaction IDs (flat, for broadcast)",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -1483,12 +1525,19 @@ const docTemplateuploader = `{
                     "type": "string"
                 },
                 "indexTx": {
-                    "description": "Index transaction hex",
+                    "description": "Index transaction hex (MVC single tx)",
                     "type": "string"
                 },
                 "indexTxId": {
                     "description": "Index transaction ID",
                     "type": "string"
+                },
+                "indexTxs": {
+                    "description": "DOGE: index txs [commitHex, revealHex]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "message": {
                     "description": "Additional message",
@@ -1520,6 +1569,10 @@ const docTemplateuploader = `{
         "meta-file-system_service_upload_service.EstimateChunkedUploadResponse": {
             "type": "object",
             "properties": {
+                "chain": {
+                    "description": "Blockchain used for estimate (mvc, doge, etc.)",
+                    "type": "string"
+                },
                 "chunkFees": {
                     "description": "Fee per chunk",
                     "type": "array",
