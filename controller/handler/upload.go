@@ -374,7 +374,8 @@ func (h *UploadHandler) DirectUpload(c *gin.Context) {
 	// Upload file (one-step: build + broadcast)
 	resp, err := h.uploadService.DirectUpload(req)
 	if err != nil {
-		respond.ServerError(c, err.Error())
+		// Broadcast failures carry a typed error -> structured code.
+		respond.BroadcastError(c, err)
 		return
 	}
 
@@ -618,7 +619,8 @@ func (h *UploadHandler) ChunkedUpload(c *gin.Context) {
 	// Upload file
 	resp, err := h.uploadService.ChunkedUpload(serviceReq)
 	if err != nil {
-		respond.ServerError(c, err.Error())
+		// Broadcast failures carry a typed error -> structured code.
+		respond.BroadcastError(c, err)
 		return
 	}
 
@@ -899,7 +901,8 @@ func (h *UploadHandler) CompleteMultipartUpload(c *gin.Context) {
 
 	resp, err := h.uploadService.CompleteMultipartUpload(req.Key, serviceReq)
 	if err != nil {
-		respond.ServerError(c, err.Error())
+		// Broadcast failures carry a typed error -> structured code.
+		respond.BroadcastError(c, err)
 		return
 	}
 

@@ -22,6 +22,7 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/godaddy-x/freego v1.0.174
+	github.com/google/uuid v1.4.0
 	github.com/imroc/req v0.3.2
 	github.com/metaid-developers/metaid-script-decoder v1.1.0
 	github.com/redis/go-redis/v9 v9.7.0
@@ -93,7 +94,6 @@ require (
 	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/uuid v1.4.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect

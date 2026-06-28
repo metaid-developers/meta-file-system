@@ -32,8 +32,9 @@ func SetupUploadRouter(stor storage.Storage) (*gin.Engine, *upload_service.Uploa
 		MaxAge:           12 * 3600, // 12 hours
 	}))
 
-	// Add timing middleware
+	// Add timing + request-id middleware
 	r.Use(respond.TimingMiddleware())
+	r.Use(respond.RequestIDMiddleware())
 
 	// Create upload service instance
 	uploadService := upload_service.NewUploadService(stor)
