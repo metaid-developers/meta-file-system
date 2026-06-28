@@ -62,6 +62,7 @@ uploader:
       rpc_url: "http://127.0.0.1:9882"
       rpc_user: "rpcuser"
       rpc_pass: "rpcpassword"
+      fallback_rpc_url: ""  # Optional: second RPC node tried once if the primary is unreachable. Empty = disabled. Reuse rpc_user/rpc_pass.
       max_file_size: 100  # MB, optional
       chunk_size: 2       # MB, optional
       fee_rate: 1         # sat/byte
@@ -69,6 +70,7 @@ uploader:
       rpc_url: "http://127.0.0.1:22555"
       rpc_user: "dogeuser"
       rpc_pass: "dogepass"
+      fallback_rpc_url: ""  # Optional fallback RPC node (empty = disabled)
       max_file_size: 100
       chunk_size_bytes: 1200  # DOGE max chunk size in bytes
       fee_rate: 200000    # sat/KB for DOGE

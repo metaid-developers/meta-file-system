@@ -298,7 +298,7 @@ func (s *UploadService) CommitUpload(fileId string, signedRawTx string) (*Upload
 
 		// 3. Broadcast transaction to blockchain network
 		chain := conf.Cfg.Net // Use network type from configuration
-		broadcastTxID, err := node.BroadcastTx(chain, signedRawTx)
+		broadcastTxID, err := node.BroadcastTxResilient(chain, signedRawTx)
 		if err != nil {
 			// Broadcast failed, update status to failed
 			file.Status = model.StatusFailed
@@ -509,7 +509,7 @@ func (s *UploadService) DirectUpload(req *DirectUploadRequest) (*UploadResponse,
 				// Broadcast transaction
 				chain := conf.Cfg.Net
 				if req.MergeTxHex != "" {
-					broadcastMergeTxID, err := node.BroadcastTx(chain, req.MergeTxHex)
+					broadcastMergeTxID, err := node.BroadcastTxResilient(chain, req.MergeTxHex)
 					if err != nil {
 						// // Broadcast failed, update status to failed
 						// existingFile.Status = model.StatusFailed
@@ -521,7 +521,7 @@ func (s *UploadService) DirectUpload(req *DirectUploadRequest) (*UploadResponse,
 					log.Printf("Transaction broadcasted successfully: fileId=%s, broadcastMergeTxID=%s", fileId, broadcastMergeTxID)
 				}
 
-				broadcastTxID, err := node.BroadcastTx(chain, signedRawTx)
+				broadcastTxID, err := node.BroadcastTxResilient(chain, signedRawTx)
 				if err != nil {
 					// Broadcast failed, update status to failed
 					// existingFile.Status = model.StatusFailed
@@ -568,14 +568,14 @@ func (s *UploadService) DirectUpload(req *DirectUploadRequest) (*UploadResponse,
 		// Broadcast transaction
 		chain := conf.Cfg.Net
 		if req.MergeTxHex != "" {
-			broadcastMergeTxID, err := node.BroadcastTx(chain, req.MergeTxHex)
+			broadcastMergeTxID, err := node.BroadcastTxResilient(chain, req.MergeTxHex)
 			if err != nil {
 				return fmt.Errorf("failed to broadcast merge transaction: %w", err)
 			}
 			log.Printf("Transaction broadcasted successfully: fileId=%s, broadcastMergeTxID=%s", fileId, broadcastMergeTxID)
 		}
 
-		broadcastTxID, err := node.BroadcastTx(chain, signedRawTx)
+		broadcastTxID, err := node.BroadcastTxResilient(chain, signedRawTx)
 		if err != nil {
 			// Broadcast failed, update status to failed
 			// file.Status = model.StatusFailed
@@ -1318,7 +1318,7 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 			// 0. Broadcast merge transaction first if provided
 			if req.MergeTxHex != "" {
 				log.Printf("Broadcasting merge transaction first...")
-				mergeTxId, err := node.BroadcastTx(chain, req.MergeTxHex)
+				mergeTxId, err := node.BroadcastTxResilient(chain, req.MergeTxHex)
 				if err != nil {
 					log.Printf("Failed to broadcast merge transaction: %v", err)
 					// Mark file as failed
@@ -1336,7 +1336,7 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 
 			// 1. Broadcast chunk funding transaction
 			log.Printf("Broadcasting chunk funding transaction: %s", chunkFundingTxHash)
-			broadcastFundingTxID, err := node.BroadcastTx(chain, chunkFundingTxHex)
+			broadcastFundingTxID, err := node.BroadcastTxResilient(chain, chunkFundingTxHex)
 			if err != nil {
 				log.Printf("Failed to broadcast chunk funding transaction: %v", err)
 				// Mark file as failed
@@ -1355,7 +1355,7 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 			// 2. Broadcast each chunk transaction sequentially
 			for i, chunkTxHex := range chunkTxs {
 				log.Printf("Broadcasting chunk transaction %d/%d: %s", i+1, chunkNumber, chunkTxIds[i])
-				broadcastChunkTxID, err := node.BroadcastTx(chain, chunkTxHex)
+				broadcastChunkTxID, err := node.BroadcastTxResilient(chain, chunkTxHex)
 				if err != nil {
 					log.Printf("Failed to broadcast chunk transaction %d: %v", i, err)
 					// Mark file as failed
@@ -1388,7 +1388,7 @@ func (s *UploadService) ChunkedUpload(req *ChunkedUploadRequest) (*ChunkedUpload
 			// 3. Broadcast index transaction
 			s.updateUploadTaskProgress(req.Task, "Preparing to broadcast index transaction", 96, len(chunkTxIds))
 			log.Printf("Broadcasting index transaction: %s", indexTxId)
-			broadcastIndexTxID, err := node.BroadcastTx(chain, indexTxHex)
+			broadcastIndexTxID, err := node.BroadcastTxResilient(chain, indexTxHex)
 			if err != nil {
 				log.Printf("Failed to broadcast index transaction: %v", err)
 				// Mark file as failed
@@ -2224,7 +2224,7 @@ func (s *UploadService) broadcastMergeTxForTaskInDoge(task *model.FileUploaderTa
 		}
 
 		if mergeHex != "" {
-			if _, err := node.BroadcastTx(chain, mergeHex); err != nil {
+			if _, err := node.BroadcastTxResilient(chain, mergeHex); err != nil {
 				if !isDuplicateBroadcastError(err) {
 					return fmt.Errorf("failed to broadcast merge transaction: %w", err)
 				}
@@ -2253,7 +2253,7 @@ func (s *UploadService) broadcastFundingTxForTaskInDoge(task *model.FileUploader
 			return err
 		}
 
-		if _, err := node.BroadcastTx(chain, fundingHex); err != nil {
+		if _, err := node.BroadcastTxResilient(chain, fundingHex); err != nil {
 			if !isDuplicateBroadcastError(err) {
 				return fmt.Errorf("failed to broadcast chunk funding transaction: %w", err)
 			}
@@ -2327,7 +2327,7 @@ func (s *UploadService) broadcastSingleChunkTxInDoge(task *model.FileUploaderTas
 			return err
 		}
 
-		_, err = node.BroadcastTx(chain, txHex)
+		_, err = node.BroadcastTxResilient(chain, txHex)
 		if err != nil {
 			if !isDuplicateBroadcastError(err) {
 				return fmt.Errorf("failed to broadcast chunk transaction %d: %w", index, err)
@@ -2357,7 +2357,7 @@ func (s *UploadService) broadcastIndexTxForTaskInDoge(req *ChunkedUploadRequest,
 	chain := "doge"
 	err = database.UploaderDB.Transaction(func(tx *gorm.DB) error {
 		for i, hexStr := range indexTxHexes {
-			if _, err := node.BroadcastTx(chain, hexStr); err != nil {
+			if _, err := node.BroadcastTxResilient(chain, hexStr); err != nil {
 				if !isDuplicateBroadcastError(err) {
 					if updateErr := tx.Model(&model.File{}).Where("file_id = ?", fileId).Update("status", model.StatusFailed).Error; updateErr != nil {
 						log.Printf("Failed to update file status: %v", updateErr)
@@ -2434,7 +2434,7 @@ func (s *UploadService) broadcastMergeTxForTask(task *model.FileUploaderTask) er
 		}
 
 		if mergeHex != "" {
-			if _, err := node.BroadcastTx(chain, mergeHex); err != nil {
+			if _, err := node.BroadcastTxResilient(chain, mergeHex); err != nil {
 				if !isDuplicateBroadcastError(err) {
 					return fmt.Errorf("failed to broadcast merge transaction: %w", err)
 				}
@@ -2463,7 +2463,7 @@ func (s *UploadService) broadcastFundingTxForTask(task *model.FileUploaderTask) 
 			return err
 		}
 
-		if _, err := node.BroadcastTx(chain, fundingHex); err != nil {
+		if _, err := node.BroadcastTxResilient(chain, fundingHex); err != nil {
 			if !isDuplicateBroadcastError(err) {
 				return fmt.Errorf("failed to broadcast chunk funding transaction: %w", err)
 			}
@@ -2537,7 +2537,7 @@ func (s *UploadService) broadcastSingleChunkTx(task *model.FileUploaderTask, chu
 			return err
 		}
 
-		_, err = node.BroadcastTx(chain, txHex)
+		_, err = node.BroadcastTxResilient(chain, txHex)
 		if err != nil {
 			if !isDuplicateBroadcastError(err) {
 				return fmt.Errorf("failed to broadcast chunk transaction %d: %w", index, err)
@@ -2646,7 +2646,7 @@ func (s *UploadService) broadcastIndexTxForTask(req *ChunkedUploadRequest, task 
 	}
 	err = database.UploaderDB.Transaction(func(tx *gorm.DB) error {
 		// Broadcast index transaction
-		if _, err := node.BroadcastTx(broadcastChain, indexTxHex); err != nil {
+		if _, err := node.BroadcastTxResilient(broadcastChain, indexTxHex); err != nil {
 			if !isDuplicateBroadcastError(err) {
 				// Mark file as failed on broadcast error
 				if updateErr := tx.Model(&model.File{}).Where("file_id = ?", fileId).Update("status", model.StatusFailed).Error; updateErr != nil {

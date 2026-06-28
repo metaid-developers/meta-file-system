@@ -141,6 +141,7 @@ type UploaderChainConfig struct {
 	RpcUrl         string `mapstructure:"rpc_url"`          // RPC URL
 	RpcUser        string `mapstructure:"rpc_user"`         // RPC username
 	RpcPass        string `mapstructure:"rpc_pass"`         // RPC password
+	FallbackRpcUrl string `mapstructure:"fallback_rpc_url"` // Optional fallback RPC URL used when the primary is unreachable (empty = no fallback)
 	MaxFileSize    int64  `mapstructure:"max_file_size"`    // Max file size in MB, 0 = use global default
 	ChunkSize      int64  `mapstructure:"chunk_size"`       // Chunk size in MB, 0 = use global default
 	ChunkSizeBytes int64  `mapstructure:"chunk_size_bytes"` // Chunk size in bytes (for DOGE etc), 0 = use ChunkSize or chain default
@@ -158,9 +159,10 @@ type UploaderConfig struct {
 
 // RpcConfig RPC configuration
 type RpcConfig struct {
-	Url      string
-	Username string
-	Password string
+	Url          string
+	Username     string
+	Password     string
+	FallbackUrl  string // Optional fallback RPC URL (empty = no fallback)
 }
 
 // RpcConfigMap RPC configuration mapping (for multi-chain support)
@@ -367,16 +369,17 @@ func InitConfig() error {
 			if chainsList, ok := chainsInterface.([]interface{}); ok {
 				for i, ch := range chainsList {
 					if m, ok := ch.(map[string]interface{}); ok {
-						c := UploaderChainConfig{
-							Name:           getStringFromMap(m, "name"),
-							RpcUrl:         getStringFromMap(m, "rpc_url"),
-							RpcUser:        getStringFromMap(m, "rpc_user"),
-							RpcPass:        getStringFromMap(m, "rpc_pass"),
-							MaxFileSize:    getInt64FromMap(m, "max_file_size"),
-							ChunkSize:      getInt64FromMap(m, "chunk_size"),
-							ChunkSizeBytes: getInt64FromMap(m, "chunk_size_bytes"),
-							FeeRate:        getInt64FromMap(m, "fee_rate"),
-						}
+					c := UploaderChainConfig{
+						Name:           getStringFromMap(m, "name"),
+						RpcUrl:         getStringFromMap(m, "rpc_url"),
+						RpcUser:        getStringFromMap(m, "rpc_user"),
+						RpcPass:        getStringFromMap(m, "rpc_pass"),
+						FallbackRpcUrl: getStringFromMap(m, "fallback_rpc_url"),
+						MaxFileSize:    getInt64FromMap(m, "max_file_size"),
+						ChunkSize:      getInt64FromMap(m, "chunk_size"),
+						ChunkSizeBytes: getInt64FromMap(m, "chunk_size_bytes"),
+						FeeRate:        getInt64FromMap(m, "fee_rate"),
+					}
 						if c.Name != "" && c.RpcUrl != "" {
 							uploaderChains = append(uploaderChains, c)
 							fmt.Printf("  ✅ Parsed uploader chain %d: %s (RPC: %s)\n", i+1, c.Name, c.RpcUrl)
@@ -388,11 +391,11 @@ func InitConfig() error {
 		if len(uploaderChains) > 0 {
 			Cfg.Uploader.Chains = uploaderChains
 			for _, c := range uploaderChains {
-				RpcConfigMap[c.Name] = RpcConfig{Url: c.RpcUrl, Username: c.RpcUser, Password: c.RpcPass}
+				RpcConfigMap[c.Name] = RpcConfig{Url: c.RpcUrl, Username: c.RpcUser, Password: c.RpcPass, FallbackUrl: c.FallbackRpcUrl}
 				fmt.Printf("  RpcConfigMap[%s] configured for broadcast (from uploader.chains)\n", c.Name)
 			}
 			// Legacy: map Cfg.Net (livenet/testnet) to first chain's RPC
-			RpcConfigMap[Cfg.Net] = RpcConfig{Url: uploaderChains[0].RpcUrl, Username: uploaderChains[0].RpcUser, Password: uploaderChains[0].RpcPass}
+			RpcConfigMap[Cfg.Net] = RpcConfig{Url: uploaderChains[0].RpcUrl, Username: uploaderChains[0].RpcUser, Password: uploaderChains[0].RpcPass, FallbackUrl: uploaderChains[0].FallbackRpcUrl}
 		}
 	}
 	// Fallback: if uploader.chains empty, use top-level chain for single-chain mode
