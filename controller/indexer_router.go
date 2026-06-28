@@ -72,18 +72,24 @@ func SetupIndexerRouter(stor storage.Storage, indexerService *indexer_service.In
 
 			// Get file content by PIN ID
 			files.GET("/content/:pinId", indexerQueryHandler.GetFileContent)
+			// HEAD counterpart (RFC 7231: same headers, no body) for availability
+			// probes (e.g. OAC --verify). Without it Gin returns a native 404.
+			files.HEAD("/content/:pinId", indexerQueryHandler.HeadFileContent)
 
 			// Get accelerated file content redirect to OSS
 			files.GET("/accelerate/content/:pinId", indexerQueryHandler.GetFastFileContent)
+			files.HEAD("/accelerate/content/:pinId", indexerQueryHandler.HeadFastFileContent)
 
 			// Get latest file by first PIN ID
 			files.GET("/latest/:firstPinId", indexerQueryHandler.GetLatestByFirstPinID)
 
 			// Get latest file content by first PIN ID
 			files.GET("/content/latest/:firstPinId", indexerQueryHandler.GetLatestFileContentByFirstPinID)
+			files.HEAD("/content/latest/:firstPinId", indexerQueryHandler.HeadLatestFileContentByFirstPinID)
 
 			// Get latest accelerated file content redirect to OSS by first PIN ID
 			files.GET("/accelerate/content/latest/:firstPinId", indexerQueryHandler.GetLatestFastFileContentByFirstPinID)
+			files.HEAD("/accelerate/content/latest/:firstPinId", indexerQueryHandler.HeadLatestFastFileContentByFirstPinID)
 
 			// Get files by creator address
 			files.GET("/creator/:address", indexerQueryHandler.GetByCreatorAddress)
